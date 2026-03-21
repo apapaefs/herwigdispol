@@ -1,0 +1,6 @@
+# -*- ThePEG-repository -*-
+##################################################
+# select the analyses
+##################################################
+# general analysis
+insert /Herwig/Analysis/RivetAnalysis:Analyses 0 MC_WWJETS

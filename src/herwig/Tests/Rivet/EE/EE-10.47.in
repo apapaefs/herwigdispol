@@ -1,0 +1,15 @@
+# -*- ThePEG-repository -*-
+create ThePEG::LuminosityFunction /Herwig/EventHandlers/BFactoryLuminosity
+set /Herwig/EventHandlers/BFactoryLuminosity:BeamEMaxA 5.235
+set /Herwig/EventHandlers/BFactoryLuminosity:BeamEMaxB 5.235
+set /Herwig/Generators/EventGenerator:EventHandler:Cuts:MHatMin 9.99
+set /Herwig/Particles/e-:PDF /Herwig/Partons/NoPDF
+set /Herwig/Particles/e+:PDF /Herwig/Partons/NoPDF
+set /Herwig/Generators/EventGenerator:EventHandler:LuminosityFunction /Herwig/EventHandlers/BFactoryLuminosity
+
+# ARGUS charged particle multiplicity
+insert /Herwig/Analysis/RivetAnalysis:Analyses 0 ARGUS_1992_I319102
+# ARGUS charm hadron production
+insert /Herwig/Analysis/RivetAnalysis:Analyses 0 ARGUS_1991_I315059
+# CLEO Identified particle spectra
+insert /Herwig/Analysis/RivetAnalysis:Analyses 0 CLEO_1985_I205668

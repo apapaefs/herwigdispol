@@ -1,0 +1,138 @@
+# -*- ThePEG-repository -*-
+
+#######################################################
+# Setup of default decay handlers.
+#
+# Nothing interesting for users here. To set up or
+# modify decay modes in your own input files, use 
+# the xyz_decays.in files as an example.
+#######################################################
+
+mkdir /Herwig/Decays
+cd /Herwig/Decays
+
+# create the DecayHandler
+create Herwig::HwDecayHandler DecayHandler
+
+#######################################################
+#
+#                     New Decays
+#
+#######################################################
+read decayers.in
+
+cd /Herwig/Particles
+create ThePEG::Matcher<Any> MatchAny
+read quark_decays.in
+read baryon_decays.in
+read boson_decays.in
+read lepton_decays.in
+read meson_decays.in
+# handling of B-decays, EvtGEn the default if present
+@LOAD_EVTGEN_DECAYS@
+
+# these must be stable
+set /Herwig/Particles/mu-:Stable   Stable
+set /Herwig/Particles/mu+:Stable   Stable
+set /Herwig/Particles/pi-:Stable   Stable
+set /Herwig/Particles/pi+:Stable   Stable
+set /Herwig/Particles/K-:Stable    Stable
+set /Herwig/Particles/K+:Stable    Stable
+set /Herwig/Particles/n0:Stable    Stable
+set /Herwig/Particles/nbar0:Stable Stable
+
+cd /Herwig/Hadronization
+# with new decays these should not be made by the hadronization
+# particles only as intermediates in certain decays
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/kappa+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/kappa0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/kappabar0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/kappa-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/sigma
+# exclude 2nd excited 10plet
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambda(1520)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambdabar(1520)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambda_c(2625)+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambda_c(2625)bar-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambda_b1*0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambda_b1*bar0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_c(2815)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_c(2815)bar0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_c(2815)+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_c(2815)bar-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_b1*0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_b1*bar0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_b1*-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_b1*bar+
+# exclude 3rd excited 45 plet
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambda(1690)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambdabar(1690)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/p(1520)+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/pbar(1520)-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/n(1520)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/nbar(1520)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigma(1670)-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigmabar(1670)+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigma(1670)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigmabar(1670)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigma(1670)+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigmabar(1670)-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi(1820)-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xibar(1820)+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi(1820)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xibar(1820)0
+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambda(1600)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambdabar(1600)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/p(1440)+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/pbar(1440)
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/n(1440)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/nbar(1440)
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigma(1660)-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigmabar(1660)+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigma(1660)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigmabar(1660)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigma(1660)+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigmabar(1660)-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi(1690)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xibar(1690)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi(1690)-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xibar(1690)+
+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambda(1405)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambdabar(1405)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambda_c(2593)+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambda_c(2593)bar-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambda_b10
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambda_b1bar0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_c(2790)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_c(2790)bar0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_c(2790)+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_c(2790)bar-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_b10
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_b1bar0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_b1-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi_b1bar+
+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambda(1670)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Lambdabar(1670)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/p(1535)+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/pbar(1535)
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/n(1535)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/nbar(1535)
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigma(1750)-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigmabar(1750)+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigma(1750)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigmabar(1750)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigma(1750)+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Sigmabar(1750)-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi(1950)-
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xibar(1950)+
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xi(1950)0
+insert SMHadronSpectrum:Forbidden 0 /Herwig/Particles/Xibar(1950)0
+
+
+
+mkdir /Herwig/Widths
+cd /Herwig/Widths
+read widths.in

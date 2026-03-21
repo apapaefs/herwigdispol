@@ -1,0 +1,618 @@
+# -*- ThePEG-repository -*-
+
+##############################################################################
+# Setup of default matrix elements.
+#
+# Only one ME is activated by default, but this file lists 
+# some alternatives. All available MEs can be found in the
+# 'include/Herwig/MatrixElements' subdirectory of your Herwig 
+# installation.
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+#
+# Instead of editing this file directly, you should reset 
+# the matrix elements in your own input files:
+#
+# - create your custom SubProcessHandler
+# - insert the MEs you need
+# - set your SubProcessHandler instead of the default (see HerwigDefaults.in)
+##############################################################################
+mkdir /Herwig/MatrixElements
+cd /Herwig/MatrixElements
+library HwMELepton.so
+library HwMEHadron.so
+library HwMEDIS.so
+
+############################################################
+#  e+e- matrix elements
+############################################################
+# e+e- > q qbar
+create Herwig::MEee2gZ2qq MEee2gZ2qq
+newdef MEee2gZ2qq:MinimumFlavour 1
+newdef MEee2gZ2qq:MaximumFlavour 5
+newdef MEee2gZ2qq:AlphaQCD /Herwig/Shower/AlphaQCDFSR
+newdef MEee2gZ2qq:AlphaQED /Herwig/Shower/AlphaQED
+
+# e+e- -> l+l-
+create Herwig::MEee2gZ2ll MEee2gZ2ll
+newdef MEee2gZ2ll:Allowed Charged
+set MEee2gZ2ll:AlphaQED /Herwig/Shower/AlphaQED
+
+# e+e- -> l+l-
+create Herwig::MEee2ff MEee2ff
+set MEee2ff:AlphaQED /Herwig/Shower/AlphaQED
+
+# e+e- -> W+W- ZZ
+create Herwig::MEee2VV MEee2VV
+
+# e+e- -> ZH
+create Herwig::MEee2ZH MEee2ZH
+newdef MEee2ZH:Coupling /Herwig/Shower/AlphaQCDFSR
+
+# e+e- -> e+e-H/nu_enu_ebarH
+create Herwig::MEee2HiggsVBF MEee2HiggsVBF
+
+
+############################################################
+#  Low energy matrix elements
+############################################################
+# e+ e- -> pi+pi-
+create Herwig::MEee2Mesons MEee2Pions HwMELeptonLowEnergy.so
+create Herwig::TwoPionCzyzCurrent /Herwig/Decays/TwoPionCzyzCurrent HwWeakCurrents.so
+set MEee2Pions:WeakCurrent /Herwig/Decays/TwoPionCzyzCurrent
+# e+ e- -> K+K-/ K0K0
+create Herwig::MEee2Mesons MEee2Kaons HwMELeptonLowEnergy.so
+create Herwig::TwoKaonCzyzCurrent /Herwig/Decays/TwoKaonCzyzCurrent 
+set MEee2Kaons:WeakCurrent /Herwig/Decays/TwoKaonCzyzCurrent
+# e+ e- -> pi+ pi- pi0
+create Herwig::MEee2Mesons MEee3Pions HwMELeptonLowEnergy.so
+create Herwig::ThreePionCzyzCurrent /Herwig/Decays/ThreePionCzyzCurrent
+set MEee3Pions:WeakCurrent /Herwig/Decays/ThreePionCzyzCurrent
+# e+ e- -> 2pi+ 2pi-, 2pi0, pi+ pi-
+create Herwig::MEee2Mesons MEee4Pions HwMELeptonLowEnergy.so
+create Herwig::FourPionCzyzCurrent /Herwig/Decays/FourPionCzyzCurrent
+set MEee4Pions:WeakCurrent /Herwig/Decays/FourPionCzyzCurrent
+# e+ e- -> eta pi+ pi-
+create Herwig::MEee2Mesons MEee2EtaPiPi HwMELeptonLowEnergy.so
+create Herwig::EtaPiPiCurrent /Herwig/Decays/EtaPiPiCurrent 
+set MEee2EtaPiPi:WeakCurrent /Herwig/Decays/EtaPiPiCurrent
+# e+ e- -> eta' pi+ pi-
+create Herwig::MEee2Mesons MEee2EtaPrimePiPi HwMELeptonLowEnergy.so
+create Herwig::EtaPrimePiPiCurrent /Herwig/Decays/EtaPrimePiPiCurrent 
+set MEee2EtaPrimePiPi:WeakCurrent /Herwig/Decays/EtaPrimePiPiCurrent
+# e+ e- -> omega pi (omega -> pi0 gamma)
+create Herwig::MEee2Mesons MEee2OmegaPi HwMELeptonLowEnergy.so
+create Herwig::TwoPionPhotonSNDCurrent /Herwig/Decays/OmegaPiCurrent 
+set MEee2OmegaPi:WeakCurrent /Herwig/Decays/OmegaPiCurrent
+# e+ e- > pi0 gamma
+create Herwig::MEee2Mesons MEee2PiGamma HwMELeptonLowEnergy.so
+create Herwig::PionPhotonCurrent /Herwig/Decays/PiGammaCurrent
+set MEee2PiGamma:WeakCurrent /Herwig/Decays/PiGammaCurrent
+# e+e- -> eta gamma
+create Herwig::MEee2Mesons MEee2EtaGamma HwMELeptonLowEnergy.so
+create Herwig::EtaPhotonCurrent /Herwig/Decays/EtaGammaCurrent
+set MEee2EtaGamma:WeakCurrent /Herwig/Decays/EtaGammaCurrent
+# e+e- -> eta phi
+create Herwig::MEee2Mesons MEee2EtaPhi HwMELeptonLowEnergy.so
+create Herwig::EtaPhiCurrent /Herwig/Decays/EtaPhiCurrent
+set MEee2EtaPhi:WeakCurrent /Herwig/Decays/EtaPhiCurrent
+# e+e- -> eta omega
+create Herwig::MEee2Mesons MEee2EtaOmega HwMELeptonLowEnergy.so
+create Herwig::EtaOmegaCurrent /Herwig/Decays/EtaOmegaCurrent
+set MEee2EtaOmega:WeakCurrent /Herwig/Decays/EtaOmegaCurrent
+# e+e- > p pbar
+create Herwig::MEee2Mesons MEee2PPbar HwMELeptonLowEnergy.so
+create Herwig::WeakBaryonCurrent  /Herwig/Decays/CzyzCurrent
+create Herwig::CzyzNucleonFormFactor  /Herwig/Decays/CzyzFormFactor HwFormFactors.so
+set /Herwig/Decays/CzyzCurrent:FormFactor /Herwig/Decays/CzyzFormFactor
+set MEee2PPbar:WeakCurrent /Herwig/Decays/CzyzCurrent
+# e+e- > hyperons
+create Herwig::MEee2Mesons MEee2LL HwMELeptonLowEnergy.so
+create Herwig::WeakBaryonCurrent  /Herwig/Decays/KornerKurodaCurrent
+create Herwig::KornerKurodaFormFactor  /Herwig/Decays/KornerKurodaFormFactor
+set /Herwig/Decays/KornerKurodaFormFactor:IncludeNucleon No
+set /Herwig/Decays/KornerKurodaCurrent:FormFactor /Herwig/Decays/KornerKurodaFormFactor
+set MEee2LL:WeakCurrent /Herwig/Decays/KornerKurodaCurrent
+# e+e- -> KKpi
+create Herwig::MEee2Mesons MEee2KKPi HwMELeptonLowEnergy.so
+create Herwig::KKPiCurrent /Herwig/Decays/KKPiCurrent 
+set MEee2KKPi:WeakCurrent /Herwig/Decays/KKPiCurrent
+# e+e- -> phi pi
+create Herwig::MEee2Mesons MEee2PhiPi HwMELeptonLowEnergy.so
+create Herwig::PhiPiCurrent /Herwig/Decays/PhiPiCurrent 
+set MEee2PhiPi:WeakCurrent /Herwig/Decays/PhiPiCurrent
+# e+ e- -> omega pi pi 
+create Herwig::MEee2Mesons MEee2OmegaPiPi HwMELeptonLowEnergy.so
+create Herwig::OmegaPiPiCurrent /Herwig/Decays/OmegaPiPiCurrent 
+set MEee2OmegaPiPi:WeakCurrent /Herwig/Decays/OmegaPiPiCurrent
+
+############################################################
+# NLO (POWHEG e+e- matrix elements
+############################################################
+library HwPowhegMELepton.so 
+create Herwig::MEee2gZ2qqPowheg PowhegMEee2gZ2qq
+newdef PowhegMEee2gZ2qq:MinimumFlavour 1
+newdef PowhegMEee2gZ2qq:MaximumFlavour 5
+newdef PowhegMEee2gZ2qq:AlphaQCD /Herwig/Shower/AlphaQCDFSR
+newdef PowhegMEee2gZ2qq:AlphaQED /Herwig/Shower/AlphaQED
+create Herwig::MEee2gZ2llPowheg PowhegMEee2gZ2ll
+newdef PowhegMEee2gZ2ll:Allowed Charged
+set PowhegMEee2gZ2ll:AlphaQED /Herwig/Shower/AlphaQED
+
+############################################################
+#  hadron-hadron matrix elements
+############################################################
+
+###################################
+#  Electroweak processes
+###################################
+# q qbar -> gamma/Z -> l+l-
+create Herwig::MEqq2gZ2ff MEqq2gZ2ff
+newdef MEqq2gZ2ff:Process 3
+newdef MEqq2gZ2ff:Coupling /Herwig/Shower/AlphaQCDISR
+
+# q qbar to W -> l nu
+create Herwig::MEqq2W2ff  MEqq2W2ff
+newdef MEqq2W2ff:Process 2
+newdef MEqq2W2ff:Coupling /Herwig/Shower/AlphaQCDISR
+
+# W+jet
+create Herwig::MEPP2WJet MEWJet
+newdef MEWJet:WDecay Leptons
+
+# Z+jet
+create Herwig::MEPP2ZJet MEZJet
+newdef MEZJet:ZDecay ChargedLeptons
+
+# PP->WW/WZ/ZZ
+create Herwig::MEPP2VV MEPP2VV
+
+# PP->WZ gamma
+create Herwig::MEPP2VGamma MEPP2VGamma
+
+###################################
+#  Photon and jet processes
+###################################
+
+# qqbar/gg -> gamma gamma
+create Herwig::MEPP2GammaGamma MEGammaGamma
+
+# hadron-hadron to gamma+jet
+create Herwig::MEPP2GammaJet   MEGammaJet
+
+# QCD 2-to-2
+create Herwig::MEQCD2to2       MEQCD2to2
+
+# MinBias
+create Herwig::MEMinBias MEMinBias
+newdef MEMinBias:csNorm 0.01
+newdef MEMinBias:Scale 2.0
+###################################
+#  Heavy Quark
+###################################
+
+# qqbar/gg -> t tbar
+create Herwig::MEPP2QQ         MEHeavyQuark     
+
+create Herwig::MEPP2SingleTop MESingleTopTChannel
+set MESingleTopTChannel:Process tChannel
+
+create Herwig::MEPP2SingleTop MESingleTopSChannel
+set MESingleTopSChannel:Process sChannel
+
+create Herwig::MEPP2SingleTop MESingleTopTW
+set MESingleTopTW:Process tW
+
+###################################
+#  Higgs processes
+###################################
+
+# hadron-hadron to higgs
+create Herwig::MEPP2Higgs   MEHiggs
+newdef MEHiggs:ShapeScheme MassGenerator
+newdef MEHiggs:Process gg
+newdef MEHiggs:Coupling /Herwig/Shower/AlphaQCDISR
+
+# hadron-hadron to higgs+jet
+create Herwig::MEPP2HiggsJet   MEHiggsJet
+
+# PP->ZH
+create Herwig::MEPP2ZH MEPP2ZH
+newdef MEPP2ZH:Coupling /Herwig/Shower/AlphaQCDISR
+
+# PP->WH
+create Herwig::MEPP2WH MEPP2WH
+newdef MEPP2WH:Coupling /Herwig/Shower/AlphaQCDISR
+
+# PP -> Higgs via VBF
+create Herwig::MEPP2HiggsVBF MEPP2HiggsVBF
+newdef MEPP2HiggsVBF:ShowerAlphaQCD /Herwig/Shower/AlphaQCDISR
+
+# PP -> t tbar Higgs
+create Herwig::MEPP2QQHiggs MEPP2ttbarH
+newdef MEPP2ttbarH:QuarkType Top
+
+# PP -> b bbar Higgs
+create Herwig::MEPP2QQHiggs MEPP2bbbarH
+newdef MEPP2bbbarH:QuarkType Bottom
+
+##########################################################
+# Hadron-Hadron NLO matrix elements in the Powheg scheme
+##########################################################
+library HwPowhegMEHadron.so
+
+# q qbar -> gamma/Z -> l+l-
+create Herwig::MEqq2gZ2ffPowheg PowhegMEqq2gZ2ff
+newdef PowhegMEqq2gZ2ff:Process 3
+newdef PowhegMEqq2gZ2ff:Coupling /Herwig/Shower/AlphaQCDISR
+
+# q qbar to W -> l nu
+create Herwig::MEqq2W2ffPowheg PowhegMEqq2W2ff
+newdef PowhegMEqq2W2ff:Process 2
+newdef PowhegMEqq2W2ff:Coupling /Herwig/Shower/AlphaQCDISR
+ 
+# PP->ZH
+create Herwig::MEPP2ZHPowheg PowhegMEPP2ZH
+newdef PowhegMEPP2ZH:Coupling /Herwig/Shower/AlphaQCDISR
+
+# PP->WH
+create Herwig::MEPP2WHPowheg PowhegMEPP2WH
+newdef PowhegMEPP2WH:Coupling /Herwig/Shower/AlphaQCDISR
+
+# hadron-hadron to higgs
+create Herwig::MEPP2HiggsPowheg PowhegMEHiggs
+newdef PowhegMEHiggs:ShapeScheme MassGenerator
+newdef PowhegMEHiggs:Process gg
+newdef PowhegMEHiggs:Coupling /Herwig/Shower/AlphaQCDISR
+
+# PP->VV
+create Herwig::MEPP2VVPowheg PowhegMEPP2VV
+newdef PowhegMEPP2VV:Coupling /Herwig/Shower/AlphaQCDISR
+
+# PP -> Higgs via VBF
+create Herwig::MEPP2HiggsVBFPowheg PowhegMEPP2HiggsVBF
+newdef PowhegMEPP2HiggsVBF:ShowerAlphaQCD /Herwig/Shower/AlphaQCDISR
+
+# PP -> diphoton NLO
+create Herwig::MEPP2GammaGammaPowheg MEGammaGammaPowheg 
+set MEGammaGammaPowheg:Process 0
+set MEGammaGammaPowheg:Contribution 1
+set MEGammaGammaPowheg:ShowerAlphaQCD /Herwig/Shower/AlphaQCDISR
+set MEGammaGammaPowheg:ShowerAlphaQED /Herwig/Shower/AlphaQED
+
+##########################################################
+# Hadron Hadron onium matrix elements
+##########################################################
+
+# g g -> eta_c(1S)
+create Herwig::MEGGto1S0 MEgg2EtaC1S HwMEHadronOnium.so
+set MEgg2EtaC1S:Parameters /Herwig/OniumParameters
+set MEgg2EtaC1S:State ccbar
+set MEgg2EtaC1S:PrincipalQuantumNumber 1
+
+# g g -> eta_c(2S)
+create Herwig::MEGGto1S0 MEgg2EtaC2S HwMEHadronOnium.so
+set MEgg2EtaC2S:Parameters /Herwig/OniumParameters
+set MEgg2EtaC2S:State ccbar
+set MEgg2EtaC2S:PrincipalQuantumNumber 2
+
+# g g -> chi_c0(1P)
+create Herwig::MEGGto3P0 MEgg2ChiC01P HwMEHadronOnium.so
+set MEgg2ChiC01P:Parameters /Herwig/OniumParameters
+set MEgg2ChiC01P:State ccbar
+set MEgg2ChiC01P:PrincipalQuantumNumber 1
+
+# g g -> chi_c2(1P)
+create Herwig::MEGGto3P2 MEgg2ChiC21P HwMEHadronOnium.so
+set MEgg2ChiC21P:Parameters /Herwig/OniumParameters
+set MEgg2ChiC21P:State ccbar
+set MEgg2ChiC21P:PrincipalQuantumNumber 1
+
+# g g -> chi_c0(2P)
+create Herwig::MEGGto3P0 MEgg2ChiC02P HwMEHadronOnium.so
+set MEgg2ChiC02P:Parameters /Herwig/OniumParameters
+set MEgg2ChiC02P:State ccbar
+set MEgg2ChiC02P:PrincipalQuantumNumber 2
+
+# g g -> chi_c2(2P)
+create Herwig::MEGGto3P2 MEgg2ChiC22P HwMEHadronOnium.so
+set MEgg2ChiC22P:Parameters /Herwig/OniumParameters
+set MEgg2ChiC22P:State ccbar
+set MEgg2ChiC22P:PrincipalQuantumNumber 2
+
+# g g -> eta_b(1S)
+create Herwig::MEGGto1S0 MEgg2EtaB1S HwMEHadronOnium.so
+set MEgg2EtaB1S:Parameters /Herwig/OniumParameters
+set MEgg2EtaB1S:State bbbar
+set MEgg2EtaB1S:PrincipalQuantumNumber 1
+
+# g g -> eta_b(2S)
+create Herwig::MEGGto1S0 MEgg2EtaB2S HwMEHadronOnium.so
+set MEgg2EtaB2S:Parameters /Herwig/OniumParameters
+set MEgg2EtaB2S:State bbbar
+set MEgg2EtaB2S:PrincipalQuantumNumber 2
+
+# g g -> eta_b(3S)
+create Herwig::MEGGto1S0 MEgg2EtaB3S HwMEHadronOnium.so
+set MEgg2EtaB3S:Parameters /Herwig/OniumParameters
+set MEgg2EtaB3S:State bbbar
+set MEgg2EtaB3S:PrincipalQuantumNumber 3
+
+# g g -> chi_b0(1P)
+create Herwig::MEGGto3P0 MEgg2ChiB01P HwMEHadronOnium.so
+set MEgg2ChiB01P:Parameters /Herwig/OniumParameters
+set MEgg2ChiB01P:State bbbar
+set MEgg2ChiB01P:PrincipalQuantumNumber 1
+
+# g g -> chi_b0(2P)
+create Herwig::MEGGto3P0 MEgg2ChiB02P HwMEHadronOnium.so
+set MEgg2ChiB02P:Parameters /Herwig/OniumParameters
+set MEgg2ChiB02P:State bbbar
+set MEgg2ChiB02P:PrincipalQuantumNumber 2
+
+# g g -> chi_b0(3P)
+create Herwig::MEGGto3P0 MEgg2ChiB03P HwMEHadronOnium.so
+set MEgg2ChiB03P:Parameters /Herwig/OniumParameters
+set MEgg2ChiB03P:State bbbar
+set MEgg2ChiB03P:PrincipalQuantumNumber 3
+
+# g g -> chi_b2(1P)
+create Herwig::MEGGto3P2 MEgg2ChiB21P HwMEHadronOnium.so
+set MEgg2ChiB21P:Parameters /Herwig/OniumParameters
+set MEgg2ChiB21P:State bbbar
+set MEgg2ChiB21P:PrincipalQuantumNumber 1
+
+# g g -> chi_b2(2P)
+create Herwig::MEGGto3P2 MEgg2ChiB22P HwMEHadronOnium.so
+set MEgg2ChiB22P:Parameters /Herwig/OniumParameters
+set MEgg2ChiB22P:State bbbar
+set MEgg2ChiB22P:PrincipalQuantumNumber 2
+
+# g g -> chi_b2(3P)
+create Herwig::MEGGto3P2 MEgg2ChiB23P HwMEHadronOnium.so
+set MEgg2ChiB23P:Parameters /Herwig/OniumParameters
+set MEgg2ChiB23P:State bbbar
+set MEgg2ChiB23P:PrincipalQuantumNumber 3
+
+# g g -> eta_b2(1D)
+create Herwig::MEGGto1D2 MEgg2EtaB21D HwMEHadronOnium.so
+set MEgg2EtaB21D:Parameters /Herwig/OniumParameters
+set MEgg2EtaB21D:State bbbar
+set MEgg2EtaB21D:PrincipalQuantumNumber 1
+
+##########################################################
+# DIS matrix elements
+##########################################################
+
+# neutral current
+create Herwig::MENeutralCurrentDIS MEDISNC
+newdef MEDISNC:Coupling /Herwig/Shower/AlphaQCDISR
+newdef MEDISNC:Contribution 0
+# charged current
+create Herwig::MEChargedCurrentDIS MEDISCC
+newdef MEDISCC:Coupling /Herwig/Shower/AlphaQCDISR
+newdef MEDISCC:Contribution 0
+
+# neutral current (POWHEG)
+create Herwig::MENeutralCurrentDIS PowhegMEDISNC
+newdef PowhegMEDISNC:Coupling /Herwig/Shower/AlphaQCDISR
+newdef PowhegMEDISNC:Contribution 1
+# charged current (POWHEG)
+create Herwig::MEChargedCurrentDIS PowhegMEDISCC
+newdef PowhegMEDISCC:Coupling /Herwig/Shower/AlphaQCDISR
+newdef PowhegMEDISCC:Contribution 1
+
+# neutral current (Polarised)
+create Herwig::MENeutralCurrentDIS MEDISNCPol
+newdef MEDISNCPol:Coupling /Herwig/Shower/AlphaQCDISR
+newdef MEDISNCPol:Contribution 0
+
+# neutral current (Polarised POWHEG)
+create Herwig::MENeutralCurrentDIS PowhegMEDISNCPol
+newdef PowhegMEDISNCPol:Coupling /Herwig/Shower/AlphaQCDISR
+newdef PowhegMEDISNCPol:Contribution 1
+
+##########################################################
+# Gamma-Gamma matrix elements
+##########################################################
+
+# fermion-antiferimon
+create Herwig::MEGammaGamma2X MEgg2ff HwMEGammaGamma.so
+create Herwig::GammaGamma2ffAmplitude gg2ffAmp
+newdef MEgg2ff:Amplitude gg2ffAmp
+
+# W+ W-
+create Herwig::MEGammaGamma2WW MEgg2WW HwMEGammaGamma.so
+
+# f f -> f f pi0,eta,eta' via 2 photon process
+# pi0
+create Herwig::MEff2ffX MEff2ffpi0
+create Herwig::GammaGamma2PseudoScalarAmplitude AmpGG2pi0
+newdef MEff2ffpi0:Amplitude AmpGG2pi0
+set AmpGG2pi0:FTT 0.274
+set AmpGG2pi0:LambdaP2 0.6
+set AmpGG2pi0:Particle /Herwig/Particles/pi0
+# eta
+create Herwig::MEff2ffX MEff2ffeta
+create Herwig::GammaGamma2PseudoScalarAmplitude AmpGG2eta
+newdef MEff2ffeta:Amplitude AmpGG2eta
+set AmpGG2eta:FTT 0.274
+set AmpGG2eta:LambdaP2 0.6
+set AmpGG2eta:Particle /Herwig/Particles/eta
+# eta'
+create Herwig::MEff2ffX MEff2ffetaPrime
+create Herwig::GammaGamma2PseudoScalarAmplitude AmpGG2etaPrime
+set AmpGG2etaPrime:Particle /Herwig/Particles/eta'
+set AmpGG2etaPrime:FTT 0.344
+set AmpGG2etaPrime:LambdaP2 0.6
+set AmpGG2etaPrime:MassOption OffShell
+newdef MEff2ffetaPrime:Amplitude AmpGG2etaPrime
+
+# f f -> f f eta_c via 2 photon process
+create Herwig::MEff2ffX MEff2ffEtaC1S
+create Herwig::GammaGamma2Onium1S0Amplitude AmpGG2EtaC1S HwMEGammaGammaOnium.so
+set AmpGG2EtaC1S:Parameters /Herwig/OniumParameters
+set AmpGG2EtaC1S:State ccbar
+set AmpGG2EtaC1S:MassOption OffShell
+set AmpGG2EtaC1S:PrincipalQuantumNumber 1
+set MEff2ffEtaC1S:Amplitude AmpGG2EtaC1S
+
+# f f -> f f eta_c(2S) via 2 photon process
+create Herwig::MEff2ffX MEff2ffEtaC2S
+create Herwig::GammaGamma2Onium1S0Amplitude AmpGG2EtaC2S HwMEGammaGammaOnium.so
+set AmpGG2EtaC2S:Parameters /Herwig/OniumParameters
+set AmpGG2EtaC2S:State ccbar
+set AmpGG2EtaC2S:MassOption OffShell
+set AmpGG2EtaC2S:PrincipalQuantumNumber 2
+set MEff2ffEtaC2S:Amplitude AmpGG2EtaC2S
+
+# f f -> f f chi_c0(1P) via 2 photon process
+create Herwig::MEff2ffX MEff2ffChiC01P
+create Herwig::GammaGamma2Onium3P0Amplitude AmpGG2ChiC01P HwMEGammaGammaOnium.so
+set AmpGG2ChiC01P:Parameters /Herwig/OniumParameters
+set AmpGG2ChiC01P:State ccbar
+set AmpGG2ChiC01P:MassOption OffShell
+set AmpGG2ChiC01P:PrincipalQuantumNumber 1
+set MEff2ffChiC01P:Amplitude AmpGG2ChiC01P
+
+# f f -> f f chi_c2(1P) via 2 photon process
+create Herwig::MEff2ffX MEff2ffChiC21P
+create Herwig::GammaGamma2Onium3P2Amplitude AmpGG2ChiC21P HwMEGammaGammaOnium.so
+set AmpGG2ChiC21P:Parameters /Herwig/OniumParameters
+set AmpGG2ChiC21P:State ccbar
+set AmpGG2ChiC21P:MassOption OffShell
+set AmpGG2ChiC21P:PrincipalQuantumNumber 1
+set MEff2ffChiC21P:Amplitude AmpGG2ChiC21P
+
+# f f -> f f chi_c0(2P) via 2 photon process
+create Herwig::MEff2ffX MEff2ffChiC02P
+create Herwig::GammaGamma2Onium3P0Amplitude AmpGG2ChiC02P HwMEGammaGammaOnium.so
+set AmpGG2ChiC02P:Parameters /Herwig/OniumParameters
+set AmpGG2ChiC02P:State ccbar
+set AmpGG2ChiC02P:MassOption OffShell
+set AmpGG2ChiC02P:PrincipalQuantumNumber 2
+set MEff2ffChiC02P:Amplitude AmpGG2ChiC02P
+
+# f f -> f f chi_c2(2P) via 2 photon process
+create Herwig::MEff2ffX MEff2ffChiC22P
+create Herwig::GammaGamma2Onium3P2Amplitude AmpGG2ChiC22P HwMEGammaGammaOnium.so
+set AmpGG2ChiC22P:Parameters /Herwig/OniumParameters
+set AmpGG2ChiC22P:State ccbar
+set AmpGG2ChiC22P:MassOption OffShell
+set AmpGG2ChiC22P:PrincipalQuantumNumber 2
+set MEff2ffChiC22P:Amplitude AmpGG2ChiC22P
+
+# f f -> f f eta_b via 2 photon process
+create Herwig::MEff2ffX MEff2ffEtaB1S
+create Herwig::GammaGamma2Onium1S0Amplitude AmpGG2EtaB1S HwMEGammaGammaOnium.so
+set AmpGG2EtaB1S:Parameters /Herwig/OniumParameters
+set AmpGG2EtaB1S:State bbbar
+set AmpGG2EtaB1S:MassOption OffShell
+set AmpGG2EtaB1S:PrincipalQuantumNumber 1
+set AmpGG2EtaB1S:Lambda2 89.4916
+set MEff2ffEtaB1S:Amplitude AmpGG2EtaB1S
+
+# f f -> f f eta_b(2S) via 2 photon process
+create Herwig::MEff2ffX MEff2ffEtaB2S
+create Herwig::GammaGamma2Onium1S0Amplitude AmpGG2EtaB2S HwMEGammaGammaOnium.so
+set AmpGG2EtaB2S:Parameters /Herwig/OniumParameters
+set AmpGG2EtaB2S:State bbbar
+set AmpGG2EtaB2S:MassOption OffShell
+set AmpGG2EtaB2S:PrincipalQuantumNumber 2
+set AmpGG2EtaB2S:Lambda2 89.4916
+set MEff2ffEtaB2S:Amplitude AmpGG2EtaB2S
+
+# f f -> f f eta_b(3S) via 2 photon process
+create Herwig::MEff2ffX MEff2ffEtaB3S
+create Herwig::GammaGamma2Onium1S0Amplitude AmpGG2EtaB3S HwMEGammaGammaOnium.so
+set AmpGG2EtaB3S:Parameters /Herwig/OniumParameters
+set AmpGG2EtaB3S:State bbbar
+set AmpGG2EtaB3S:MassOption OffShell
+set AmpGG2EtaB3S:PrincipalQuantumNumber 3
+set AmpGG2EtaB3S:Lambda2 89.4916
+set MEff2ffEtaB3S:Amplitude AmpGG2EtaB3S
+
+# f f -> f f chi_b0(1P) via 2 photon process
+create Herwig::MEff2ffX MEff2ffChiB01P
+create Herwig::GammaGamma2Onium3P0Amplitude AmpGG2ChiB01P HwMEGammaGammaOnium.so
+set AmpGG2ChiB01P:Parameters /Herwig/OniumParameters
+set AmpGG2ChiB01P:State bbbar
+set AmpGG2ChiB01P:MassOption OffShell
+set AmpGG2ChiB01P:PrincipalQuantumNumber 1
+set AmpGG2ChiB01P:Lambda2 89.4916
+set MEff2ffChiB01P:Amplitude AmpGG2ChiB01P
+
+# f f -> f f chi_b2(1P) via 2 photon process
+create Herwig::MEff2ffX MEff2ffChiB21P
+create Herwig::GammaGamma2Onium3P2Amplitude AmpGG2ChiB21P HwMEGammaGammaOnium.so
+set AmpGG2ChiB21P:Parameters /Herwig/OniumParameters
+set AmpGG2ChiB21P:State bbbar
+set AmpGG2ChiB21P:MassOption OffShell
+set AmpGG2ChiB21P:PrincipalQuantumNumber 1
+set AmpGG2ChiB21P:Lambda2 89.4916
+set MEff2ffChiB21P:Amplitude AmpGG2ChiB21P
+
+# f f -> f f chi_b0(2P) via 2 photon process
+create Herwig::MEff2ffX MEff2ffChiB02P
+create Herwig::GammaGamma2Onium3P0Amplitude AmpGG2ChiB02P HwMEGammaGammaOnium.so
+set AmpGG2ChiB02P:Parameters /Herwig/OniumParameters
+set AmpGG2ChiB02P:State bbbar
+set AmpGG2ChiB02P:MassOption OffShell
+set AmpGG2ChiB02P:PrincipalQuantumNumber 2
+set AmpGG2ChiB02P:Lambda2 89.4916
+set MEff2ffChiB02P:Amplitude AmpGG2ChiB02P
+
+# f f -> f f chi_b2(2P) via 2 photon process
+create Herwig::MEff2ffX MEff2ffChiB22P
+create Herwig::GammaGamma2Onium3P2Amplitude AmpGG2ChiB22P HwMEGammaGammaOnium.so
+set AmpGG2ChiB22P:Parameters /Herwig/OniumParameters
+set AmpGG2ChiB22P:State bbbar
+set AmpGG2ChiB22P:MassOption OffShell
+set AmpGG2ChiB22P:PrincipalQuantumNumber 2
+set AmpGG2ChiB22P:Lambda2 89.4916
+set MEff2ffChiB22P:Amplitude AmpGG2ChiB22P
+
+# f f -> f f chi_b0(3P) via 2 photon process
+create Herwig::MEff2ffX MEff2ffChiB03P
+create Herwig::GammaGamma2Onium3P0Amplitude AmpGG2ChiB03P HwMEGammaGammaOnium.so
+set AmpGG2ChiB03P:Parameters /Herwig/OniumParameters
+set AmpGG2ChiB03P:State bbbar
+set AmpGG2ChiB03P:MassOption OffShell
+set AmpGG2ChiB03P:PrincipalQuantumNumber 3
+set AmpGG2ChiB03P:Lambda2 89.4916
+set MEff2ffChiB03P:Amplitude AmpGG2ChiB03P
+
+# f f -> f f chi_b2(3P) via 2 photon process
+create Herwig::MEff2ffX MEff2ffChiB23P
+create Herwig::GammaGamma2Onium3P2Amplitude AmpGG2ChiB23P HwMEGammaGammaOnium.so
+set AmpGG2ChiB23P:Parameters /Herwig/OniumParameters
+set AmpGG2ChiB23P:State bbbar
+set AmpGG2ChiB23P:MassOption OffShell
+set AmpGG2ChiB23P:PrincipalQuantumNumber 3
+set AmpGG2ChiB23P:Lambda2 89.4916
+set MEff2ffChiB23P:Amplitude AmpGG2ChiB23P
+
+# f f -> f f eta_b2(1D) via 2 photon process
+create Herwig::MEff2ffX MEff2ffEtaB21D
+create Herwig::GammaGamma2Onium1D2Amplitude AmpGG2EtaB21D HwMEGammaGammaOnium.so
+set AmpGG2EtaB21D:Parameters /Herwig/OniumParameters
+set AmpGG2EtaB21D:State bbbar
+set AmpGG2EtaB21D:MassOption OffShell
+set AmpGG2EtaB21D:PrincipalQuantumNumber 1
+set AmpGG2EtaB21D:Lambda2 89.4916
+set MEff2ffEtaB21D:Amplitude AmpGG2EtaB21D
+
+##########################################################
+# Gamma-Hadron matrix elements
+##########################################################
+
+# gamma parton -> 2 jets
+create Herwig::MEGammaP2Jets MEGammaP2Jets HwMEGammaHadron.so
+
+##########################################################
+# Set up the Subprocesses
+#
+# Generic for all colliders
+##########################################################
+create ThePEG::SubProcessHandler SubProcess
+newdef SubProcess:PartonExtractor /Herwig/Partons/PPExtractor

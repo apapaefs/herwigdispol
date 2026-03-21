@@ -1,0 +1,8 @@
+# -*- ThePEG-repository -*-
+##################################################
+# select the analyses
+##################################################
+# CMS jet mass
+insert /Herwig/Analysis/RivetAnalysis:Analyses 0 CMS_2013_I1224539:JMODE=Z
+# CMS Z ang correlations and event shapes
+insert /Herwig/Analysis/RivetAnalysis:Analyses 0 CMS_2013_I1209721

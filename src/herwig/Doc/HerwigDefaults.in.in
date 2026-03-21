@@ -1,0 +1,54 @@
+# @configure_input@
+#
+# output interfaces for documentation
+# the following need to come first
+globallibrary Herwig.so
+
+library HwWeakCurrents.so
+#
+library Hw64Decay.so
+library HwAnalysis.so
+library HwFormFactors.so
+library HwMamboDecay.so
+library HwMEHadronFast.so
+library HwMEHadron.so
+library HwMEDIS.so
+library HwMELepton.so
+library HwMEGammaGamma.so
+library HwMEGammaHadron.so
+library HwPowhegMEHadron.so
+library HwPowhegMELepton.so
+library JetCuts.so
+library SimpleKTCut.so
+library HwMPI.so
+library HwReggeonPDF.so
+library HwPomeronPDF.so
+library HwPomeronFlux.so
+library HwPerturbativeDecay.so
+library HwShower.so
+library HwPartonicDecay.so
+library HwSMDecay.so
+library HwTauDecay.so
+library HwTMDecay.so
+library HwBaryonDecay.so
+library HwSOPHTY.so
+library HwVMDecay.so
+library HwSatPDF.so
+library HwIncomingPhotonEvolver.so
+@LOAD_BSM@
+library HwDipoleMatching.so
+library HwDipoleShowerAlphaS.so
+library HwDipoleShower.so
+library HwDipoleMatching.so
+library HwMatchboxBuiltin.so
+library HwMatchboxCuts.so
+library HwMatchboxGoSam.so
+library HwMatchboxMadGraph.so
+library HwMatchboxNJet.so
+library HwMatchboxOpenLoops.so
+library HwMatchboxScales.so
+library HwMatchboxVBFNLO.so
+library HwMatching.so
+library HwQTildeMatching.so
+library HwKrknloEventReweight.so
+doxygendump Herwig:: AllInterfaces.h

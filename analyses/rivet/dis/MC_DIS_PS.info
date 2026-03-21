@@ -1,0 +1,30 @@
+Name: MC_DIS_PS
+Summary: MC DIS analysis for Breit-frame shower-sensitive and particle-level spin-correlation observables
+Status: UNVALIDATED
+Authors:
+ - Andreas Papaefstathiou <apapaefs@kennesaw.edu> (modified)
+
+Options:
+ - JETINPUT=FULL,HARDPARTONS,TOP2PARTONS,TOP3PARTONS
+ - DISMODE=NC,CC
+
+RunInfo: Suitable for DIS.
+NumEvents: 1000
+PtCuts: [0]
+Beams: [[p+, e-], [p+, e+]]
+Description:
+  Analysis of DIS Breit-frame dijet observables together with shower-sensitive
+  jet observables. The baseline control histograms match MC_DIS_BREIT, while
+  the additional histograms probe accepted extra radiation and current-
+  hemisphere particle-level spin-correlation structure after the standard
+  dijet selection.
+  The DIS event selection uses 49 < Q^2 < 2500 GeV^2 together with
+  0.2 < y < 0.6.
+  The JETINPUT option selects either the full DIS final state (FULL, default),
+  only final-state q/g partons from the Rivet DIS final state (HARDPARTONS),
+  the hardest 2 final-state q/g partons from the Rivet DIS final state
+  (TOP2PARTONS), or the hardest 3 such partons (TOP3PARTONS) before
+  clustering in the Breit frame.
+  Particle-level observables are constructed from visible stable particles in
+  the Breit-frame current hemisphere, excluding the scattered lepton.
+NeedsCrossSection: yes

@@ -1,0 +1,62 @@
+#! /usr/bin/env bash
+# src/thepeg-config.  Generated from thepeg-config.in by configure.
+
+prefix=/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4
+exec_prefix=${prefix}
+datarootdir=${prefix}/share
+
+tmp=$(echo $* | grep -E -- '--\<help\>|-\<h\>')
+if test $# -eq 0 || test -n "$tmp"; then
+    echo "thepeg-config: configuration tool for the ThePEG event generator framework"
+    echo "               http://projects.hepforge.org/thepeg/"
+    echo
+    echo "Usage: `basename $0` [Option]"
+    echo "Options:"
+    echo "  --help | -h       : show this help message"
+    echo "  --prefix          : show the installation prefix (cf. autoconf)"
+    echo "  --datadir         : show the path to the directory containing shared data"
+    echo "  --libdir          : show the path to the directory containing the libraries"
+    echo "  --includedir      : show the path to the directory containing the headers"
+    echo "  --cppflags        : show the required CPPFLAGS for building against ThePEG"
+    echo "  --ldflags         : show the required LDFLAGS for linking against ThePEG"
+    echo "  --ldlibs          : show the required libraries for linking against ThePEG"
+    echo "  --rivet-include   : show the path to the directory containing the Rivet headers"
+    echo "  --fastjet-include : show the path to the directory containing the FastJet headers"
+    echo "  --rivet-libs      : show the required libraries for linking against Rivet"
+    echo "  --fastjet-libs    : show the required libraries for linking against FastJet"
+
+    echo
+fi
+
+tmp=$(echo "$*" | grep -E -- '--\<prefix\>')
+test -n "$tmp" && echo $prefix
+
+tmp=$(echo "$*" | grep -E -- '--\<datadir\>')
+test -n "$tmp" && echo ${datarootdir}/ThePEG
+
+tmp=$(echo "$*" | grep -E -- '--\<libdir\>')
+test -n "$tmp" && echo ${exec_prefix}/lib/ThePEG
+
+tmp=$(echo "$*" | grep -E -- '--\<includedir\>')
+test -n "$tmp" && echo ${prefix}/include
+
+tmp=$(echo "$*" | grep -E -- '--\<cppflags\>')
+test -n "$tmp" && echo -I${prefix}/include  -I/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/include -I/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/include
+
+tmp=$(echo "$*" | grep -E -- '--\<ldflags\>')
+test -n "$tmp" && echo  -L/usr/lib -L/usr/lib
+
+tmp=$(echo "$*" | grep -E -- '--\<ldlibs\>')
+test -n "$tmp" && echo -lz 
+
+tmp=$(echo "$*" | grep -E -- '--\<rivet-include\>')
+test -n "$tmp" && echo -I/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/include -I/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/include -I/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/include -I/usr/include -I/usr/include/hdf5/serial -I/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/include -I/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/include
+
+tmp=$(echo "$*" | grep -E -- '--\<fastjet-include\>')
+test -n "$tmp" && echo -I/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/include
+
+tmp=$(echo "$*" | grep -E -- '--\<rivet-libs\>')
+test -n "$tmp" && echo -L/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/lib -R/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/lib -lRivet
+
+tmp=$(echo "$*" | grep -E -- '--\<fastjet-libs\>')
+test -n "$tmp" && echo -R/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/lib -L/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/lib -lfastjettools -lfastjet -lm -lfastjetplugins -lsiscone_spherical -lsiscone

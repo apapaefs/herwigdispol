@@ -1,0 +1,120 @@
+# -*- ThePEG-repository -*-
+
+##################################################
+# Example generator based on DIS parameters
+# usage: Herwig read DIS.in
+##################################################
+
+read snippets/EPCollider.in
+read snippets/PolarizedEP.in
+# for fixed target
+# read snippets/FixedTarget.in
+
+##################################################
+# Polarized PDF
+##################################################
+
+create ThePEG::LHAPDF /Herwig/Partons/DiffPDF
+set /Herwig/Partons/DiffPDF:RemnantHandler /Herwig/Partons/HadronRemnants
+#set /Herwig/Partons/DiffPDF:PDFName NNPDFpol20_nlo_as_01180_mhou
+set /Herwig/Partons/DiffPDF:PDFName NNPDFpol11_100
+
+set  /Herwig/Partons/EPPolarizedExtractor:SecondLongitudinalDifferencePDF /Herwig/Partons/DiffPDF
+set  /Herwig/Partons/EPPolarizedExtractor:FirstLongitudinalPolarization -1
+set  /Herwig/Partons/EPPolarizedExtractor:SecondLongitudinalPolarization 1
+
+
+##################################################
+# Technical parameters for this run
+##################################################
+cd /Herwig/Generators
+# no pdfs for leptons
+set /Herwig/Shower/ShowerHandler:PDFB /Herwig/Partons/ShowerLOPDF
+set /Herwig/Partons/MPIExtractor:SecondPDF  /Herwig/Partons/MPIPDF
+set /Herwig/Partons/EPPolarizedExtractor:SecondPDF  /Herwig/Partons/HardNLOPDF
+set /Herwig/Shower/ShowerHandler:Interactions QEDQCD
+
+set EventGenerator:EventHandler:BeamB /Herwig/Particles/p+
+set EventGenerator:EventHandler:LuminosityFunction:BeamEMaxB 275.*GeV
+set EventGenerator:EventHandler:BeamA /Herwig/Particles/e-
+set EventGenerator:EventHandler:LuminosityFunction:BeamEMaxA 18.*GeV
+set /Herwig/Cuts/NeutralCurrentCut:MinW2 25.
+set /Herwig/Cuts/NeutralCurrentCut:MaxW2 2500.
+set /Herwig/Cuts/ChargedCurrentCut:MinW2 0.
+set /Herwig/Cuts/ChargedCurrentCut:MaxW2 1e10
+set /Herwig/Cuts/Cuts:MHatMin 0.
+
+##################################################
+# DIS physics parameters (override defaults here) 
+##################################################
+
+# DISABLE HADRONIZATION
+set EventGenerator:EventHandler:HadronizationHandler  NULL
+set /Herwig/Analysis/Basics:CheckQuark false
+
+##################################################
+# Matrix Elements for lepton-hadron collisions 
+# (by default only neutral-current switched on)
+##################################################
+cd /Herwig/MatrixElements/
+
+# Neutral current DIS
+insert SubProcess:MatrixElements[0] MEDISNC
+#set MEDISNC:GammaZ Gamma
+# Neutral current DIS - POLARIZED (TESTING)
+#insert SubProcess:MatrixElements[0] MEDISNCPol
+# Charged current matrix element
+#insert SubProcess:MatrixElements[0] MEDISCC
+
+##################################################
+# NLO IN POWHEG SCHEME
+##################################################
+
+###################################################
+##  Need to use an NLO PDF
+###################################################
+# set /Herwig/Particles/p+:PDF    /Herwig/Partons/HardNLOPDF
+# set /Herwig/Particles/pbar-:PDF /Herwig/Partons/HardNLOPDF
+# set /Herwig/Partons/EPExtractor:SecondPDF  /Herwig/Partons/HardNLOPDF
+#
+###################################################
+##  Setup the POWHEG shower
+###################################################
+#cd /Herwig/Shower
+#set ShowerHandler:HardEmission POWHEG
+###################################################
+## NLO Matrix Elements for lepton-hadron collisions 
+## in the POWHEG approach
+###################################################
+#
+#cd /Herwig/MatrixElements/
+#
+## Neutral current DIS
+#insert SubProcess:MatrixElements[0] PowhegMEDISNC
+## Neutral current DIS -- POLARIZED (TESTING
+#insert SubProcess:MatrixElements[0] PowhegMEDISNCPol
+## Charged current matrix element
+#insert SubProcess:MatrixElements[0] PowhegMEDISCC
+
+##################################################
+## prepare for Rivet analysis or HepMC output
+## when running with parton shower
+##################################################
+read snippets/Rivet.in
+# HERA F2
+#insert /Herwig/Analysis/Rivet:Analyses 0 HERA_2015_I1377206
+# ZEUS D production
+#insert /Herwig/Analysis/Rivet:Analyses 0 ZEUS_2008_I810112
+# MC DIS EXTRA
+insert /Herwig/Analysis/Rivet:Analyses 0 MC_DIS_BREIT
+
+
+#insert /Herwig/Analysis/Rivet:Analyses 0 XXX_2015_ABC123
+#read snippets/HepMC.in
+#set /Herwig/Analysis/HepMC:PrintEvent NNN
+
+##################################################
+# Save run for later usage with 'Herwig run'
+##################################################
+cd /Herwig/Generators
+saverun DIS-POL-LO_MP EventGenerator

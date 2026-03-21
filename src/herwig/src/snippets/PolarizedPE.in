@@ -1,0 +1,6 @@
+# -*- ThePEG-repository -*-
+cd /Herwig/MatrixElements/Matchbox
+set Factory:PartonExtractor /Herwig/Partons/EPPolarizedExtractor
+set /Herwig/Merging/MergingFactory:PartonExtractor /Herwig/Partons/EPPolarizedExtractor
+cd /Herwig/Generators/
+set /Herwig/MatrixElements/SubProcess:PartonExtractor /Herwig/Partons/PEPolarizedExtractor

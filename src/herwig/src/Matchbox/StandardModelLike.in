@@ -1,0 +1,22 @@
+# -*- ThePEG-repository -*-
+
+set /Herwig/MatrixElements/Matchbox/Factory:EnforceChargeConservation Yes
+set /Herwig/MatrixElements/Matchbox/Factory:EnforceColourConservation Yes
+
+set /Herwig/MatrixElements/Matchbox/Factory:EnforceLeptonNumberConservation Yes
+set /Herwig/MatrixElements/Matchbox/Factory:EnforceQuarkNumberConservation Yes
+
+set /Herwig/MatrixElements/Matchbox/Factory:LeptonFlavourDiagonal Yes
+
+
+
+
+set /Herwig/Merging/MergingFactory:EnforceChargeConservation Yes
+set /Herwig/Merging/MergingFactory:EnforceColourConservation Yes
+
+set /Herwig/Merging/MergingFactory:EnforceLeptonNumberConservation Yes
+set /Herwig/Merging/MergingFactory:EnforceQuarkNumberConservation Yes
+
+set /Herwig/Merging/MergingFactory:LeptonFlavourDiagonal Yes
+
+

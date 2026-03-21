@@ -1,0 +1,18 @@
+# -*- ThePEG-repository -*-
+#
+#  Settings for the pT preserving tune of arXiv:1904.11866
+#  http://inspirehep.net/record/1731587
+#
+# pT scheme
+set /Herwig/Shower/PowhegShowerHandler:EvolutionScheme pT
+set /Herwig/Shower/ShowerHandler:EvolutionScheme pT
+set /Herwig/Shower/KinematicsReconstructor:FinalFinalWeight No
+# don't enforce strict angular ordering
+set /Herwig/Shower/QtoQGammaSudakov:StrictAO No
+set /Herwig/Shower/QtoQGSudakov:StrictAO No
+set /Herwig/Shower/GtoGGSudakov:StrictAO No
+set /Herwig/Shower/WtoWGammaSudakov:StrictAO No
+set /Herwig/Shower/GtoQQbarSudakov:StrictAO No
+set /Herwig/Shower/GammatoQQbarSudakov:StrictAO No
+set /Herwig/Shower/QtoGQSudakov:StrictAO No
+set /Herwig/Shower/QtoGammaQSudakov:StrictAO No

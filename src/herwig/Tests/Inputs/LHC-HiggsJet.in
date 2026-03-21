@@ -1,0 +1,17 @@
+# -*- ThePEG-repository -*-
+read snippets/PPCollider.in
+read LHC.common
+erase /Herwig/EventHandlers/EventHandler:PostSubProcessHandlers 0 
+cd /Herwig/Generators
+set EventGenerator:EventHandler:StatLevel Full
+set EventGenerator:EventHandler:CascadeHandler NULL
+set EventGenerator:EventHandler:HadronizationHandler NULL
+set EventGenerator:EventHandler:DecayHandler NULL
+set EventGenerator:EventHandler:Sampler:Ntry 100000
+cd /Herwig/MatrixElements/
+insert SubProcess:MatrixElements[0] MEHiggsJet
+cd /Herwig/Generators
+set /Herwig/Analysis/Basics:CheckQuark No
+create Herwig::HiggsJetAnalysis HiggsJetTest HwAnalysis.so
+insert EventGenerator:AnalysisHandlers 0 HiggsJetTest
+saverun LHC-HiggsJet EventGenerator

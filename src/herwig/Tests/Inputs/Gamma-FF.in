@@ -1,0 +1,20 @@
+# -*- ThePEG-repository -*-
+read snippets/EECollider.in
+read Gamma.common
+cd /Herwig/MatrixElements
+insert SubProcess:MatrixElements 0 /Herwig/MatrixElements/MEgg2ff
+cd /Herwig/Generators
+create Herwig::GammaMETest TestFF GammaTest.so
+insert EventGenerator:AnalysisHandlers 0 TestFF
+set EventGenerator:EventHandler:CascadeHandler NULL
+set EventGenerator:EventHandler:HadronizationHandler NULL
+
+set /Herwig/Particles/tau-:Stable Stable
+set /Herwig/Particles/tau+:Stable Stable
+set /Herwig/Particles/t:Stable Stable
+set /Herwig/Particles/tbar:Stable Stable
+
+set /Herwig/ACDCSampler:Ntry 100000
+set /Herwig/Analysis/Basics:CheckQuark No
+saverun Gamma-FF EventGenerator
+

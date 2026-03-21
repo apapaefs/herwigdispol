@@ -1,0 +1,30 @@
+Name: MC_DIS_BREIT
+Summary: MC DIS analysis for DIS kinematic observables - Breit Frame (inspired by ZEUS_2010_I875006)
+Status: VALIDATED
+Authors:
+ - Andreas Papaefstathiou <apapaefs@kennesaw.edu> (modified)
+
+Options:
+ - JETINPUT=FULL,HARDPARTONS,TOP2PARTONS,TOP3PARTONS
+ - DISMODE=NC,CC
+
+RunInfo: Suitable for DIS.
+NumEvents: 1000
+PtCuts: [0]
+Beams: [[p+, e-], [p+, e+]]
+Description:
+  Analysis of kinematic observables in DIS.
+  The analysis name MC_DIS_BREIT is kept for historical continuity; the plot
+  titles omit an explicit "Breit frame" label, but the jet-based observables
+  are still defined using Breit-frame kinematics.
+  The DIS event selection uses 49 < Q^2 < 2500 GeV^2 together with
+  0.2 < y < 0.6.
+  The DISMODE option defaults to NC and should be set to CC for charged-current
+  ep scattering so that the DIS kinematics and Breit-frame final state are
+  reconstructed with the outgoing neutrino as the scattered lepton.
+  The JETINPUT option selects either the full DIS final state (FULL, default)
+  only final-state q/g partons from the Rivet DIS final state (HARDPARTONS),
+  the hardest 2 final-state q/g partons from the Rivet DIS final state,
+  clustered in the Breit frame (TOP2PARTONS), or the hardest 3 such partons
+  clustered in the Breit frame (TOP3PARTONS), as the jet inputs.
+NeedsCrossSection: yes

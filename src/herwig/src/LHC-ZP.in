@@ -1,0 +1,116 @@
+# -*- ThePEG-repository -*-
+
+##################################################
+# Example generator for the Leptoquark model
+# in hadron collisions
+# The best way to use this is to make your own 
+# copy of this file and edit that as you require.
+#
+# The first section loads the model file which 
+# does not contain anything that users need to touch.
+#
+# The second section contains the user settings.
+###################################################
+
+read snippets/PPCollider.in
+
+# Set emission to POWHEG for radiation in decays
+set /Herwig/Shower/ShowerHandler:HardEmission POWHEG
+
+# read model
+read Zprime.model
+
+set /Herwig/Particles/t:Synchronized Not_synchronized
+set /Herwig/Particles/tbar:Synchronized Not_synchronized
+
+
+#set /Herwig/Particles/t/t->b,bbar,c;:Active Yes
+#set /Herwig/Particles/t/t->b,c,dbar;:Active Yes
+#set /Herwig/Particles/t/t->b,c,sbar;:Active Yes
+#set /Herwig/Particles/t/t->b,sbar,u;:Active Yes
+#set /Herwig/Particles/t/t->b,u,dbar;:Active Yes
+#set /Herwig/Particles/t/t->nu_e,e+,b;:Active No
+#set /Herwig/Particles/t/t->nu_mu,mu+,b;:Active No
+#set /Herwig/Particles/t/t->nu_tau,tau+,b;:Active No
+#set /Herwig/Particles/tbar/tbar->b,bbar,cbar;:Active No
+#set /Herwig/Particles/tbar/tbar->bbar,cbar,d;:Active No
+#set /Herwig/Particles/tbar/tbar->bbar,cbar,s;:Active No
+#set /Herwig/Particles/tbar/tbar->bbar,s,ubar;:Active No
+#set /Herwig/Particles/tbar/tbar->bbar,ubar,d;:Active No
+#set /Herwig/Particles/tbar/tbar->nu_ebar,e-,bbar;:Active Yes
+#set /Herwig/Particles/tbar/tbar->nu_mubar,mu-,bbar;:Active Yes
+#set /Herwig/Particles/tbar/tbar->nu_taubar,tau-,bbar;:Active No
+
+set /Herwig/Particles/t/t->b,bbar,c;:Active No
+set /Herwig/Particles/t/t->b,c,dbar;:Active No
+set /Herwig/Particles/t/t->b,c,sbar;:Active No
+set /Herwig/Particles/t/t->b,sbar,u;:Active No
+set /Herwig/Particles/t/t->b,u,dbar;:Active No
+set /Herwig/Particles/t/t->nu_e,e+,b;:Active Yes
+set /Herwig/Particles/t/t->nu_mu,mu+,b;:Active Yes
+set /Herwig/Particles/t/t->nu_tau,tau+,b;:Active No
+set /Herwig/Particles/tbar/tbar->b,bbar,cbar;:Active Yes
+set /Herwig/Particles/tbar/tbar->bbar,cbar,d;:Active Yes
+set /Herwig/Particles/tbar/tbar->bbar,cbar,s;:Active Yes
+set /Herwig/Particles/tbar/tbar->bbar,s,ubar;:Active Yes
+set /Herwig/Particles/tbar/tbar->bbar,ubar,d;:Active Yes
+set /Herwig/Particles/tbar/tbar->nu_ebar,e-,bbar;:Active No
+set /Herwig/Particles/tbar/tbar->nu_mubar,mu-,bbar;:Active No
+set /Herwig/Particles/tbar/tbar->nu_taubar,tau-,bbar;:Active No
+
+##################################################
+#
+# This section contains the user defined settings
+#
+##################################################
+# Example hard process: Incoming proton, outgoing leptoquarks
+cd /Herwig/NewPhysics
+
+set HPConstructor:Processes Exclusive
+
+insert HPConstructor:Incoming 0 /Herwig/Particles/u
+insert HPConstructor:Incoming 1 /Herwig/Particles/ubar
+insert HPConstructor:Incoming 2 /Herwig/Particles/d
+insert HPConstructor:Incoming 3 /Herwig/Particles/dbar
+insert HPConstructor:Incoming 4 /Herwig/Particles/s
+insert HPConstructor:Incoming 5 /Herwig/Particles/sbar
+insert HPConstructor:Incoming 6 /Herwig/Particles/c
+insert HPConstructor:Incoming 7 /Herwig/Particles/cbar
+insert HPConstructor:Incoming 8 /Herwig/Particles/g
+
+# Comment out the following line if Axigluon model is selected
+
+insert /Herwig/NewPhysics/HPConstructor:Excluded 0 /Herwig/Particles/g
+insert /Herwig/NewPhysics/HPConstructor:Excluded 1 /Herwig/Particles/t
+insert /Herwig/NewPhysics/HPConstructor:Excluded 2 /Herwig/Particles/tbar
+
+
+insert HPConstructor:Outgoing 0 /Herwig/Particles/t
+insert HPConstructor:Outgoing 1 /Herwig/Particles/tbar
+
+
+cd /Herwig/Analysis
+set Basics:CheckQuark No
+
+# Cuts
+cd /Herwig/Cuts
+set JetKtCut:MinKT 0.0*GeV
+set Cuts:MHatMax 13000.0*GeV
+set Cuts:MHatMin 0.0*GeV
+set PhotonKtCut:MinKT 0.0*GeV
+set PhotonKtCut:MinEta -10.
+set PhotonKtCut:MaxEta  10.
+set MassCut:MinM 0.*GeV
+
+##################################################
+## prepare for Rivet analysis or HepMC output
+## when running with parton shower
+##################################################
+#read snippets/Rivet.in
+#insert /Herwig/Analysis/Rivet:Analyses 0 XXX_2015_ABC123
+#read snippets/HepMC.in
+#set /Herwig/Analysis/HepMC:PrintEvent NNN
+
+# Other parameters for run
+cd /Herwig/Generators
+saverun LHC-ZP EventGenerator

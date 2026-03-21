@@ -1,0 +1,74 @@
+Initializing EvtGen 
+Setting EvtGen random number generator to the Herwig one.
+EvtGen:Defining EvtPythiaEngine: data tables defined in /home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/share/Pythia8/xmldoc
+EvtGen:Pythia 6 codes in decay files will be converted to Pythia 8 codes
+EvtGen:Using EvtGen random engine for Pythia 8 as well
+EvtGen:Creating generic Pythia generator
+
+ *------------------------------------------------------------------------------------* 
+ |                                                                                    | 
+ |  *------------------------------------------------------------------------------*  | 
+ |  |                                                                              |  | 
+ |  |                                                                              |  | 
+ |  |   PPP   Y   Y  TTTTT  H   H  III    A      Welcome to the Lund Monte Carlo!  |  | 
+ |  |   P  P   Y Y     T    H   H   I    A A     This is PYTHIA version 8.307      |  | 
+ |  |   PPP     Y      T    HHHHH   I   AAAAA    Last date of change: 25 Feb 2022  |  | 
+ |  |   P       Y      T    H   H   I   A   A                                      |  | 
+ |  |   P       Y      T    H   H  III  A   A    Now is 05 Mar 2026 at 15:51:54    |  | 
+ |  |                                                                              |  | 
+ |  |   Program documentation and an archive of historic versions is found on:     |  | 
+ |  |                                                                              |  | 
+ |  |                               https://pythia.org/                            |  | 
+ |  |                                                                              |  | 
+ |  |   PYTHIA is authored by a collaboration consisting of:                       |  | 
+ |  |                                                                              |  | 
+ |  |   Christian Bierlich, Nishita Desai, Leif Gellersen, Ilkka Helenius, Philip  |  | 
+ |  |   Ilten, Leif Lönnblad, Stephen Mrenna, Stefan Prestel, Christian Preuss,    |  | 
+ |  |   Torbjörn Sjöstrand, Peter Skands, Marius Utheim and Rob Verheyen.          |  | 
+ |  |                                                                              |  | 
+ |  |   The complete list of authors, including contact information and            |  | 
+ |  |   affiliations, can be found on https://pythia.org/.                         |  | 
+ |  |   Problems or bugs should be reported on email at authors@pythia.org.        |  | 
+ |  |                                                                              |  | 
+ |  |   The main program reference is 'An Introduction to PYTHIA 8.2',             |  | 
+ |  |   T. Sjöstrand et al, Comput. Phys. Commun. 191 (2015) 159                   |  | 
+ |  |   [arXiv:1410.3012 [hep-ph]]                                                 |  | 
+ |  |                                                                              |  | 
+ |  |   The main physics reference is the 'PYTHIA 6.4 Physics and Manual',         |  | 
+ |  |   T. Sjöstrand, S. Mrenna and P. Skands, JHEP05 (2006) 026 [hep-ph/0603175]  |  | 
+ |  |                                                                              |  | 
+ |  |   PYTHIA is released under the GNU General Public Licence version 2 or later.|  | 
+ |  |   Please respect the MCnet Guidelines for Event Generator Authors and Users. |  | 
+ |  |                                                                              |  | 
+ |  |   Disclaimer: this program comes without any guarantees.                     |  | 
+ |  |   Beware of errors and use common sense when interpreting results.           |  | 
+ |  |                                                                              |  | 
+ |  |   Copyright (C) 2022 Torbjörn Sjöstrand                                      |  | 
+ |  |                                                                              |  | 
+ |  |                                                                              |  | 
+ |  *------------------------------------------------------------------------------*  | 
+ |                                                                                    | 
+ *------------------------------------------------------------------------------------* 
+
+EvtGen:Creating alias Pythia generator
+EvtGen:Initializing EvtGen
+EvtGen:Storing known decay models
+EvtGen:Defining EvtBcToNPi model: Bc -> V + npi and Bc -> P + npi decays
+from A.V. Berezhnoy, A.K. Likhoded, A.V. Luchinsky: Phys.Rev.D 82, 014012 (2010) and arXiV:1104.0808.
+EvtGen:Main decay file name  :/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/share/EvtGen/DECAY_2010.DEC
+EvtGen:In readDecayFile, reading:/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/share/EvtGen/DECAY_2010.DEC
+EvtGen:Warning, sum of branching fractions for omega is 0.994
+EvtGen:rescaled to one! 
+EvtGen:Warning, sum of branching fractions for phi is 0.999
+EvtGen:rescaled to one! 
+EvtGen:Warning, sum of branching fractions for f_2 is 0.999
+EvtGen:rescaled to one! 
+EvtGen:Warning, sum of branching fractions for chi_c1 is 0.996
+EvtGen:rescaled to one! 
+EvtGen:Warning, sum of branching fractions for Upsilon(2S) is 0.992
+EvtGen:rescaled to one! 
+EvtGen:Warning, sum of branching fractions for Upsilon(3S) is 0.999
+EvtGen:rescaled to one! 
+EvtGen:Mixing type integer set to 1
+EvtGen:Done initializing EvtGen
+Finished initialisation of EvtGen 

@@ -1,0 +1,24 @@
+# -*- ThePEG-repository -*-
+
+read Matchbox/LO.in
+
+cd /Herwig/EventHandlers
+
+set EventHandler:CascadeHandler /Herwig/DipoleShower/DipoleShowerHandler
+read snippets/Dipole_AutoTunes_gss.in
+
+cd /Herwig/Analysis
+
+create ThePEG::RivetAnalysis Rivet RivetAnalysis.so
+create ThePEG::HepMCFile HepMC HepMCAnalysis.so
+
+cd /Herwig/Particles
+
+do c:UnsetHardProcessMass
+do cbar:UnsetHardProcessMass
+set c:NominalMass 0*GeV
+set cbar:NominalMass 0*GeV
+
+cd /Herwig/UnderlyingEvent
+set MEQCD2to2Fast:StrictFlavourScheme Yes
+

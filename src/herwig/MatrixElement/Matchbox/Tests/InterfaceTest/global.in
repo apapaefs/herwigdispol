@@ -1,0 +1,111 @@
+cd /Herwig/MatrixElements/Matchbox
+do PPFactory:StartParticleGroup t
+insert PPFactory:ParticleGroup 0 /Herwig/Particles/t
+do PPFactory:EndParticleGroup
+do PPFactory:StartParticleGroup tbar
+insert PPFactory:ParticleGroup 0 /Herwig/Particles/tbar
+do PPFactory:EndParticleGroup
+clear PPFactory:ParticleGroup p
+do PPFactory:StartParticleGroup p
+insert PPFactory:ParticleGroup 0 /Herwig/Particles/g
+insert PPFactory:ParticleGroup 0 /Herwig/Particles/u
+insert PPFactory:ParticleGroup 0 /Herwig/Particles/ubar
+do PPFactory:EndParticleGroup
+clear PPFactory:ParticleGroup j
+do PPFactory:StartParticleGroup j
+insert PPFactory:ParticleGroup 0 /Herwig/Particles/g
+insert PPFactory:ParticleGroup 0 /Herwig/Particles/u
+insert PPFactory:ParticleGroup 0 /Herwig/Particles/ubar
+do PPFactory:EndParticleGroup
+
+
+
+set PPFactory:OrderInAlphaS 0
+set PPFactory:OrderInAlphaEW 2
+#do PPFactory:Process p p e+ e-
+#do PPFactory:Process p p W+ W-
+#do PPFactory:Process p p W+ Z0
+#do PPFactory:Process p p Z0 Z0
+
+#set PPFactory:OrderInAlphaS 1 
+#set PPFactory:OrderInAlphaEW 2
+#do PPFactory:Process p p e+ e- j
+#do PPFactory:Process p p W+ W- j
+#do PPFactory:Process p p W+ Z0 j
+#do PPFactory:Process p p Z0 Z0 j
+
+set PPFactory:OrderInAlphaS 2
+set PPFactory:OrderInAlphaEW 0
+do PPFactory:Process p p t tbar
+#do PPFactory:Process p p j j
+
+
+set PPFactory:VirtualContributions No
+set PPFactory:RealContributions No
+
+cd /Herwig/Cuts
+set MassCut:MinM 66*GeV
+set MassCut:MaxM 116*GeV
+set Cuts:JetFinder JetFinder
+insert Cuts:MultiCuts 0 JetCuts
+#insert JetCuts:JetRegions 0 FirstJet
+# insert JetCuts:JetRegions 1 SecondJet
+
+
+
+
+
+
+###########################################################
+#  Only change if you know what you are doing.
+###########################################################
+cd /Herwig/MatrixElements/Matchbox/Amplitudes
+BUILDINclear /Herwig/MatrixElements/Matchbox/PPFactory:Amplitudes
+BUILDINinsert /Herwig/MatrixElements/Matchbox/PPFactory:Amplitudes 0 INTERFACE
+set /Herwig/Analysis/HepMCFile:Filename ../INTERFACE.hepmc
+
+cd /Herwig/Generators
+insert EventGenerator:AnalysisHandlers 0 /Herwig/Analysis/HepMCFile
+set /Herwig/Analysis/HepMCFile:PrintEvent 1000
+
+cd /Herwig/EventHandlers
+set EventHandler:Weighted Yes
+set EventHandler:Sampler  /Herwig/Samplers/Sampler
+set /Herwig/Samplers/Sampler:BinSampler /Herwig/Samplers/FlatBinSampler
+set /Herwig/Samplers/Sampler:FlatSubprocesses Yes
+set /Herwig/EventHandlers/EventHandler:LuminosityFunction:Energy 8000.0*GeV
+cd /Herwig/MatrixElements/Matchbox
+insert /Herwig/Generators/EventGenerator:EventHandler:SubProcessHandlers[0] PPFactory
+cd /Herwig/Generators
+set EventGenerator:EventHandler:CascadeHandler:MPIHandler NULL
+set EventGenerator:EventHandler:DecayHandler      NULL
+set EventGenerator:EventHandler:HadronizationHandler      NULL
+set EventGenerator:EventHandler:MultipleInteractionHandler      NULL
+set EventGenerator:EventHandler:CascadeHandler NULL
+# Note: If you want to calculate NLO corrections in the
+#       Higgs Effective Model (smehc) with GoSam virtual 
+#       Amplitudes and MadGraph TreeLevelAmplitude:
+# set GoSam:HiggsEff On
+# set MadGraph:Model heft
+ cd /Herwig/MatrixElements/Matchbox
+ set PPFactory:VirtualContributions No
+ set PPFactory:RealContributions No
+## Scale choice
+set /Herwig/MatrixElements/Matchbox/Scales/FixedScale:FixedScale 91.2*GeV
+set PPFactory:ScaleChoice /Herwig/MatrixElements/Matchbox/Scales/FixedScale
+cd /Herwig/Particles
+set d:NominalMass 0*GeV
+set dbar:NominalMass 0*GeV
+set u:NominalMass 0*GeV
+set ubar:NominalMass 0*GeV
+set s:NominalMass 0*GeV
+set sbar:NominalMass 0*GeV
+set c:NominalMass 0*GeV
+set cbar:NominalMass 0*GeV
+set b:NominalMass 0*GeV
+set bbar:NominalMass 0*GeV
+set /Herwig/Cuts/JetKtCut:MinKT 0.0*GeV
+set /Herwig/Generators/EventGenerator:EventHandler:CollisionCuts No
+do /Herwig/MatrixElements/Matchbox/PPFactory:ProductionMode
+cd /Herwig/Generators 
+saverun INTERFACE EventGenerator

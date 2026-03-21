@@ -1,0 +1,101 @@
+// -*- C++ -*-
+//
+// LeptoquarkModelSLQSLQGGVertex.h is a part of Herwig - A multi-purpose Monte Carlo event generator
+// Copyright (C) 2002-2019 The Herwig Collaboration
+//
+// Herwig is licenced under version 3 of the GPL, see COPYING for details.
+// Please respect the MCnet academic guidelines, see GUIDELINES for details.
+//
+#ifndef HERWIG_LeptoquarkModelSLQSLQGGVertex_H
+#define HERWIG_LeptoquarkModelSLQSLQGGVertex_H
+//
+// This is the declaration of the LeptoquarkModelSLQSLQGGVertex class.
+
+#include "ThePEG/Helicity/Vertex/Scalar/VVSSVertex.h"
+#include "Herwig/Models/Leptoquarks/LeptoquarkModel.h"
+
+namespace Herwig {
+using namespace ThePEG;
+    
+/** \ingroup Helicity
+ * 
+ *  The LeptoquarkModelSLQSLQGGVertex class is the implementation of the gluon
+ *  gluon coupling to pairs of scalar leptoquarks in the LeptoquarkModel. It inherits from the VVSSVertex 
+ *  and implements the setCoupling member
+ *
+ *  @see VVSSVertex
+ *  @see VertexBase
+ */
+class LeptoquarkModelSLQSLQGGVertex: public VVSSVertex {
+  
+public:
+  
+  /**
+   * Default constructor.
+   */
+  LeptoquarkModelSLQSLQGGVertex();
+  
+  /**
+   * Standard Init function used to initialize the interfaces.
+   */
+  static void Init();
+  
+  /**
+   * Calculate the couplings. 
+   * @param q2 The scale \f$q^2\f$ for the coupling at the vertex.
+   * @param part1 The ParticleData pointer for the first  particle.
+   * @param part2 The ParticleData pointer for the second particle.
+   * @param part3 The ParticleData pointer for the third  particle.
+   * @param part4 The ParticleData pointer for the third  particle.
+
+   */
+  virtual void setCoupling(Energy2 q2,tcPDPtr part1,tcPDPtr part2,tcPDPtr part3, tcPDPtr part4);
+
+protected:
+  
+  /** @name Clone Methods. */
+  //@{
+  /**
+   * Make a simple clone of this object.
+   * @return a pointer to the new object.
+   */
+  virtual IBPtr clone() const {return new_ptr(*this);}
+
+  /** Make a clone of this object, possibly modifying the cloned object
+   * to make it sane.
+   * @return a pointer to the new object.
+   */
+  virtual IBPtr fullclone() const {return new_ptr(*this);}
+  //@}
+
+protected:
+  
+  /**
+   * Initialize this object after the setup phase before saving and
+   * EventGenerator to disk.
+   * @throws InitException if object could not be initialized properly.
+   */
+  virtual void doinit();
+    
+private:
+  
+  /**
+   * Private and non-existent assignment operator.
+   */
+  LeptoquarkModelSLQSLQGGVertex & operator=(const LeptoquarkModelSLQSLQGGVertex &) = delete;
+  
+  /**
+   * The energy at which the coupling was last evaluated
+   */
+  Energy2 q2last_;
+
+  /**
+   * The coupling when it was last evaluated
+   */
+  Complex couplast_;
+
+};
+
+}
+
+#endif /* HERWIG_LeptoquarkModelSLQSLQGGVertex_H */

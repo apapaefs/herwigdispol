@@ -1,0 +1,24 @@
+# -*- ThePEG-repository -*-
+read snippets/EPCollider.in
+read DIS.common
+cd /Herwig/Generators
+set EventGenerator:EventHandler:CascadeHandler NULL
+set EventGenerator:EventHandler:HadronizationHandler NULL
+set EventGenerator:EventHandler:DecayHandler NULL
+cd /Herwig
+create Herwig::O2AlphaS AlphaS2 
+set Model:QCD/RunningAlphaS AlphaS2
+set Model:EW/CKM:theta_12 0.22274457
+set Model:EW/CKM:theta_13 0.
+set Model:EW/CKM:theta_23 0.
+set Model:EW/CKM:delta 0.
+create Herwig::AlphaEM AlphaEM2 
+set Model:EW/RunningAlphaEM AlphaEM2
+set /Herwig/Analysis/Basics:CheckQuark No
+cd /Herwig/MatrixElements/
+insert SubProcess:MatrixElements[0] MEDISCC
+set MEDISCC:MaxFlavour 4
+cd /Herwig/Generators
+create Herwig::DISTest ChargedTest DISTest.so
+insert EventGenerator:AnalysisHandlers 0 ChargedTest
+saverun DIS-Charged EventGenerator

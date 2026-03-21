@@ -1,0 +1,62 @@
+# -*- ThePEG-repository -*-
+
+##################################################
+# Example generator based on LEP parameters
+# usage: Herwig read LEP.in
+##################################################
+
+read snippets/EECollider.in
+
+##################################################
+# Change the electron/position PDFs
+##################################################
+set /Herwig/Particles/e+:PDF /Herwig/Partons/WWPDF
+set /Herwig/Particles/e-:PDF /Herwig/Partons/WWPDF
+set /Herwig/Shower/ShowerHandler:PDFA NULL
+set /Herwig/Shower/ShowerHandler:PDFB NULL
+
+##################################################
+# Selected the hard process
+##################################################
+cd /Herwig/MatrixElements
+
+# fermion-antifermion 
+insert SubProcess:MatrixElements 0 /Herwig/MatrixElements/MEgg2ff
+# W+W-
+#insert SubProcess:MatrixElements 0 /Herwig/MatrixElements/MEgg2WW
+
+
+##################################################
+# Gamma-Gamma physics parameters (override defaults) 
+##################################################
+cd /Herwig/Generators
+
+set EventGenerator:EventHandler:LuminosityFunction:Energy 500.
+
+cd /Herwig/Generators
+
+##################################################
+## prepare for Rivet analysis or HepMC output
+## when running with parton shower
+##################################################
+#read snippets/Rivet.in
+#insert /Herwig/Analysis/Rivet:Analyses 0 XXX_2015_ABC123
+#read snippets/HepMC.in
+#set /Herwig/Analysis/HepMC:PrintEvent NNN
+
+###################################################
+# Save run for later usage with 'Herwig run'
+##################################################
+saverun GammaGamma EventGenerator
+
+##################################################
+# uncomment this section for an example batch run
+# of two repeats with different parameters
+#
+# Note that a separate call of 'Herwig run' 
+# is not required
+##################################################
+# set EventGenerator:NumberOfEvents 100
+# run LEP-Zpole EventGenerator
+# set EventGenerator:EventHandler:LuminosityFunction:Energy 208.0
+# run LEP-maxE EventGenerator

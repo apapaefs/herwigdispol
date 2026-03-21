@@ -1,0 +1,190 @@
+# -*- ThePEG-repository -*-
+
+##################################################
+# Example generator based on DIS parameters
+# usage: Herwig read DIS.in
+##################################################
+
+read snippets/EPCollider.in
+read snippets/PolarizedEP.in
+# for fixed target
+# read snippets/FixedTarget.in
+
+set /Herwig/Particles/e-:PDF /Herwig/Partons/NoPDF
+set /Herwig/Particles/e+:PDF /Herwig/Partons/NoPDF
+
+##################################################
+# Polarized PDF
+##################################################
+
+create ThePEG::LHAPDF /Herwig/Partons/DiffPDF
+set /Herwig/Partons/DiffPDF:RemnantHandler /Herwig/Partons/HadronRemnants
+set /Herwig/Partons/DiffPDF:PDFName BDSSV24-NNLO
+
+set  /Herwig/Partons/EPPolarizedExtractor:SecondLongitudinalDifferencePDF /Herwig/Partons/DiffPDF
+set  /Herwig/Partons/EPPolarizedExtractor:FirstLongitudinalPolarization -1
+set  /Herwig/Partons/EPPolarizedExtractor:SecondLongitudinalPolarization -1
+
+set /Herwig/Samplers/Sampler:BinSampler:InitialPoints 1000000
+
+##################################################
+# Technical parameters for this run
+##################################################
+cd /Herwig/Generators
+set EventGenerator:MaxErrors 1000000
+# no pdfs for leptons
+set /Herwig/Shower/ShowerHandler:PDFB /Herwig/Partons/ShowerLOPDF
+set /Herwig/Partons/MPIExtractor:SecondPDF  /Herwig/Partons/MPIPDF
+#set /Herwig/Partons/EPPolarizedExtractor:SecondPDF  /Herwig/Partons/HardNLOPDF
+set /Herwig/Shower/ShowerHandler:Interactions QEDQCD
+
+
+create ThePEG::LHAPDF /Herwig/Partons/LHAPDF ThePEGLHAPDF.so
+set /Herwig/Partons/LHAPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+set /Herwig/Partons/RemnantDecayer:AllowTop Yes
+set /Herwig/Partons/RemnantDecayer:DISRemnantOption AllParticles
+set /Herwig/Partons/RemnantDecayer:DISOneRemnantFallback RelaxMass
+set /Herwig/Partons/LHAPDF:RemnantHandler /Herwig/Partons/HadronRemnants
+set /Herwig/Particles/p+:PDF /Herwig/Partons/LHAPDF
+set /Herwig/Partons/EPPolarizedExtractor:SecondPDF  /Herwig/Partons/LHAPDF
+set /Herwig/Partons/HardNLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+set /Herwig/Partons/ShowerLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+
+
+set EventGenerator:EventHandler:BeamA /Herwig/Particles/e-
+set EventGenerator:EventHandler:LuminosityFunction:BeamEMaxA 18.*GeV
+set EventGenerator:EventHandler:BeamB /Herwig/Particles/p+
+set EventGenerator:EventHandler:LuminosityFunction:BeamEMaxB 275.*GeV
+
+set /Herwig/EventHandlers/EventHandler:Cuts:ScaleMin 0.0*GeV2
+set /Herwig/EventHandlers/EventHandler:Cuts:X1Min 1E-5
+set /Herwig/EventHandlers/EventHandler:Cuts:X2Min 1E-5
+set /Herwig/Cuts/NeutralCurrentCut:MinW2 0*GeV2
+set /Herwig/Cuts/NeutralCurrentCut:MaxW2 1E99*GeV2
+set /Herwig/Cuts/NeutralCurrentCut:MinQ2 49.*GeV2
+set /Herwig/Cuts/NeutralCurrentCut:MaxQ2 2500.*GeV2
+set /Herwig/Cuts/NeutralCurrentCut:Miny 0.2
+set /Herwig/Cuts/NeutralCurrentCut:Maxy 0.6
+set /Herwig/Cuts/Cuts:MHatMin 0.
+
+# set the electron/positron hard process mass to zero
+set /Herwig/Particles/e-:HardProcessMass 0
+set /Herwig/Particles/e+:HardProcessMass 0
+
+
+set /Herwig/Particles/W+:NominalMass 80.450
+set /Herwig/Particles/W-:NominalMass 80.450
+
+##################################################
+# DIS physics parameters (override defaults here) 
+##################################################
+
+# DISABLE HADRONIZATION
+set EventGenerator:EventHandler:HadronizationHandler  NULL
+set /Herwig/Analysis/Basics:CheckQuark false
+
+# disable all shower
+set /Herwig/EventHandlers/EventHandler:CascadeHandler NULL
+set /Herwig/Shower/ShowerHandler:LimitEmissions HardOnly
+set /Herwig/Shower/ShowerHandler:UseConstituentMasses No
+set /Herwig/Shower/ShowerHandler:HardEmission None
+set /Herwig/EventHandlers/EventHandler:DecayHandler NULL
+
+
+##################################################
+# Matrix Elements for lepton-hadron collisions 
+# (by default only neutral-current switched on)
+##################################################
+cd /Herwig/MatrixElements/
+
+# Neutral current DIS
+insert SubProcess:MatrixElements[0] MEDISNC
+set MEDISNC:GammaZ All
+
+set /Herwig/Model:QCD/RunningAlphaS /Herwig/Couplings/LOAlphaS
+set /Herwig/Model:QCD/AlphaS 0.118
+set /Herwig/MatrixElements/PowhegMEDISNCPol:UseFixedOrderAlphaSInPOWHEGEmission No
+set /Herwig/MatrixElements/PowhegMEDISNCPol:UseQ2ScaleInPOWHEGEmission No
+set /Herwig/MatrixElements/PowhegMEDISNCPol:DISDiagnostics Off
+set /Herwig/MatrixElements/PowhegMEDISNCPol:DumpNLOTermDiagnostics No
+set /Herwig/MatrixElements/PowhegMEDISNCPol:DumpPOWHEGRawMomenta No
+set /Herwig/MatrixElements/PowhegMEDISNCPol:POWHEGEmissionComparisonMode Default
+set /Herwig/MatrixElements/PowhegMEDISNCPol:POWHEGEmissionComparisonMaxAttempts 100
+set /Herwig/MatrixElements/MEDISNC:UsePOWHEGRealSpinVertex No
+set /Herwig/MatrixElements/MEDISNC:DiagnosePOWHEGRealSpinVertex No
+set /Herwig/MatrixElements/PowhegMEDISNCPol:UsePOWHEGRealSpinVertex No
+set /Herwig/MatrixElements/PowhegMEDISNCPol:DiagnosePOWHEGRealSpinVertex No
+
+# ---- Match POLDIS EW parameters ----
+set /Herwig/Model:EW/Scheme alphaMZScheme
+set /Herwig/Model:EW/AlphaEMMZ 0.00729927
+set /Herwig/Model:EW/AlphaEM   0.00729927
+set /Herwig/Model:EW/Sin2ThetaW 0.2260
+set /Herwig/Vertices/FFPVertex:Coupling FixedSM
+set /Herwig/Vertices/FFZVertex:Coupling FixedSM
+
+
+#set MEDISNC:GammaZ Gamma
+# Neutral current DIS - POLARIZED (TESTING)
+#insert SubProcess:MatrixElements[0] MEDISNCPol
+# Charged current matrix element
+#insert SubProcess:MatrixElements[0] MEDISCC
+
+##################################################
+# NLO IN POWHEG SCHEME
+##################################################
+
+###################################################
+##  Need to use an NLO PDF
+###################################################
+# set /Herwig/Particles/p+:PDF    /Herwig/Partons/HardNLOPDF
+# set /Herwig/Particles/pbar-:PDF /Herwig/Partons/HardNLOPDF
+# set /Herwig/Partons/EPExtractor:SecondPDF  /Herwig/Partons/HardNLOPDF
+#
+###################################################
+##  Setup the POWHEG shower
+###################################################
+#cd /Herwig/Shower
+#set ShowerHandler:HardEmission POWHEG
+###################################################
+## NLO Matrix Elements for lepton-hadron collisions 
+## in the POWHEG approach
+###################################################
+#
+#cd /Herwig/MatrixElements/
+#
+## Neutral current DIS
+#insert SubProcess:MatrixElements[0] PowhegMEDISNC
+## Neutral current DIS -- POLARIZED (TESTING
+#insert SubProcess:MatrixElements[0] PowhegMEDISNCPol
+## Charged current matrix element
+#insert SubProcess:MatrixElements[0] PowhegMEDISCC
+
+##################################################
+## prepare for Rivet analysis or HepMC output
+## when running with parton shower
+##################################################
+read snippets/Rivet.in
+# HERA F2
+#insert /Herwig/Analysis/Rivet:Analyses 0 HERA_2015_I1377206
+# ZEUS D production
+#insert /Herwig/Analysis/Rivet:Analyses 0 ZEUS_2008_I810112
+# MC DIS EXTRA
+insert /Herwig/Analysis/Rivet:Analyses 0 MC_DIS_BREIT:JETINPUT=TOP2PARTONS
+
+
+#insert /Herwig/Analysis/Rivet:Analyses 0 XXX_2015_ABC123
+#read snippets/HepMC.in
+#set /Herwig/Analysis/HepMC:PrintEvent NNN
+
+##################################################
+# Save run for later usage with 'Herwig run'
+##################################################
+cd /Herwig/Generators
+get /Herwig/Model:EW/Scheme
+get /Herwig/Model:EW/AlphaEMMZ
+get /Herwig/Vertices/FFPVertex:Coupling
+get /Herwig/Model:EW/Sin2ThetaW
+get /Herwig/Particles/Z0:NominalMass
+get /Herwig/Particles/W+:NominalMass
+saverun DIS-POL-LO_MM-ALL-RIVETFO EventGenerator

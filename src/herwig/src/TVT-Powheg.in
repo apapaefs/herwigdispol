@@ -1,0 +1,85 @@
+# -*- ThePEG-repository -*-
+
+##################################################
+# Example generator based on Tevatron parameters
+# using NLO matrix elements and matching in
+# the Powheg formalism
+# usage: Herwig read TVT.in
+#
+# Since most parameters are identical to LHC,
+# we use the default EventGenerator and adapt only
+# for the differences
+##################################################
+
+read snippets/PPCollider.in
+
+##################################################
+# Technical parameters for this run
+##################################################
+cd /Herwig/Generators
+##################################################
+#  Need to use an NLO PDF
+##################################################
+set /Herwig/Particles/p+:PDF    /Herwig/Partons/HardNLOPDF
+set /Herwig/Particles/pbar-:PDF /Herwig/Partons/HardNLOPDF
+set /Herwig/Shower/ShowerHandler:PDFA /Herwig/Partons/ShowerLOPDF
+set /Herwig/Shower/ShowerHandler:PDFB /Herwig/Partons/ShowerLOPDF
+set /Herwig/Partons/MPIExtractor:FirstPDF  /Herwig/Partons/MPIPDF
+set /Herwig/Partons/MPIExtractor:SecondPDF /Herwig/Partons/MPIPDF
+set /Herwig/Partons/PPExtractor:FirstPDF  /Herwig/Partons/HardNLOPDF
+set /Herwig/Partons/PPExtractor:SecondPDF /Herwig/Partons/HardNLOPDF
+
+##################################################
+#  Setup the POWHEG shower
+##################################################
+cd /Herwig/Shower
+set ShowerHandler:HardEmission POWHEG
+
+##################################################
+# Tevatron physics parameters (override defaults) 
+##################################################
+cd /Herwig/Generators
+set EventGenerator:EventHandler:LuminosityFunction:Energy 2000.0
+set EventGenerator:EventHandler:BeamB /Herwig/Particles/pbar-
+
+##################################################
+# Matrix Elements for hadron-hadron collisions 
+# (by default only gamma/Z switched on)
+##################################################
+cd /Herwig/MatrixElements
+
+# Drell-Yan Z/gamma
+insert SubProcess:MatrixElements[0] PowhegMEqq2gZ2ff
+# Drell-Yan W
+# insert SubProcess:MatrixElements[0] PowhegMEqq2W2ff
+# higgs + W (N.B. if considering all W decay modes useful to set )
+#           (jet pT cut to zero so no cut on W decay products    )
+# insert SubProcess:MatrixElements[0] PowhegMEPP2WH
+# set /Herwig/Cuts/JetKtCut:MinKT 0.0*GeV
+# higgs + Z (N.B. if considering all Z decay modes useful to set )
+#           (jet pT cut to zero so no cut on Z decay products    )
+# insert SubProcess:MatrixElements[0] PowhegMEPP2ZH
+# set /Herwig/Cuts/JetKtCut:MinKT 0.0*GeV
+# gg/qqbar -> Higgs
+# insert SubProcess:MatrixElements[0] PowhegMEHiggs
+
+cd /Herwig/Generators
+##################################################
+#  Useful analysis handlers for hadron-hadron physics
+##################################################
+# analysis of W/Z events
+# insert EventGenerator:AnalysisHandlers 0 /Herwig/Analysis/DrellYan
+
+##################################################
+## prepare for Rivet analysis or HepMC output
+## when running with parton shower
+##################################################
+#read snippets/Rivet.in
+#insert /Herwig/Analysis/Rivet:Analyses 0 XXX_2015_ABC123
+#read snippets/HepMC.in
+#set /Herwig/Analysis/HepMC:PrintEvent NNN
+
+##################################################
+# Save run for later usage with 'Herwig run'
+##################################################
+saverun TVT-Powheg EventGenerator

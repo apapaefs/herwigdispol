@@ -1,0 +1,39 @@
+##################################################
+# Example generator based for gamma hadron collisions
+##################################################
+cd /Herwig
+create Herwig::AlphaEM AlphaEM2 
+set Model:EW/RunningAlphaEM AlphaEM2
+create Herwig::O2AlphaS AlphaS2 
+set Model:QCD/RunningAlphaS AlphaS2
+
+# Create GammaHadronHandler
+cd /Herwig/EventHandlers
+set Luminosity:Energy 1000.
+set EventHandler:BeamA /Herwig/Particles/gamma
+set EventHandler:BeamB /Herwig/Particles/p+
+set EventHandler:Sampler /Herwig/ACDCSampler
+set /Herwig/Partons/PPExtractor:FlatSHatY 1
+# the cuts
+cd /Herwig/Cuts
+set Cuts:X1Min 1.0e-5
+set Cuts:X2Min 1.0e-5
+set Cuts:MHatMin 0.*GeV
+insert Cuts:OneCuts[0] JetKtCut
+set JetKtCut:MinKT 20.
+##################################################
+# Technical parameters for this run
+##################################################
+cd /Herwig/Generators
+set EventGenerator:NumberOfEvents 100000000
+set EventGenerator:RandomNumberGenerator:Seed 31122001
+set EventGenerator:DebugLevel 1
+set EventGenerator:PrintEvent 0
+set EventGenerator:MaxErrors 10000
+set EventGenerator:EventHandler:StatLevel Full
+set EventGenerator:EventHandler:CascadeHandler:MPIHandler NULL
+
+##################################################
+# LEP physics parameters (override defaults) 
+##################################################
+set EventGenerator:EventHandler:LuminosityFunction:Energy 1000.

@@ -1,0 +1,218 @@
+# -*- ThePEG-repository -*-
+##################################################
+# Example generator based on LHC parameters
+# usage: Herwig read LHC.in
+##################################################
+read snippets/PPCollider.in
+cd /Herwig/Particles
+create ThePEG::ParticleData boxon
+setup boxon 99926 boxon 0.0 0.0 0.0 0.0 0 0 0 0
+create ThePEG::ParticleData triangon
+setup triangon 99927 triangon 0.0 0.0 0.0 0.0 0 0 0 0
+create ThePEG::ParticleData H
+setup H 35 H 700 0.01 0.1 0 0 0 1 0 
+
+#############################################################
+# Create an AlpGenHandlerOL (set up & assigned below) ...     #
+#############################################################
+cd /Herwig/Shower
+library AlpGenHandlerOL.so
+create Herwig::AlpGenHandlerOL AlpGenHandlerOL
+set /Herwig/Shower/AlpGenHandlerOL:ShowerModel /Herwig/Shower/ShowerModel
+set /Herwig/Shower/AlpGenHandlerOL:SplittingGenerator /Herwig/Shower/SplittingGenerator
+
+#############################################################
+# Set up the AlpGenHandlerOL ...                              #
+#############################################################
+cd /Herwig/Shower
+set AlpGenHandlerOL:MPIHandler  /Herwig/UnderlyingEvent/MPIHandler
+set AlpGenHandlerOL:RemDecayer  /Herwig/Partons/RemnantDecayer
+#set AlpGenHandlerOL:ShowerHandler     ShowerHandler
+set AlpGenHandlerOL:ShowerAlpha  AlphaQCDISR
+# Calorimeter granularity settings used by GetJet algorithm
+set AlpGenHandlerOL:NoCellsInRapidity 100
+set AlpGenHandlerOL:NoCellsInPhi       60
+# AlpGen hard process code.
+set AlpGenHandlerOL:ihrd        5
+# No. of light jets in AlpGen process (the "extra" ones).
+set AlpGenHandlerOL:njets       1
+# Mimimum parton-parton R-sep used for generation.
+set AlpGenHandlerOL:drjmin      0.35
+# heavy flavour in WQQ,ZQQ,2Q etc (4=c, 5=b, 6=t):
+set AlpGenHandlerOL:ihvy              -999
+# Number of Higgses in the AlpGen process:
+set AlpGenHandlerOL:nh          -999
+# Number of photons in the AlpGen process:
+set AlpGenHandlerOL:nph         -999
+
+######################################################### 
+# Recommended key MLM merging parameters below - change # 
+# for systematic error studies and / or at your peril.  # 
+######################################################### 
+cd /Herwig/Shower
+# turn off vetoing 
+set AlpGenHandlerOL:VetoIsTurnedOff VetoingIsOff
+# Select OpenLoops Handler type
+set AlpGenHandlerOL:VetoType OpenLoops
+# Highest number of jets included
+set AlpGenHandlerOL:highestNjets 0
+# Jet ET cut to apply in jet clustering in merging.
+set AlpGenHandlerOL:ETClus 60*GeV
+# Cone size used in clustering in merging.
+set AlpGenHandlerOL:RClus 0.35
+# Max |eta| for jets in clustering in merging.
+set AlpGenHandlerOL:EtaClusMax 6.0
+# Default 1.5 factor used to decide if a jet matches a ssssparton
+# in merging: if DR(parton,jet)<rclusfactor*rclus the parton 
+# and jet are said to have been matched.
+set AlpGenHandlerOL:RClusFactor 1.5
+# Vary ETClus 
+set AlpGenHandlerOL:ETClusFixed 0
+set AlpGenHandlerOL:EpsilonETClus 30*GeV
+set AlpGenHandlerOL:SmoothingType Sine
+
+cd /Herwig/Partons
+#create ThePEG::LHAPDF thePDFset ThePEGLHAPDF.so
+#set thePDFset:PDFName MSTW2008nlo68cl.LHgrid
+#set thePDFset:RemnantHandler  HadronRemnants
+#set /Herwig/Particles/p+:PDF thePDFset
+#set /Herwig/Particles/pbar-:PDF thePDFset
+
+# The PDF for beam particles A/B - overrides particle's own PDF above
+#set /Herwig/Shower/ShowerHandler:PDFA thePDFset
+#set /Herwig/Shower/ShowerHandler:PDFB thePDFset
+
+##################################################
+# Technical parameters for this run
+##################################################
+cd /Herwig/Generators
+set EventGenerator:NumberOfEvents 1000000
+set EventGenerator:RandomNumberGenerator:Seed 31122002
+set EventGenerator:PrintEvent 10
+set EventGenerator:MaxErrors 10000
+set EventGenerator:DebugLevel 1
+set EventGenerator:EventHandler:Sampler:Ntry 100
+set EventGenerator:EventHandler:CascadeHandler:MPIHandler NULL # comment out to enable underlying event
+
+##################################################
+# LHC physics parameters and cuts (override defaults here) 
+##################################################
+set EventGenerator:EventHandler:LuminosityFunction:Energy 14000.0
+
+# Intrinsic pT tune extrapolated to LHC energy
+#set /Herwig/Shower/ShowerHandler:IntrinsicPtGaussian 2.2*GeV
+
+cd /Herwig/Cuts
+set JetKtCut:MinKT 25.0*GeV
+set Cuts:MHatMin 250*GeV                  
+
+##################################################
+# Set-up the Higgs Pair production "Model"
+##################################################
+cd /Herwig/NewPhysics
+library HiggsPair.so
+create Herwig::HiggsPair HiggsPair HiggsPair.so
+set HiggsPair:ModelGenerator NewModel
+set HiggsPair:QCD/RunningAlphaS /Herwig/Couplings/NLOAlphaS
+set HiggsPair:EW/RunningAlphaEM /Herwig/Couplings/AlphaEM
+set HiggsPair:EW/CKM /Herwig/CKM
+set HiggsPair:RunningMass /Herwig/RunningMass
+set HiggsPair:Vertex/FFZ /Herwig/Vertices/FFZVertex
+set HiggsPair:Vertex/FFW /Herwig/Vertices/FFWVertex
+set HiggsPair:Vertex/FFH /Herwig/Vertices/FFHVertex
+set HiggsPair:Vertex/FFG /Herwig/Vertices/FFGVertex
+set HiggsPair:Vertex/FFP /Herwig/Vertices/FFPVertex
+set HiggsPair:Vertex/GGG /Herwig/Vertices/GGGVertex
+set HiggsPair:Vertex/GGGG /Herwig/Vertices/GGGGVertex
+set HiggsPair:Vertex/WWH /Herwig/Vertices/WWHVertex
+set HiggsPair:Vertex/WWW /Herwig/Vertices/WWWVertex
+set HiggsPair:Vertex/WWWW /Herwig/Vertices/WWWWVertex
+set HiggsPair:Vertex/HGG /Herwig/Vertices/HGGVertex
+set HiggsPair:Vertex/HHH /Herwig/Vertices/HHHVertex
+set HiggsPair:Vertex/WWHH /Herwig/Vertices/WWHHVertex
+set HiggsPair:Vertex/HHH /Herwig/Vertices/HHHVertex
+set HiggsPair:Vertex/HPP /Herwig/Vertices/HPPVertex
+cd /Herwig/Generators
+set EventGenerator:StandardModelParameters  /Herwig/NewPhysics/HiggsPair
+
+##################################################
+# Matrix Elements for hadron-hadron collisions 
+##################################################
+cd /Herwig/MatrixElements/
+
+# add LO
+create Herwig::MEHiggsPairOL MEHiggsPairOL HiggsPair.so
+insert SubProcess:MatrixElements[0] MEHiggsPairOL
+
+set /Herwig/NewPhysics/HiggsPair:Process All
+
+# set the value of the self-coupling (times the SM value)
+set /Herwig/NewPhysics/HiggsPair:SelfCoupling 1.0
+
+# switch between "HPAIR" and "OpenLoops" implementations
+set /Herwig/NewPhysics/HiggsPair:Implementation OpenLoops
+
+# fix alphaS
+set /Herwig/NewPhysics/HiggsPair:FixedAlphaS No
+set /Herwig/NewPhysics/HiggsPair:AlphaSScale 200.0*GeV
+
+# include the particle widths or not
+set /Herwig/NewPhysics/HiggsPair:IncludeWidths No
+
+# include the bottom loop or not
+set /Herwig/NewPhysics/HiggsPair:IncludeBottomLoop Yes
+
+# scale 
+set /Herwig/NewPhysics/HiggsPair:FixedScale MHH
+set /Herwig/NewPhysics/HiggsPair:ScaleMultiplier 0.5
+
+# alphaS reweighting 
+set /Herwig/NewPhysics/HiggsPair:AlphaSReweighting Yes
+
+
+##################################################
+# Higgs Properties
+##################################################
+cd /Herwig/Vertices 
+# set HGGVertex:Coupling FixedLocal 
+# set HGGVertex:StrongCoupling 1.2178944 
+# set HGGVertex:ElectroMagneticCoupling 0.31234117187 
+# set HGGVertex:SinThetaW 0.471430306 
+#set HGGVertex:LoopMassScheme InfiniteTopMass 
+#decaymode h0->b,bbar; 0.5 1 /Herwig/Decays/Hff
+#decaymode h0->gamma,gamma; 1.0 1 /Herwig/Decays/Mambo
+#decaymode h0->tau-,tau+; 0.5 1 /Herwig/Decays/Hff
+#decaymode h0->W+,W-; 0.5 1 /Herwig/Decays/HWW
+decaymode h0->mu-,mu+; 1.0 1 /Herwig/Decays/Hff
+set /Herwig/Particles/h0/h0->b,bbar;:OnOff Off
+set /Herwig/Particles/h0/h0->W+,W-;:OnOff Off
+set /Herwig/Particles/h0/h0->tau-,tau+;:OnOff Off
+set /Herwig/Particles/h0/h0->g,g;:OnOff Off 
+set /Herwig/Particles/h0/h0->c,cbar;:OnOff Off 
+set /Herwig/Particles/h0/h0->Z0,Z0;:OnOff Off 
+set /Herwig/Particles/h0/h0->gamma,gamma;:OnOff Off
+set /Herwig/Particles/h0/h0->mu-,mu+;:OnOff On
+set /Herwig/Particles/h0/h0->t,tbar;:OnOff Off 
+#set /Herwig/Widths/HiggsWidth:WidthScheme Fixed
+#set /Herwig/Masses/HiggsMass:HiggsShape Normal
+#set /Herwig/Decays/Hff:PhotonGenerator NULL
+#set /Herwig/Particles/h0:Stable Stable
+
+cd /Herwig/Generators
+
+##################################################
+#  Useful analysis handlers for HepMC related output
+##################################################
+# Schematic overview of an event (requires --with-hepmc to be set at configure time
+# and the graphviz program 'dot' to produce a plot)
+# insert EventGenerator:AnalysisHandlers 0 /Herwig/Analysis/Plot
+# A HepMC dump file (requires --with-hepmc to be set at configure time)
+# insert EventGenerator:AnalysisHandlers 0 /Herwig/Analysis/HepMCFile
+# set /Herwig/Analysis/HepMCFile:PrintEvent 100
+# set /Herwig/Analysis/HepMCFile:Format GenEvent
+# set /Herwig/Analysis/HepMCFile:Units GeV_mm
+
+##################################################
+# Save run for later usage with 'Herwig run'
+##################################################
+saverun LHC-HH-OL-0jinc EventGenerator

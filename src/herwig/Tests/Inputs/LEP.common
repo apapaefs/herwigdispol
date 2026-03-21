@@ -1,0 +1,6 @@
+cd /Herwig/Generators
+set EventGenerator:NumberOfEvents 100000000
+set EventGenerator:DebugLevel 1
+set EventGenerator:MaxErrors 1000
+set EventGenerator:PrintEvent 10
+set EventGenerator:EventHandler:StatLevel Full

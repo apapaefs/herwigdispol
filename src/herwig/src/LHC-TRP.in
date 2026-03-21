@@ -1,0 +1,56 @@
+# -*- ThePEG-repository -*-
+
+##################################################
+# Example generator based on LHC parameters
+# usage: Herwig read LHC.in
+##################################################
+
+read snippets/PPCollider.in
+
+cd /Herwig/Particles
+create ThePEG::ParticleData graviton
+setup graviton 39 graviton 0.0 0.0 0.0 0.0 0 0 0 1
+
+##################################################
+# Technical parameters for this run
+##################################################
+cd /Herwig/Generators
+set EventGenerator:MaxErrors 10000
+
+##################################################
+# LHC physics parameters (override defaults here) 
+##################################################
+set EventGenerator:EventHandler:LuminosityFunction:Energy 13000.0
+
+
+cd /Herwig/Cuts
+#set JetKtCut:MinKT 100.0*GeV
+set Cuts:MHatMin 4500*GeV
+                                        
+
+##################################################
+# Matrix Elements for hadron-hadron collisions 
+##################################################
+cd /Herwig/MatrixElements/
+create Herwig::METRP2to2 METransplanck HwTransplanck.so
+
+insert SubProcess:MatrixElements[0] METransplanck
+#set METransplanck:Process 6
+set METransplanck:NumberExtraDimensions 6
+set METransplanck:PlanckMass 1500
+
+cd /Herwig/Generators
+
+##################################################
+## prepare for Rivet analysis or HepMC output
+## when running with parton shower
+##################################################
+#read snippets/Rivet.in
+#insert /Herwig/Analysis/Rivet:Analyses 0 XXX_2015_ABC123
+#read snippets/HepMC.in
+#set /Herwig/Analysis/HepMC:PrintEvent NNN
+
+##################################################
+# Save run for later usage with 'Herwig run'
+##################################################
+saverun LHC-TRP EventGenerator

@@ -1,0 +1,76 @@
+# -*- ThePEG-repository -*-
+
+##################################################
+# Example generator based on ILC parameters
+# usage: Herwig read ILC.in
+#
+# Since most parameters are identical to LEP,
+# we use the default EventGenerator and adapt only
+# for the differences
+##################################################
+
+read snippets/EECollider.in
+
+##################################################
+# Change settings for the ee->Z->qq matrix element
+# to produce only top quarks 
+#
+# 'set' lines like this can be omitted if the 
+# default value is already okay.
+#
+# Any repository setting can be modified here
+##################################################
+
+##################################################
+# Selected the hard process
+##################################################
+cd /Herwig/MatrixElements
+# default e+e- > t tbar
+insert SubProcess:MatrixElements 0 MEee2gZ2qq
+set MEee2gZ2qq:MinimumFlavour 6
+set MEee2gZ2qq:MaximumFlavour 6
+# e+e- > l+l-
+# insert SubProcess:MatrixElements[0] MEee2gZ2ll
+# e+e- > W+W- ZZ
+# insert SubProcess:MatrixElements[0] MEee2VV
+# higgs+Z
+# insert SubProcess:MatrixElements[0] MEee2ZH
+# higgs+e+e-/nu_enu_ebar via VBF
+# insert SubProcess:MatrixElements[0] MEee2HiggsVBF
+
+##################################################
+# Technical parameters for this run
+##################################################
+cd /Herwig/Generators
+
+##################################################
+# ILC physics parameters (override defaults) 
+##################################################
+set EventGenerator:EventHandler:LuminosityFunction:Energy 500.0
+
+##################################################
+## prepare for Rivet analysis or HepMC output
+## when running with parton shower
+##################################################
+#read snippets/Rivet.in
+#insert /Herwig/Analysis/Rivet:Analyses 0 XXX_2015_ABC123
+#read snippets/HepMC.in
+#set /Herwig/Analysis/HepMC:PrintEvent NNN
+
+##################################################
+# Save run for later usage with 'Herwig run'
+##################################################
+saverun ILC EventGenerator
+
+##################################################
+# uncomment this section for an example batch run
+# of two repeats with different parameters
+#
+# Note that a separate call of 'Herwig run' 
+# is not required
+##################################################
+# set EventGenerator:NumberOfEvents 100
+# run ILC-tt EventGenerator
+# set /Herwig/MatrixElements/MEee2gZ2qq:MinimumFlavour 5
+# set /Herwig/MatrixElements/MEee2gZ2qq:MaximumFlavour 5
+# run ILC-bb EventGenerator

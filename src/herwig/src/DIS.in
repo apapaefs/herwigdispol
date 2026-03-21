@@ -1,0 +1,77 @@
+# -*- ThePEG-repository -*-
+
+##################################################
+# Example generator based on DIS parameters
+# usage: Herwig read DIS.in
+##################################################
+
+read snippets/EPCollider.in
+# for fixed target
+# read snippets/FixedTarget.in
+
+##################################################
+# Technical parameters for this run
+##################################################
+cd /Herwig/Generators
+# no pdfs for leptons
+set /Herwig/Shower/ShowerHandler:PDFB /Herwig/Partons/ShowerLOPDF
+set /Herwig/Partons/MPIExtractor:SecondPDF  /Herwig/Partons/MPIPDF
+set /Herwig/Partons/EPExtractor:SecondPDF  /Herwig/Partons/HardNLOPDF
+
+##################################################
+# DIS physics parameters (override defaults here) 
+##################################################
+
+##################################################
+# Matrix Elements for lepton-hadron collisions 
+# (by default only neutral-current switched on)
+##################################################
+cd /Herwig/MatrixElements/
+
+# Neutral current DIS
+insert SubProcess:MatrixElements[0] MEDISNC
+# Charged current matrix element
+insert SubProcess:MatrixElements[0] MEDISCC
+
+##################################################
+# NLO IN POWHEG SCHEME
+##################################################
+
+###################################################
+##  Need to use an NLO PDF
+###################################################
+# set /Herwig/Particles/p+:PDF    /Herwig/Partons/HardNLOPDF
+# set /Herwig/Particles/pbar-:PDF /Herwig/Partons/HardNLOPDF
+# set /Herwig/Partons/EPExtractor:SecondPDF  /Herwig/Partons/HardNLOPDF
+#
+###################################################
+##  Setup the POWHEG shower
+###################################################
+#cd /Herwig/Shower
+#set ShowerHandler:HardEmission POWHEG
+###################################################
+## NLO Matrix Elements for lepton-hadron collisions 
+## in the POWHEG approach
+###################################################
+#
+#cd /Herwig/MatrixElements/
+#
+## Neutral current DIS
+#insert SubProcess:MatrixElements[0] PowhegMEDISNC
+## Charged current matrix element
+#insert SubProcess:MatrixElements[0] PowhegMEDISCC
+
+##################################################
+## prepare for Rivet analysis or HepMC output
+## when running with parton shower
+##################################################
+#read snippets/Rivet.in
+#insert /Herwig/Analysis/Rivet:Analyses 0 XXX_2015_ABC123
+#read snippets/HepMC.in
+#set /Herwig/Analysis/HepMC:PrintEvent NNN
+
+##################################################
+# Save run for later usage with 'Herwig run'
+##################################################
+cd /Herwig/Generators
+saverun DIS EventGenerator

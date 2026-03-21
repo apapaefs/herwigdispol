@@ -1,0 +1,19 @@
+# -*- ThePEG-repository -*-
+read snippets/PPCollider.in
+read LHC.common
+erase /Herwig/EventHandlers/EventHandler:PostSubProcessHandlers 0 
+cd /Herwig/Generators
+set /Herwig/Particles/tau-:Stable Stable
+set /Herwig/Particles/tau+:Stable Stable
+set EventGenerator:EventHandler:StatLevel Full
+set EventGenerator:EventHandler:CascadeHandler NULL
+set EventGenerator:EventHandler:HadronizationHandler NULL
+set EventGenerator:EventHandler:DecayHandler NULL
+set EventGenerator:EventHandler:Sampler:Ntry 100000
+cd /Herwig/MatrixElements/
+insert SubProcess:MatrixElements[0] MEqq2W2ff
+cd /Herwig/Generators
+set /Herwig/Analysis/Basics:CheckQuark No
+create Herwig::SimpleLHCAnalysis WTest HwAnalysis.so
+insert EventGenerator:AnalysisHandlers 0 WTest
+saverun LHC-W EventGenerator

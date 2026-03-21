@@ -1,0 +1,60 @@
+# -*- ThePEG-repository -*-
+#  Here we add the CMW kernels.
+cd /Herwig/Shower
+
+
+set AlphaQCDFSR:AlphaIn 0.118
+get AlphaQCDFSR:AlphaIn
+
+set AlphaQCDISR:AlphaIn 0.118
+get AlphaQCDISR:AlphaIn
+
+create Herwig::CMWHalfHalfOneSplitFn CMWQtoQGSudakov
+set CMWQtoQGSudakov:InteractionType QCD
+set CMWQtoQGSudakov:ColourStructure TripletTripletOctet
+set CMWQtoQGSudakov:AngularOrdered Yes
+set CMWQtoQGSudakov:Alpha AlphaQCDFSR
+
+create Herwig::CMWOneOneOneSplitFn CMWGtoGGSudakov
+set CMWGtoGGSudakov:InteractionType QCD
+set CMWGtoGGSudakov:ColourStructure OctetOctetOctet
+set CMWGtoGGSudakov:AngularOrdered Yes
+set CMWGtoGGSudakov:Alpha AlphaQCDFSR
+
+cp CMWGtoGGSudakov CMWGtoGGSudakovIS
+cp CMWQtoQGSudakov CMWQtoQGSudakovIS
+
+set CMWQtoQGSudakovIS:Alpha AlphaQCDFSR
+set CMWQtoGGSudakovIS:Alpha AlphaQCDFSR
+
+
+set CMWQtoQGSudakovIS:Alpha AlphaQCDFSR
+set CMWQtoGGSudakovIS:Alpha AlphaQCDFSR
+
+set CMWGtoGGSudakovIS:isInititalState Yes
+set CMWQtoQGSudakovIS:isInititalState Yes
+
+set CMWGtoGGSudakov:isInititalState No
+set CMWQtoQGSudakov:isInititalState No
+
+#
+# Now add the final splittings
+#
+do SplittingGenerator:AddFinalSplitting u->u,g; CMWQtoQGSudakov
+do SplittingGenerator:AddFinalSplitting d->d,g; CMWQtoQGSudakov
+do SplittingGenerator:AddFinalSplitting s->s,g; CMWQtoQGSudakov
+do SplittingGenerator:AddFinalSplitting c->c,g; CMWQtoQGSudakov
+do SplittingGenerator:AddFinalSplitting b->b,g; CMWQtoQGSudakov
+do SplittingGenerator:AddFinalSplitting t->t,g; CMWQtoQGSudakov
+#
+do SplittingGenerator:AddFinalSplitting g->g,g; CMWGtoGGSudakov
+#
+# Now add the initial splittings
+#
+do SplittingGenerator:AddInitialSplitting u->u,g; CMWQtoQGSudakovIS
+do SplittingGenerator:AddInitialSplitting d->d,g; CMWQtoQGSudakovIS
+do SplittingGenerator:AddInitialSplitting s->s,g; CMWQtoQGSudakovIS
+do SplittingGenerator:AddInitialSplitting c->c,g; CMWQtoQGSudakovIS
+do SplittingGenerator:AddInitialSplitting b->b,g; CMWQtoQGSudakovIS
+#
+do SplittingGenerator:AddInitialSplitting g->g,g; CMWGtoGGSudakovIS

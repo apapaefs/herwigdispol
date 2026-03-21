@@ -1,0 +1,64 @@
+# -*- ThePEG-repository -*-
+
+mkdir /Herwig/Partons
+cd /Herwig/Partons
+
+create ThePEG::NoRemnants NoRemnants
+create ThePEG::NoPDF NoPDF
+newdef NoPDF:RemnantHandler NoRemnants
+
+create ThePEG::UnResolvedRemnant LeptonRemnants UnResolvedRemnant.so
+
+create Herwig::HwRemDecayer RemnantDecayer HwShower.so
+newdef RemnantDecayer:PomeronStructure Gluon
+newdef RemnantDecayer:colourDisrupt 0.0
+newdef RemnantDecayer:ladderPower -0.088983
+newdef RemnantDecayer:ladderNorm 1.086029
+newdef RemnantDecayer:PtDistribution 4
+
+create ThePEG::SoftRemnantHandler HadronRemnants
+newdef HadronRemnants:RemnantDecayer RemnantDecayer
+
+
+read PDF.in
+
+# Make particle extractors
+# unpolarized
+# e+ e- 
+create ThePEG::PartonExtractor EEExtractor
+newdef EEExtractor:NoPDF NoPDF
+# hadron hadron 
+create ThePEG::PartonExtractor PPExtractor
+newdef PPExtractor:NoPDF NoPDF
+newdef PPExtractor:FlatSHatY 1
+newdef PPExtractor:FirstPDF HardLOPDF
+newdef PPExtractor:SecondPDF HardLOPDF
+# lepton hadron
+create ThePEG::PartonExtractor EPExtractor
+newdef EPExtractor:NoPDF NoPDF
+newdef EPExtractor:FlatSHatY 1
+newdef EPExtractor:SecondPDF HardLOPDF
+# hadron lepton
+create ThePEG::PartonExtractor PEExtractor
+newdef PEExtractor:NoPDF NoPDF
+newdef PEExtractor:FlatSHatY 1
+newdef PEExtractor:FirstPDF HardLOPDF
+# polarized
+create ThePEG::PolarizedPartonExtractor EEPolarizedExtractor
+newdef EEPolarizedExtractor:NoPDF NoPDF
+# hadron hadron 
+create ThePEG::PolarizedPartonExtractor PPPolarizedExtractor
+newdef PPPolarizedExtractor:NoPDF NoPDF
+newdef PPPolarizedExtractor:FlatSHatY 1
+newdef PPPolarizedExtractor:FirstPDF HardLOPDF
+newdef PPPolarizedExtractor:SecondPDF HardLOPDF
+# lepton hadron
+create ThePEG::PolarizedPartonExtractor EPPolarizedExtractor
+newdef EPPolarizedExtractor:NoPDF NoPDF
+newdef EPPolarizedExtractor:FlatSHatY 1
+newdef EPPolarizedExtractor:SecondPDF HardLOPDF
+# hadron lepton
+create ThePEG::PolarizedPartonExtractor PEPolarizedExtractor
+newdef PEPolarizedExtractor:NoPDF NoPDF
+newdef PEPolarizedExtractor:FlatSHatY 1
+newdef PEPolarizedExtractor:FirstPDF HardLOPDF

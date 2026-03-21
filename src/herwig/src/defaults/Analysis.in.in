@@ -1,0 +1,46 @@
+# -*- ThePEG-repository -*-
+# @configure_input@
+
+#########################################################
+# Analysis handler setup
+#
+# By default, only 'Basics' is active. Add the commented
+# lines to your input file to switch on other analyses.
+#########################################################
+
+mkdir /Herwig/Analysis
+cd /Herwig/Analysis
+
+library HwAnalysis.so
+
+#
+# basic analysis to check consistency of events
+# (only analysis handler switched on by default)
+#
+create Herwig::BasicConsistency Basics
+insert /Herwig/Generators/EventGenerator:AnalysisHandlers 0 Basics
+
+#
+#  Analysis Handlers for hadron-hadron collisions
+#  (switched off by default)
+#
+# simple analysis of W/Z events
+create Herwig::SimpleLHCAnalysis DrellYan
+# simple analysis of top-antitop events
+create Herwig::TTbarAnalysis TTbar
+# simple analysis of gamma+jet events
+create Herwig::GammaJetAnalysis  GammaJet
+# simple analysis of gamma-gamma events
+create Herwig::GammaGammaAnalysis GammaGamma
+# simple analysis of higgs+jet events
+create Herwig::HiggsJetAnalysis  HiggsJet
+
+# Schematic overview of an event
+# (requires the graphviz program 'dot' to produce a plot)
+create ThePEG::GraphvizPlot Plot GraphvizPlot.so
+
+#
+#  Handlers which depend on HepMC
+#  (switched off by default)
+# A HepMC dump file (requires --with-hepmc to be set at configure time)
+@CREATE_HEPMC@ ThePEG::HepMCFile HepMCFile HepMCAnalysis.so

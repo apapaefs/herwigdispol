@@ -1,0 +1,31 @@
+# -*- ThePEG-repository -*-
+read snippets/PPCollider.in
+read LHC.common
+erase /Herwig/EventHandlers/EventHandler:PostSubProcessHandlers 0 
+set /Herwig/Particles/t:Stable Stable
+set /Herwig/Particles/tbar:Stable Stable
+set /Herwig/Particles/h0:Stable Stable
+cd /Herwig/Partons
+create ThePEG::LHAPDF LHAPDF ThePEGLHAPDF.so
+set LHAPDF:PDFName cteq6l1
+set LHAPDF:Member 0
+set LHAPDF:RemnantHandler HadronRemnants
+set /Herwig/Particles/p+:PDF LHAPDF
+set /Herwig/Particles/pbar-:PDF LHAPDF
+cd /Herwig/Generators
+set EventGenerator:EventHandler:StatLevel Full
+set EventGenerator:EventHandler:CascadeHandler NULL
+set EventGenerator:EventHandler:HadronizationHandler NULL
+set EventGenerator:EventHandler:DecayHandler NULL
+set EventGenerator:EventHandler:Sampler:Ntry 100000
+set /Herwig/Model:EW/Sin2ThetaW 0.22254916
+cd /Herwig/MatrixElements/
+set MEPP2ttbarH:ShapeScheme OnShell
+insert SubProcess:MatrixElements[0] MEPP2ttbarH
+set /Herwig/RunningMass:TopBottomCharmMass Pole
+cd /Herwig/Generators
+set /Herwig/Analysis/Basics:CheckQuark No
+create Herwig::QQHTest ttHTest HadronTest.so
+set ttHTest:QuarkFlavour Top
+insert EventGenerator:AnalysisHandlers 0 ttHTest
+saverun LHC-ttH EventGenerator
