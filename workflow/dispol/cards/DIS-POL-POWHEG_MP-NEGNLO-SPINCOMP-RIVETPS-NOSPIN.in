@@ -29,6 +29,10 @@ set /Herwig/Samplers/Sampler:BinSampler:InitialPoints 1000000
 # Technical parameters for this run
 ##################################################
 cd /Herwig/Generators
+set EventGenerator:DebugLevel 0
+set EventGenerator:PrintEvent 0
+set EventGenerator:DumpPeriod -1
+set EventGenerator:MaxWarnings 1
 set EventGenerator:MaxErrors 1000000
 set /Herwig/Shower/ShowerHandler:PDFB /Herwig/Partons/ShowerLOPDF
 set /Herwig/Partons/MPIExtractor:SecondPDF  /Herwig/Partons/MPIPDF

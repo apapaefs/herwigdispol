@@ -34,6 +34,8 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, TypeVar
 
+import yoda
+
 from analyze_DIS_polarized import (
     SCALE_VARIATION_FACTORS,
     build_dis_polarized_objects,
@@ -65,7 +67,7 @@ DEFAULT_BASE_DIR = WORKFLOW_DIR
 GAMMA_HELICITIES = ("00", "PP", "PM")
 FULL_HELICITIES = ("00", "PP", "PM", "MP", "MM")
 SETUP_ORDER = ("GAMMA", "Z", "ALL")
-PS_SETUP_ORDER = ("SPINVAL", "SPINCOMP")
+PS_SETUP_ORDER = ("SPINVAL", "SPINCOMP", "SPINHAD")
 SUPPORTED_SETUPS = SETUP_ORDER + ("CC",) + PS_SETUP_ORDER
 ORDER_ORDER = ("LO", "POSNLO", "NEGNLO")
 PROGRESS_MARKER_RE = re.compile(r"event>\s+(?P<current>init|\d+)(?:\s+(?P<total>\d+)|/(?P<total_alt>\d+))")
@@ -87,6 +89,7 @@ SCALE_VARIATION_STEM_SUFFIXES = {
 PS_SETUP_FAMILIES = {
     "SPINVAL": ("RIVETPS-SPIN",),
     "SPINCOMP": ("RIVETPS-SPIN", "RIVETPS-NOSPIN", "RIVETPS-NOSPIN-UNPOL"),
+    "SPINHAD": ("RIVETPS-SPIN", "RIVETPS-NOSPIN", "RIVETPS-NOSPIN-UNPOL"),
 }
 PS_FAMILY_LABELS = {
     "RIVETPS-SPIN": "Full",
@@ -423,7 +426,7 @@ def contains_legacy_setups(setups: Sequence[str]) -> bool:
 
 def validate_setup_family(setups: Sequence[str]) -> None:
     if contains_ps_setups(setups) and contains_legacy_setups(setups):
-        raise ValueError("Do not mix SPINVAL/SPINCOMP with GAMMA/Z/ALL/CC in the same invocation.")
+        raise ValueError("Do not mix SPINVAL/SPINCOMP/SPINHAD with GAMMA/Z/ALL/CC in the same invocation.")
 
 
 def ps_families_for_setup(setup: str) -> Sequence[str]:
@@ -435,6 +438,19 @@ def ps_families_for_setup(setup: str) -> Sequence[str]:
 
 def ps_analysis_variants_by_setup(setups: Sequence[str]) -> Dict[str, Sequence[str]]:
     return {setup: ps_families_for_setup(setup) for setup in setups if is_ps_setup(setup)}
+
+
+def supports_ps_family_comparison(setup: str) -> bool:
+    return is_ps_setup(setup) and len(ps_families_for_setup(setup)) > 1
+
+
+def multi_family_ps_setups(setups: Sequence[str]) -> List[str]:
+    return [setup for setup in normalize_campaign_setups(setups) if supports_ps_family_comparison(setup)]
+
+
+def has_ps_hadronization_toggle_inputs(setups: Sequence[str]) -> bool:
+    selected = set(normalize_campaign_setups(setups))
+    return {"SPINCOMP", "SPINHAD"}.issubset(selected)
 
 
 def ps_family_label(analysis_variant: str) -> str:
@@ -486,17 +502,41 @@ def apply_variant_style_annotation(objects: Dict[str, object], analysis_variant:
         return
 
     line_color, line_style = style
+    apply_line_style_annotation(objects, line_color=line_color, line_style=line_style)
+
+
+def apply_line_style_annotation(
+    objects: Dict[str, object],
+    line_color: str,
+    line_style: str,
+    error_band_color: Optional[str] = None,
+) -> None:
+    band_color = error_band_color or line_color
     for obj in objects.values():
         for key, value in (
             ("LineColor", line_color),
             ("MarkerColor", line_color),
-            ("ErrorBandColor", line_color),
+            ("ErrorBandColor", band_color),
             ("LineStyle", line_style),
         ):
             try:
                 obj.setAnnotation(key, value)
             except Exception:
                 pass
+
+
+def rewrite_plot_yoda_annotations(
+    input_yoda: str,
+    output_yoda: str,
+    legend: str,
+    line_color: str,
+    line_style: str,
+) -> str:
+    objects = yoda.read(str(input_yoda))
+    apply_legend_annotation(objects, legend)
+    apply_line_style_annotation(objects, line_color=line_color, line_style=line_style)
+    write_analysis_yoda_gz(objects, str(output_yoda))
+    return str(output_yoda)
 
 
 def raw_powheg_rivetplot_title() -> str:
@@ -1787,6 +1827,7 @@ def update_manifest_outputs(
     raw_powheg_channel_analysis_plot_outputs: Optional[Dict[str, Dict[str, str]]] = None,
     reference_output: Optional[str] = None,
     plot_outputs: Optional[Dict[str, str]] = None,
+    ps_hadronization_plot_outputs: Optional[Dict[str, str]] = None,
     raw_powheg_yoda_outputs: Optional[List[Dict[str, object]]] = None,
 ) -> None:
     manifest = load_manifest(campaign_dir)
@@ -1850,6 +1891,12 @@ def update_manifest_outputs(
             existing_plots = {}
         existing_plots.update(plot_outputs)
         manifest["plot_dirs"] = existing_plots
+    if ps_hadronization_plot_outputs:
+        existing_hadronization = manifest.get("ps_hadronization_plot_outputs", {})
+        if not isinstance(existing_hadronization, dict):
+            existing_hadronization = {}
+        existing_hadronization.update(ps_hadronization_plot_outputs)
+        manifest["ps_hadronization_plot_outputs"] = existing_hadronization
     if manifest:
         save_manifest(campaign_dir, manifest)
 
@@ -2955,6 +3002,11 @@ def default_ps_plot_dir(base_dir: Path, tag: str, setup: str) -> Path:
     return campaign_dir / f"plots_ps_spincomp_{setup.lower()}"
 
 
+def default_ps_hadronization_plot_dir(base_dir: Path, tag: str) -> Path:
+    campaign_dir = resolve_campaign_dir(base_dir, tag)
+    return campaign_dir / "plots_ps_hadronization_full_toggle"
+
+
 def run_ps_rivetplot_campaign(
     base_dir: Path,
     tag: str,
@@ -2980,9 +3032,11 @@ def run_ps_rivetplot_campaign(
     if tool is None:
         raise FileNotFoundError(f"Could not find rivet-mkhtml tool '{rivet_mkhtml_tool}'")
 
-    selected = [setup for setup in normalize_campaign_setups(setups) if setup == "SPINCOMP"]
+    selected = multi_family_ps_setups(setups)
     if not selected:
-        raise ValueError("PS comparison plots are only defined for --setup SPINCOMP.")
+        raise ValueError(
+            "PS comparison plots are only defined for multi-family PS setups (currently SPINCOMP and SPINHAD)."
+        )
     if plot_dir is not None and len(selected) != 1:
         raise ValueError("--plot-dir may only be used with a single --setup")
 
@@ -3117,6 +3171,218 @@ def run_ps_rivetplot_campaign(
     if outputs and not dry_run:
         update_manifest_outputs(campaign_dir, plot_outputs=outputs)
     return outputs
+
+
+def run_ps_hadronization_rivetplot_campaign(
+    base_dir: Path,
+    tag: str,
+    setups: Sequence[str],
+    analysis_name: str,
+    rivet_mkhtml_tool: str,
+    scale_variations: Optional[bool] = None,
+    max_workers: int = 1,
+    dry_run: bool = False,
+) -> Dict[str, str]:
+    campaign_dir = resolve_campaign_dir(base_dir, tag)
+    manifest = load_manifest(campaign_dir)
+    scale_variations_enabled = resolve_scale_variations_requested(scale_variations, manifest, default=False)
+    analysis_outputs = manifest.get("analysis_yoda_by_family", {})
+    if not isinstance(analysis_outputs, dict):
+        analysis_outputs = {}
+    analysis_plot_outputs = manifest.get("analysis_plot_yoda_by_family", {})
+    if not isinstance(analysis_plot_outputs, dict):
+        analysis_plot_outputs = {}
+
+    tool = choose_rivet_mkhtml_tool(rivet_mkhtml_tool)
+    if tool is None:
+        raise FileNotFoundError(f"Could not find rivet-mkhtml tool '{rivet_mkhtml_tool}'")
+    if not has_ps_hadronization_toggle_inputs(setups):
+        raise ValueError(
+            "PS hadronization toggle plots require both --setup SPINCOMP and --setup SPINHAD in the same campaign."
+        )
+
+    this_plot_dir = default_ps_hadronization_plot_dir(base_dir, tag)
+    this_plot_dir.parent.mkdir(parents=True, exist_ok=True)
+    sanitized_inputs_dir = campaign_dir / "analysis" / "_rivetplot_inputs_ps_hadronization"
+    sanitized_inputs_dir.mkdir(parents=True, exist_ok=True)
+
+    def family_yoda(setup: str, family: str) -> str:
+        family_plot_map = analysis_plot_outputs.get(family, {})
+        if not isinstance(family_plot_map, dict):
+            family_plot_map = {}
+        family_yoda_map = analysis_outputs.get(family, {})
+        if not isinstance(family_yoda_map, dict):
+            family_yoda_map = {}
+        yoda_path = family_plot_map.get(setup) or family_yoda_map.get(setup)
+        if not yoda_path:
+            raise FileNotFoundError(
+                f"Missing analyzed PS Herwig YODA for {setup}/{family} in {campaign_dir / 'manifest.json'}"
+            )
+        return str(yoda_path)
+
+    def sanitize_input_yoda(input_yoda: str, label: str, scale_envelope: bool = False) -> str:
+        input_path = Path(input_yoda)
+        output_name = input_path.name
+        if output_name.endswith(".yoda.gz"):
+            output_name = output_name[:-8] + f".{label}.sanitized.yoda.gz"
+        elif output_name.endswith(".yoda"):
+            output_name = output_name[:-5] + f".{label}.sanitized.yoda"
+        else:
+            output_name = output_name + f".{label}.sanitized.yoda"
+        sanitized_path = sanitized_inputs_dir / output_name
+        if not dry_run:
+            if scale_envelope:
+                kept_count, dropped_count, dropped = build_scale_envelope_plot_yoda(input_path, sanitized_path)
+                print(
+                    f"[stage] Built hadronization plot YODA for {label}: kept {kept_count} objects, "
+                    f"dropped {dropped_count} incompatible/empty objects -> {sanitized_path}",
+                    flush=True,
+                )
+            else:
+                kept_count, dropped_count, dropped = sanitize_plot_yoda(
+                    input_path,
+                    sanitized_path,
+                    drop_band_annotations=not scale_envelope,
+                )
+                print(
+                    f"[stage] Sanitized hadronization plot YODA for {label}: kept {kept_count} objects, "
+                    f"dropped {dropped_count} incompatible/empty objects -> {sanitized_path}",
+                    flush=True,
+                )
+            if dropped_count:
+                for dropped_path, reason in sorted(dropped.items())[:20]:
+                    print(f"[warn]   {dropped_path}: {reason}", flush=True)
+                if dropped_count > 20:
+                    print(f"[warn]   ... and {dropped_count - 20} more", flush=True)
+        return str(sanitized_path)
+
+    no_had_input = sanitize_input_yoda(
+        family_yoda("SPINCOMP", "RIVETPS-SPIN"),
+        "spincomp_rivetps_spin",
+        scale_envelope=scale_variations_enabled,
+    )
+    had_input = sanitize_input_yoda(
+        family_yoda("SPINHAD", "RIVETPS-SPIN"),
+        "spinhad_rivetps_spin",
+        scale_envelope=scale_variations_enabled,
+    )
+
+    if not dry_run and not scale_variations_enabled:
+        harmonized_files, harmonized_objects = harmonize_plot_yoda_bin_grids([no_had_input, had_input])
+        if harmonized_files or harmonized_objects:
+            print_stage(
+                "Harmonized PS hadronization-toggle plot bin grids: "
+                f"updated {harmonized_objects} objects across {harmonized_files} files"
+            )
+
+    no_had_plot_input = no_had_input
+    had_plot_input = had_input
+    if not dry_run:
+        no_had_plot_input = rewrite_plot_yoda_annotations(
+            no_had_input,
+            str(Path(no_had_input).with_name(Path(no_had_input).name.replace('.sanitized.', '.styled.'))),
+            "Full (No Hadronization)",
+            line_color="red",
+            line_style="solid",
+        )
+        had_plot_input = rewrite_plot_yoda_annotations(
+            had_input,
+            str(Path(had_input).with_name(Path(had_input).name.replace('.sanitized.', '.styled.'))),
+            "Full (Hadronization)",
+            line_color="black",
+            line_style="dashed",
+        )
+
+    command: List[str] = [
+        sys.executable,
+        str(script_path("rivet_mkhtml_safe.py")),
+        tool,
+        f"{no_had_plot_input}:Title=Full (No Hadronization)",
+        f"{had_plot_input}:Title=Full (Hadronization)",
+        "--verbose",
+        "-o",
+        str(this_plot_dir),
+    ]
+    if dry_run:
+        print(shlex.join(command))
+    else:
+        if this_plot_dir.exists():
+            shutil.rmtree(this_plot_dir)
+        this_plot_dir.mkdir(parents=True, exist_ok=True)
+        env = os.environ.copy()
+        if not scale_variations_enabled:
+            env["DISPOL_FORCE_NO_ERROR_BANDS"] = "1"
+        proc = subprocess.run(command, cwd=base_dir, text=True, capture_output=True, env=env)
+        if proc.stdout:
+            (this_plot_dir.parent / f"{this_plot_dir.name}.mkhtml.stdout").write_text(proc.stdout)
+        if proc.stderr:
+            (this_plot_dir.parent / f"{this_plot_dir.name}.mkhtml.stderr").write_text(proc.stderr)
+        if proc.returncode != 0:
+            raise RuntimeError(f"rivet-mkhtml failed for SPINCOMP/SPINHAD hadronization toggle with rc={proc.returncode}")
+        if scale_variations_enabled:
+            patched_count, rerendered_count = rewrite_scale_envelope_plot_scripts(this_plot_dir)
+            print_stage(
+                "Postprocessed scale-envelope Rivet scripts for PS hadronization toggle: "
+                f"patched {patched_count}, rerendered {rerendered_count}"
+            )
+        else:
+            patched_count, rerendered_count = rewrite_no_scale_ratio_plot_scripts(this_plot_dir)
+            print_stage(
+                "Postprocessed no-scale Rivet ratio scripts for PS hadronization toggle: "
+                f"patched {patched_count}, rerendered {rerendered_count}"
+            )
+
+    outputs = {"full_toggle": str(this_plot_dir)}
+    if outputs and not dry_run:
+        update_manifest_outputs(campaign_dir, ps_hadronization_plot_outputs=outputs)
+    return outputs
+
+
+def run_ps_plotting_campaign(
+    base_dir: Path,
+    tag: str,
+    setups: Sequence[str],
+    analysis_name: str,
+    rivet_mkhtml_tool: str,
+    plot_dir: Optional[Path] = None,
+    scale_variations: Optional[bool] = None,
+    max_workers: int = 1,
+    dry_run: bool = False,
+) -> Dict[str, str]:
+    outputs: Dict[str, str] = {}
+    if multi_family_ps_setups(setups):
+        outputs.update(
+            run_ps_rivetplot_campaign(
+                base_dir=base_dir,
+                tag=tag,
+                setups=setups,
+                analysis_name=analysis_name,
+                rivet_mkhtml_tool=rivet_mkhtml_tool,
+                plot_dir=plot_dir,
+                scale_variations=scale_variations,
+                max_workers=max_workers,
+                dry_run=dry_run,
+            )
+        )
+    if has_ps_hadronization_toggle_inputs(setups):
+        outputs.update(
+            run_ps_hadronization_rivetplot_campaign(
+                base_dir=base_dir,
+                tag=tag,
+                setups=setups,
+                analysis_name=analysis_name,
+                rivet_mkhtml_tool=rivet_mkhtml_tool,
+                scale_variations=scale_variations,
+                max_workers=max_workers,
+                dry_run=dry_run,
+            )
+        )
+    if not outputs:
+        raise ValueError(
+            "PS plotting requires a multi-family PS setup (SPINCOMP/SPINHAD) and/or the combined SPINCOMP+SPINHAD hadronization inputs."
+        )
+    return outputs
+
 
 
 def run_rivetplot_campaign(
@@ -3630,11 +3896,11 @@ def run_campaign_command(args: argparse.Namespace) -> int:
     analysis_variants_by_setup = ps_analysis_variants_by_setup(requested_setups) if ps_mode else None
     if ps_mode:
         if analysis_variant == "RIVETFO":
-            raise ValueError("SPINVAL/SPINCOMP are not supported with --rivetfo.")
+            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetfo.")
         if enable_raw_powheg:
-            raise ValueError("--raw-powheg is not supported for SPINVAL/SPINCOMP.")
+            raise ValueError("--raw-powheg is not supported for SPINVAL/SPINCOMP/SPINHAD.")
         if getattr(args, "include_lo", None):
-            raise ValueError("SPINVAL/SPINCOMP are NLO-only workflows; do not use --include-lo.")
+            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are NLO-only workflows; do not use --include-lo.")
         analysis_variant = "RIVETPS"
         include_lo = False
         diagnostics_enabled = False
@@ -3933,14 +4199,14 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
     ps_mode = contains_ps_setups(requested_setups)
     if ps_mode:
         if analysis_variant == "RIVETFO":
-            raise ValueError("SPINVAL/SPINCOMP are not supported with --rivetfo.")
+            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetfo.")
         analysis_variant = "RIVETPS"
     scale_variations = resolve_scale_variations_requested(getattr(args, "scale_variations", None), manifest, default=False)
     include_lo = resolve_include_lo_requested(getattr(args, "include_lo", None), manifest, analysis_variant)
     diagnostics_enabled = resolve_extract_diagnostics_requested(getattr(args, "diagnostics", None), manifest)
     if ps_mode:
         if include_lo:
-            raise ValueError("SPINVAL/SPINCOMP are NLO-only workflows; do not use --include-lo.")
+            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are NLO-only workflows; do not use --include-lo.")
         diagnostics_enabled = False
     resolve_analysis_name(args, requested_setups)
     args.setup = requested_setups
@@ -4250,7 +4516,7 @@ def run_poldis_top_command(args: argparse.Namespace, campaign_tag: Optional[str]
     setups = normalize_campaign_setups(getattr(args, "setup", ()))
     validate_setup_family(setups)
     if contains_ps_setups(setups):
-        raise ValueError("poldis-top is not used for SPINVAL/SPINCOMP workflows.")
+        raise ValueError("poldis-top is not used for SPINVAL/SPINCOMP/SPINHAD workflows.")
     resolve_analysis_name(args, setups)
     print_stage(f"Running poldis-top for campaign '{label}'")
     output_path = build_poldis_reference(
@@ -4286,7 +4552,7 @@ def run_rivetplot_command(args: argparse.Namespace) -> int:
     args.resolved_analysis_variant = analysis_variant
     print_stage(f"Running rivetplot for campaign '{args.tag}'")
     if ps_mode:
-        outputs = run_ps_rivetplot_campaign(
+        outputs = run_ps_plotting_campaign(
             base_dir=base_dir,
             tag=args.tag,
             setups=args.setup,
@@ -4328,6 +4594,8 @@ def run_rivetplot_command(args: argparse.Namespace) -> int:
     for setup in normalize_campaign_setups(args.setup):
         if setup in outputs:
             print(f"  {setup}: {outputs[setup]}")
+    if "full_toggle" in outputs:
+        print(f"  full_toggle: {outputs['full_toggle']}")
     return 0
 
 
@@ -4359,21 +4627,21 @@ def run_full_command(args: argparse.Namespace) -> int:
     )
 
     if ps_mode:
-        if "SPINCOMP" in requested_setups:
-            analyze_ps_herwig_campaign(
+        analyze_ps_herwig_campaign(
+            base_dir=args.base_dir.resolve(),
+            tag=args.tag,
+            setups=args.setup,
+            analysis_name=args.analysis_name,
+            scale_variations=scale_variations,
+            merge_tool_preference=args.yoda_merge_tool,
+            max_workers=max(1, args.jobs),
+            dry_run=False,
+        )
+        if multi_family_ps_setups(requested_setups) or has_ps_hadronization_toggle_inputs(requested_setups):
+            outputs = run_ps_plotting_campaign(
                 base_dir=args.base_dir.resolve(),
                 tag=args.tag,
-                setups=[setup for setup in args.setup if setup == "SPINCOMP"],
-                analysis_name=args.analysis_name,
-                scale_variations=scale_variations,
-                merge_tool_preference=args.yoda_merge_tool,
-                max_workers=max(1, args.jobs),
-                dry_run=False,
-            )
-            outputs = run_ps_rivetplot_campaign(
-                base_dir=args.base_dir.resolve(),
-                tag=args.tag,
-                setups=[setup for setup in args.setup if setup == "SPINCOMP"],
+                setups=args.setup,
                 analysis_name=args.analysis_name,
                 rivet_mkhtml_tool=args.rivet_mkhtml_tool,
                 plot_dir=args.plot_dir,
@@ -4385,7 +4653,9 @@ def run_full_command(args: argparse.Namespace) -> int:
             for setup in normalize_campaign_setups(args.setup):
                 if setup in outputs:
                     print(f"  {setup}: {outputs[setup]}")
-        elif "SPINVAL" in requested_setups:
+            if "full_toggle" in outputs:
+                print(f"  full_toggle: {outputs['full_toggle']}")
+        if "SPINVAL" in requested_setups:
             print("Spin diagnostic outputs:")
             print(f"  {campaign_dir / 'spin_diagnostic.txt'}")
             print(f"  {campaign_dir / 'spin_diagnostic.csv'}")

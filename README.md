@@ -151,6 +151,8 @@ ones are:
 - `extract_nlo_term_diagnostics.py`: derive NLO term diagnostics
 - `extract_powheg_real_spin_diagnostics.py`: summarize POWHEG real-emission spin
   diagnostics
+- `recover_campaign_manifest.py`: rebuild a missing campaign manifest from
+  shard artifacts and `launcher-logs/`
 - `compare_nlo_gamma.py`: compare NLO gamma-channel outputs
 - `compare_yoda_areas.py`: compare YODA integral behavior
 - `analyze_raw_powheg_summary_csv.py`: inspect raw POWHEG summary CSVs
@@ -228,6 +230,16 @@ Generated outputs are expected under:
 - `workflow/dispol/campaigns/<tag>/`
 - transient `.run`, `.log`, `.out`, `.yoda`, `.csv`, `.html`, and `.tex`
   products under `workflow/dispol/`
+
+Operational notes:
+
+- `SPINCOMP` and `SPINHAD` shower cards are configured with low-verbosity
+  `EventGenerator` settings so large PS campaigns do not flood the `.log`
+  files.
+- If a campaign crashes before `workflow/dispol/campaigns/<tag>/manifest.json`
+  is written, recover it with
+  `workflow/dispol/scripts/recover_campaign_manifest.py`, then resume with
+  `workflow/dispol/scripts/run_validation_campaign.py full --rerun-failed-random-seed`.
 
 The more detailed workflow note is in
 `workflow/dispol/docs/validation-workflow.md`.

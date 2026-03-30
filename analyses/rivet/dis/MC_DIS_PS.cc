@@ -84,15 +84,23 @@ namespace Rivet {
       book(_h_pT2PreCut, "pT2PreCut", 30, 0.0, 30.0);
 
       // Shower-sensitive observables.
+      const vector<double> q2MomentBins = {
+        49.0, 75.0, 100.0, 130.0, 170.0, 220.0,
+        300.0, 450.0, 700.0, 1100.0, 1700.0, 2500.0
+      };
+      const vector<double> broadeningBins = {
+        0.0, 0.025, 0.050, 0.075, 0.100, 0.125, 0.150, 0.175,
+        0.200, 0.225, 0.250, 0.275, 0.300, 0.325, 0.350, 0.450, 0.500
+      };
       book(_h_NJets, "NJets", 7, 1.5, 8.5);
       book(_h_pT3, "pT3", 15, 0.0, 30.0);
       book(_h_pT3OverpT1, "pT3OverpT1", 15, 0.0, 1.0);
       book(_h_SumPtExtra, "SumPtExtra", 20, 0.0, 40.0);
       book(_h_Phi3, "Phi3", 16, 0.0, M_PI);
       book(_h_PhiCurrentHemi, "PhiCurrentHemi", 20, 0.0, M_PI);
-      book(_h_Broadening, "Broadening", 20, 0.0, 0.5);
-      book(_h_Cos2PhiCurrentHemiNumQ2, "Cos2PhiCurrentHemiNumQ2", 10, 49.0, 2500.0);
-      book(_h_Cos2PhiCurrentHemiDenQ2, "Cos2PhiCurrentHemiDenQ2", 10, 49.0, 2500.0);
+      book(_h_Broadening, "Broadening", broadeningBins);
+      book(_h_Cos2PhiCurrentHemiNumQ2, "Cos2PhiCurrentHemiNumQ2", q2MomentBins);
+      book(_h_Cos2PhiCurrentHemiDenQ2, "Cos2PhiCurrentHemiDenQ2", q2MomentBins);
     }
 
     void analyze(const Event& event) {

@@ -153,6 +153,13 @@ YLabel=$\mathrm{d}\sigma/\mathrm{d}B_C$ [pb]
 LogY=1
 # END PLOT
 
+# BEGIN PLOT /MC_DIS_PS/ALLBroadeningCumulative
+Title=Cumulative double-spin asymmetry $A_{LL}(B_C > B_C^{cut})$
+XLabel=$B_C^{cut}$
+YLabel=$A_{LL}(B_C > B_C^{cut})$
+LogY=0
+# END PLOT
+
 # BEGIN PLOT /MC_DIS_PS/Cos2PhiCurrentHemiVsQ2
 Title=Current-hemisphere azimuthal moment $\langle \cos 2\phi_{\mathrm{CH}} \rangle(Q^2)$
 XLabel=$Q^2$ / GeV$^2$
