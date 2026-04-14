@@ -1,15 +1,31 @@
-# herwigdispol
+# Polarized Deep-Inelastic Scattering with Spin Correlations in Herwig 7
 
-`herwigdispol` is a curated source repository for the polarized deep-inelastic
-scattering program developed around modified Herwig and ThePEG source
-snapshots, the POLDIS fixed-order reference code, custom Rivet analyses, the
-DIS validation workflow, and the current paper draft.
+This repository is the research software and reproducibility companion for the
+HerwigPol polarized deep-inelastic scattering implementation developed for
+Herwig 7. It brings together the modified Herwig and ThePEG source snapshots,
+the curated POLDIS fixed-order reference code, the custom Rivet analyses, the
+DIS validation workflow, and the paper source in a single formal repository
+layout.
 
-The repository is intended to support reproducibility from source. It preserves
-the code, input cards, workflow drivers, and technical notes needed to rebuild
-and re-run the DIS studies, while intentionally excluding generated artifacts
-such as build products, campaign outputs, plots, merged YODA files, and
-rendered paper outputs.
+The repository is intended to preserve the source-level ingredients needed to
+rebuild and re-run the validated DIS studies. It therefore tracks code, input
+cards, workflow drivers, and technical notes, while intentionally excluding
+generated artifacts such as build products, campaign outputs, merged YODA
+files, plots, and rendered paper outputs.
+
+## Overview
+
+The software collected here supports the implementation and validation of
+polarized deep-inelastic scattering at next-to-leading order with spin
+correlations in Herwig 7. In addition to the event-generator source changes,
+the repository preserves the fixed-order comparison inputs, workflow
+orchestration scripts, and analysis components required for end-to-end studies
+of integrated and differential DIS observables.
+
+The repository should therefore be understood as a curated scientific software
+snapshot rather than as a general-purpose Herwig distribution. Its purpose is
+to provide a reproducible basis for the specific DIS programme documented in
+the accompanying paper and technical notes.
 
 ## Scope
 
@@ -261,6 +277,10 @@ The paper draft lives in:
 Only the TeX and bibliography sources are versioned. Rendered figure PDFs and
 other LaTeX build products are intentionally excluded, so figures must be
 regenerated locally or supplied separately before producing a final PDF.
+
+The paper associated with this repository is titled:
+
+- `Polarized Deep-Inelastic Scattering with Spin Correlations in Herwig 7`
 
 ## Acknowledgments
 
