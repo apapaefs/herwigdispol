@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
+import math
 import os
 import re
 import secrets
@@ -30,9 +31,10 @@ import shutil
 import subprocess
 import sys
 import time
+import threading
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, TypeVar
+from typing import Callable, Dict, Iterable, List, Mapping, Optional, Sequence, TypeVar
 
 import yoda
 
@@ -60,17 +62,30 @@ except ImportError:
     PrettyTable = None
 
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-WORKFLOW_DIR = SCRIPT_DIR.parent
-REPO_ROOT = WORKFLOW_DIR.parent.parent
-DEFAULT_BASE_DIR = WORKFLOW_DIR
+DEFAULT_BASE_DIR = Path(__file__).resolve().parent
 GAMMA_HELICITIES = ("00", "PP", "PM")
 FULL_HELICITIES = ("00", "PP", "PM", "MP", "MM")
 SETUP_ORDER = ("GAMMA", "Z", "ALL")
 PS_SETUP_ORDER = ("SPINVAL", "SPINCOMP", "SPINHAD")
 SUPPORTED_SETUPS = SETUP_ORDER + ("CC",) + PS_SETUP_ORDER
 ORDER_ORDER = ("LO", "POSNLO", "NEGNLO")
+PDF_PROFILES = {
+    "hybrid": {
+        "unpolarized": "PDF4LHC15_nnlo_100_pdfas",
+        "polarized_diff": "BDSSV24-NNLO",
+    },
+    "nnpdf_paired": {
+        "unpolarized": "NNPDF40_nlo_pch_as_01180",
+        "polarized_diff": "NNPDFpol20_nlo_as_01180",
+    },
+}
+DEFAULT_PDF_PROFILE = "hybrid"
+DEFAULT_POLDIS_MODE = "auto"
+POLDIS_MODE_CHOICES = ("auto", "run", "skip")
+POLDIS_WINDOW_LABEL = "broad"
+POLDIS_RUNNABLE_SETUPS = ("GAMMA", "Z", "ALL", "CC")
 PROGRESS_MARKER_RE = re.compile(r"event>\s+(?P<current>init|\d+)(?:\s+(?P<total>\d+)|/(?P<total_alt>\d+))")
+LOCAL_READ_RE = re.compile(r"^(?P<indent>\s*read\s+)(?P<target>\S+)(?P<suffix>\s*(?:#.*)?)$")
 
 POWHEG_OPTION_LINE_PREFIXES = (
     "set /Herwig/MatrixElements/PowhegMEDISNCPol:",
@@ -102,38 +117,7 @@ PS_FAMILY_STYLES = {
     "RIVETPS-NOSPIN-UNPOL": ("green", "dotted"),
 }
 PS_ANALYSIS_NAME = "MC_DIS_PS"
-
-
-def analyses_dir(base_dir: Path) -> Path:
-    preferred = REPO_ROOT / "analyses" / "rivet" / "dis"
-    return preferred
-
-
-def cards_subdir(base_dir: Path) -> Path:
-    candidate = base_dir / "cards"
-    return candidate if candidate.exists() else base_dir
-
-
-def card_relative_path(base_dir: Path, filename: str | Path) -> Path:
-    path = Path(filename)
-    if path.is_absolute():
-        return path
-    if path.parts and path.parts[0] == "cards":
-        return path
-    if cards_subdir(base_dir) != base_dir:
-        return Path("cards") / path
-    return path
-
-
-def card_path(base_dir: Path, filename: str | Path) -> Path:
-    path = card_relative_path(base_dir, filename)
-    if path.is_absolute():
-        return path
-    return base_dir / path
-
-
-def script_path(name: str) -> Path:
-    return SCRIPT_DIR / name
+_YODA_ANALYSIS_OBJECT_CACHE: Dict[tuple[str, str], bool] = {}
 
 
 def _analysis_component_matches(component: str, analysis_name: str) -> bool:
@@ -211,7 +195,7 @@ def write_powheg_options_summary(
     output_path = campaign_dir / "powheg-options.txt"
     sections: List[str] = []
     for in_file in unique_cards:
-        in_path = card_path(base_dir, in_file)
+        in_path = base_dir / in_file
         option_lines = extract_powheg_option_lines(in_path)
         if not option_lines:
             continue
@@ -323,6 +307,21 @@ class RawPOWHEGYODAResult:
     returncode: int
     skipped: bool = False
     message: Optional[str] = None
+
+
+@dataclass
+class ChangedEventPlan:
+    successful_existing: List[JobResult]
+    target_shards: List[ShardSpec]
+    planned_shards: List[ShardSpec]
+    original_event_counts: Dict[str, int]
+    original_requested_shards: int
+    original_seed_base: int
+    original_jobs_limit: int
+    jobs_satisfied: int
+    jobs_over_target: int
+    failed_reruns: int
+    missing_original: int
 
 
 def render_table(
@@ -577,6 +576,130 @@ def resolve_extract_diagnostics_requested(
     return False
 
 
+def resolve_pdf_profile_requested(
+    requested: Optional[str],
+    manifest: Optional[Dict[str, object]] = None,
+) -> str:
+    if requested is not None:
+        return requested
+    if manifest is not None:
+        manifest_value = manifest.get("pdf_profile")
+        if isinstance(manifest_value, str) and manifest_value in PDF_PROFILES:
+            return manifest_value
+    return DEFAULT_PDF_PROFILE
+
+
+def resolve_poldis_mode_requested(
+    requested: Optional[str],
+    pdf_profile: str,
+    manifest: Optional[Dict[str, object]] = None,
+) -> str:
+    if requested is not None:
+        return requested
+    if manifest is not None:
+        manifest_value = manifest.get("poldis_mode")
+        if isinstance(manifest_value, str) and manifest_value in POLDIS_MODE_CHOICES:
+            return manifest_value
+    return DEFAULT_POLDIS_MODE
+
+
+def should_build_dynamic_poldis_refs(poldis_mode: str, pdf_profile: str) -> bool:
+    if poldis_mode == "run":
+        return True
+    if poldis_mode == "skip":
+        return False
+    return pdf_profile != "hybrid"
+
+
+def profile_generated_input_root_rel(tag: str, profile: str) -> Path:
+    return Path("campaigns") / tag / "generated-inputs" / f"profile-{profile}"
+
+
+def profile_generated_input_root_path(base_dir: Path, tag: str, profile: str) -> Path:
+    return base_dir / profile_generated_input_root_rel(tag, profile)
+
+
+def profile_generated_in_file(tag: str, profile: str, filename: str) -> str:
+    return str(profile_generated_input_root_rel(tag, profile) / filename)
+
+
+def is_local_card_read_target(base_dir: Path, target: str) -> bool:
+    if "/" in target or target.startswith(".") or target.startswith("snippets/"):
+        return False
+    if not target.endswith(".in"):
+        return False
+    path = (base_dir / target).resolve()
+    try:
+        return path.parent == base_dir.resolve() and path.exists()
+    except OSError:
+        return False
+
+
+def patch_pdf_profile_card_text(
+    source_text: str,
+    *,
+    base_dir: Path,
+    tag: str,
+    profile: str,
+) -> str:
+    pdfs = PDF_PROFILES[profile]
+    replacements = {
+        "set /Herwig/Partons/DiffPDF:PDFName ": f"set /Herwig/Partons/DiffPDF:PDFName {pdfs['polarized_diff']}",
+        "set /Herwig/Partons/LHAPDF:PDFName ": f"set /Herwig/Partons/LHAPDF:PDFName {pdfs['unpolarized']}",
+        "set /Herwig/Partons/HardLOPDF:PDFName ": f"set /Herwig/Partons/HardLOPDF:PDFName {pdfs['unpolarized']}",
+        "set /Herwig/Partons/HardNLOPDF:PDFName ": f"set /Herwig/Partons/HardNLOPDF:PDFName {pdfs['unpolarized']}",
+        "set /Herwig/Partons/ShowerLOPDF:PDFName ": f"set /Herwig/Partons/ShowerLOPDF:PDFName {pdfs['unpolarized']}",
+        "set /Herwig/Partons/ShowerNLOPDF:PDFName ": f"set /Herwig/Partons/ShowerNLOPDF:PDFName {pdfs['unpolarized']}",
+    }
+    patched: List[str] = []
+    for line in source_text.splitlines():
+        stripped = line.strip()
+        replaced = False
+        for prefix, replacement in replacements.items():
+            if stripped.startswith(prefix):
+                patched.append(replacement)
+                replaced = True
+                break
+        if replaced:
+            continue
+        match = LOCAL_READ_RE.match(line)
+        if match is not None:
+            target = match.group("target")
+            if is_local_card_read_target(base_dir, target):
+                generated_target = profile_generated_in_file(tag, profile, Path(target).name)
+                patched.append(f"{match.group('indent')}{generated_target}{match.group('suffix')}")
+                continue
+        patched.append(line)
+    rendered = "\n".join(patched)
+    if source_text.endswith("\n"):
+        rendered += "\n"
+    return rendered
+
+
+def materialize_pdf_profile_inputs(base_dir: Path, tag: str, profile: str, dry_run: bool = False) -> Optional[str]:
+    if profile == "hybrid":
+        return None
+    root = profile_generated_input_root_path(base_dir, tag, profile)
+    for source_path in sorted(base_dir.glob("*.in")):
+        if source_path.name.startswith("._"):
+            continue
+        rendered = patch_pdf_profile_card_text(
+            source_path.read_text(),
+            base_dir=base_dir,
+            tag=tag,
+            profile=profile,
+        )
+        target_path = root / source_path.name
+        if dry_run:
+            print(f"[dry-run] generate-profile-card {source_path} -> {target_path}")
+            continue
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        if target_path.exists() and target_path.read_text() == rendered:
+            continue
+        target_path.write_text(rendered)
+    return str(root.resolve())
+
+
 def apply_legend_annotation(objects: Dict[str, object], legend: str) -> None:
     for obj in objects.values():
         try:
@@ -669,7 +792,9 @@ def build_logical_run_stem(
     return f"{base}{analysis_suffix}{scale_variation_stem_suffix(scale_variation)}"
 
 
-def generated_scale_variation_in_file(tag: str, stem: str) -> str:
+def generated_scale_variation_in_file(tag: str, stem: str, pdf_profile: str = "hybrid") -> str:
+    if pdf_profile != "hybrid":
+        return profile_generated_in_file(tag, pdf_profile, f"{stem}.in")
     return str(Path("campaigns") / tag / "generated-inputs" / f"{stem}.in")
 
 
@@ -683,6 +808,7 @@ def build_jobs(
     scale_variations: bool = False,
     campaign_tag: str = "",
     include_lo: Optional[bool] = None,
+    pdf_profile: str = "hybrid",
 ) -> List[JobSpec]:
     jobs: List[JobSpec] = []
     include_lo = resolve_include_lo_requested(include_lo, analysis_variant=analysis_variant)
@@ -697,6 +823,11 @@ def build_jobs(
             for variant in variants:
                 for hel in helicities:
                     nominal_stem = build_logical_run_stem(setup, "LO", hel, variant, "nominal")
+                    nominal_input = (
+                        profile_generated_in_file(campaign_tag, pdf_profile, f"{nominal_stem}.in")
+                        if pdf_profile != "hybrid"
+                        else f"{nominal_stem}.in"
+                    )
                     for scale_variation in selected_scale_variations(scale_variations):
                         stem = build_logical_run_stem(setup, "LO", hel, variant, scale_variation)
                         jobs.append(
@@ -707,15 +838,15 @@ def build_jobs(
                                 stem=stem,
                                 run_file=f"{stem}.run",
                                 in_file=(
-                                    generated_scale_variation_in_file(campaign_tag, stem)
+                                    generated_scale_variation_in_file(campaign_tag, stem, pdf_profile)
                                     if scale_variation != "nominal"
-                                    else f"{stem}.in"
+                                    else nominal_input
                                 ),
                                 events=lo_events,
                                 analysis_variant=variant,
                                 scale_variation=scale_variation,
                                 scale_factor=SCALE_VARIATION_FACTORS[scale_variation],
-                                source_in_file=f"{nominal_stem}.in",
+                                source_in_file=nominal_input,
                             )
                         )
         pieces = (("POSNLO", posnlo_events), ("NEGNLO", negnlo_events))
@@ -723,6 +854,11 @@ def build_jobs(
             for variant in variants:
                 for hel in helicities:
                     nominal_stem = build_logical_run_stem(setup, piece, hel, variant, "nominal")
+                    nominal_input = (
+                        profile_generated_in_file(campaign_tag, pdf_profile, f"{nominal_stem}.in")
+                        if pdf_profile != "hybrid"
+                        else f"{nominal_stem}.in"
+                    )
                     for scale_variation in selected_scale_variations(scale_variations):
                         stem = build_logical_run_stem(setup, piece, hel, variant, scale_variation)
                         jobs.append(
@@ -733,15 +869,15 @@ def build_jobs(
                                 stem=stem,
                                 run_file=f"{stem}.run",
                                 in_file=(
-                                    generated_scale_variation_in_file(campaign_tag, stem)
+                                    generated_scale_variation_in_file(campaign_tag, stem, pdf_profile)
                                     if scale_variation != "nominal"
-                                    else f"{stem}.in"
+                                    else nominal_input
                                 ),
                                 events=events,
                                 analysis_variant=variant,
                                 scale_variation=scale_variation,
                                 scale_factor=SCALE_VARIATION_FACTORS[scale_variation],
-                                source_in_file=f"{nominal_stem}.in",
+                                source_in_file=nominal_input,
                             )
                         )
     return jobs
@@ -823,16 +959,55 @@ def build_parser() -> argparse.ArgumentParser:
         default=1,
         help="When rerunning failed shards with fresh random seeds, split each failed shard into this many replacement shards.",
     )
+    campaign_parent.add_argument(
+        "--change-number-of-events",
+        action="store_true",
+        help=(
+            "Only with --rerun-failed-random-seed: reinterpret --lo-events/--posnlo-events/--negnlo-events "
+            "as new lower total targets, reuse successful completed shards from the existing manifest, "
+            "and schedule only the remaining events needed to reach the new totals."
+        ),
+    )
     campaign_parent.add_argument("--progress-interval", type=float, default=5.0, help="Seconds between progress refreshes.")
     campaign_parent.add_argument("--max-listed", type=int, default=12, help="Maximum number of logical runs to list in the live progress display.")
     campaign_parent.add_argument("--no-merge-yoda", action="store_true", help="Do not merge shard YODA files after the campaign.")
     campaign_parent.add_argument("--yoda-merge-tool", default="auto", help="Merge tool to use: auto, rivet-merge, or yodamerge.")
+    campaign_parent.add_argument(
+        "--pdf-profile",
+        choices=tuple(PDF_PROFILES),
+        default=None,
+        help="PDF profile for generated campaign-local input cards (default: hybrid; reruns/postprocess reuse the manifest setting).",
+    )
+    campaign_parent.add_argument(
+        "--poldis",
+        choices=POLDIS_MODE_CHOICES,
+        default=None,
+        help="Dynamic POLDIS reference mode: auto, run, or skip (default: auto; reruns/postprocess reuse the manifest setting).",
+    )
+    campaign_parent.add_argument("--poldis-jobs", type=int, default=4, help="Maximum number of concurrent POLDIS reference helper runs.")
+    campaign_parent.add_argument("--poldis-variant-jobs", type=int, default=1, help="Maximum concurrent unpolarized/polarized jobs inside each POLDIS helper.")
+    campaign_parent.add_argument("--poldis-events", type=int, default=200_000_000, help="Events per POLDIS unpolarized/polarized run.")
     campaign_parent.add_argument("--rivet", action="store_true", help="Use the -RIVET input/run cards and extract Rivet-mode outputs.")
     campaign_parent.add_argument("--rivetfo", action="store_true", help="Use the -RIVETFO input/run cards and extract Rivet-mode outputs.")
     postprocess_parent = argparse.ArgumentParser(add_help=False)
     postprocess_parent.add_argument("--dry-run", action="store_true", help="Print the planned commands without executing them.")
     postprocess_parent.add_argument("--no-merge-yoda", action="store_true", help="Do not rebuild merged YODA files.")
     postprocess_parent.add_argument("--yoda-merge-tool", default="auto", help="Merge tool to use: auto, rivet-merge, or yodamerge.")
+    postprocess_parent.add_argument(
+        "--pdf-profile",
+        choices=tuple(PDF_PROFILES),
+        default=None,
+        help="PDF profile used by the campaign (default: hybrid; postprocess reuses the manifest setting when available).",
+    )
+    postprocess_parent.add_argument(
+        "--poldis",
+        choices=POLDIS_MODE_CHOICES,
+        default=None,
+        help="Dynamic POLDIS reference mode: auto, run, or skip (default: auto; postprocess reuses the manifest setting when available).",
+    )
+    postprocess_parent.add_argument("--poldis-jobs", type=int, default=4, help="Maximum number of concurrent POLDIS reference helper runs.")
+    postprocess_parent.add_argument("--poldis-variant-jobs", type=int, default=1, help="Maximum concurrent unpolarized/polarized jobs inside each POLDIS helper.")
+    postprocess_parent.add_argument("--poldis-events", type=int, default=200_000_000, help="Events per POLDIS unpolarized/polarized run.")
     postprocess_parent.add_argument("--rivet", action="store_true", help="Use the -RIVET file naming convention.")
     postprocess_parent.add_argument("--rivetfo", action="store_true", help="Use the -RIVETFO file naming convention.")
 
@@ -878,14 +1053,31 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return build_parser().parse_args(args)
 
 
+def candidate_analyses_dirs(base_dir: Path) -> List[Path]:
+    candidates: List[Path] = []
+    seen: set[str] = set()
+    roots = [base_dir.resolve(), *base_dir.resolve().parents[:6]]
+    for root in roots:
+        for rel in (Path("analyses"), Path("DISPOL") / "analyses"):
+            candidate = (root / rel).resolve()
+            key = str(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            if candidate.exists():
+                candidates.append(candidate)
+    return candidates
+
+
 def rivet_runtime_env(base_dir: Path) -> Dict[str, str]:
     env = os.environ.copy()
-    analysis_dir = analyses_dir(base_dir).resolve()
+    analyses_dirs = candidate_analyses_dirs(base_dir)
     base_dir_resolved = base_dir.resolve()
 
     analysis_paths: List[str] = []
-    if analysis_dir.exists():
-        analysis_paths.append(str(analysis_dir))
+    for analyses_dir in analyses_dirs:
+        if str(analyses_dir) not in analysis_paths:
+            analysis_paths.append(str(analyses_dir))
     if base_dir_resolved.exists():
         analysis_paths.append(str(base_dir_resolved))
     existing_analysis = env.get("RIVET_ANALYSIS_PATH")
@@ -895,8 +1087,9 @@ def rivet_runtime_env(base_dir: Path) -> Dict[str, str]:
         env["RIVET_ANALYSIS_PATH"] = os.pathsep.join(analysis_paths)
 
     data_paths: List[str] = []
-    if analysis_dir.exists():
-        data_paths.append(str(analysis_dir))
+    for analyses_dir in analyses_dirs:
+        if str(analyses_dir) not in data_paths:
+            data_paths.append(str(analyses_dir))
     if base_dir_resolved.exists():
         data_paths.append(str(base_dir_resolved))
     existing_data = env.get("RIVET_DATA_PATH")
@@ -905,7 +1098,78 @@ def rivet_runtime_env(base_dir: Path) -> Dict[str, str]:
     if data_paths:
         env["RIVET_DATA_PATH"] = os.pathsep.join(data_paths)
 
+    plot_paths: List[str] = []
+    for analyses_dir in analyses_dirs:
+        if str(analyses_dir) not in plot_paths:
+            plot_paths.append(str(analyses_dir))
+    existing_plot = env.get("RIVET_PLOT_PATH")
+    if existing_plot:
+        plot_paths.append(existing_plot)
+    if plot_paths:
+        env["RIVET_PLOT_PATH"] = os.pathsep.join(plot_paths)
+
     return env
+
+
+def resolve_plot_config_path(base_dir: Path, analysis_name: str) -> Optional[Path]:
+    for analyses_dir in candidate_analyses_dirs(base_dir):
+        candidate = (analyses_dir / f"{analysis_name}.plot").resolve()
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def read_plot_section_properties(plot_file: Path, plot_path: str) -> Dict[str, str]:
+    if not plot_file.exists():
+        return {}
+    begin_marker = f"# BEGIN PLOT {plot_path}"
+    in_section = False
+    properties: Dict[str, str] = {}
+    for raw_line in plot_file.read_text().splitlines():
+        line = raw_line.strip()
+        if line == begin_marker:
+            in_section = True
+            continue
+        if not in_section:
+            continue
+        if line == "# END PLOT":
+            break
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        properties[key.strip()] = value.strip()
+    return properties
+
+
+def debug_plot_metadata_lines(plot_file: Optional[Path], analysis_name: str) -> List[str]:
+    if plot_file is None:
+        return [f"Resolved plot config for {analysis_name}: <none>"]
+    lines = [f"Resolved plot config for {analysis_name}: {plot_file}"]
+    sentinel_paths: List[str] = []
+    if analysis_name == "MC_DIS_PS":
+        sentinel_paths = [
+            "/MC_DIS_PS/ALLBroadeningCumulative",
+            "/MC_DIS_PS/pT2PreCut",
+        ]
+    elif analysis_name == "MC_DIS_BREIT":
+        sentinel_paths = [
+            "/MC_DIS_BREIT/pT2PreCut",
+            "/MC_DIS_BREIT/DpT2PreCut",
+        ]
+    for sentinel_path in sentinel_paths:
+        properties = read_plot_section_properties(plot_file, sentinel_path)
+        if not properties:
+            lines.append(f"  {sentinel_path}: <missing>")
+            continue
+        title = properties.get("Title", "<no Title>")
+        xlabel = properties.get("XLabel")
+        ylabel = properties.get("YLabel")
+        lines.append(f"  {sentinel_path} Title={title}")
+        if xlabel is not None:
+            lines.append(f"  {sentinel_path} XLabel={xlabel}")
+        if ylabel is not None:
+            lines.append(f"  {sentinel_path} YLabel={ylabel}")
+    return lines
 
 
 def patch_raw_powheg_card(in_path: Path, analysis_variant: str, enable_raw_powheg: bool) -> bool:
@@ -1008,17 +1272,21 @@ def scale_variation_matrix_element(spec: JobSpec) -> str:
 
 
 def resolve_scale_variation_snippet(base_dir: Path, snippet_name: str) -> Optional[Path]:
-    direct_path = cards_subdir(base_dir) / "snippets" / snippet_name
+    direct_path = base_dir / "snippets" / snippet_name
     if direct_path.exists():
         return direct_path.resolve()
 
-    preferred_candidates = (
-        REPO_ROOT / "src" / "herwig" / "src" / "snippets" / snippet_name,
-        REPO_ROOT / "src" / "herwig" / "share" / "Herwig" / "snippets" / snippet_name,
-    )
-    for candidate in preferred_candidates:
-        if candidate.exists():
-            return candidate.resolve()
+    search_roots = [base_dir, *base_dir.parents]
+    for root in search_roots:
+        herwig_source = root / "HerwigSource"
+        if not herwig_source.exists():
+            continue
+        candidates = sorted(herwig_source.glob(f"Herwig-*/src/snippets/{snippet_name}"))
+        if candidates:
+            return candidates[0].resolve()
+        candidates = sorted(herwig_source.glob(f"Herwig-*/share/Herwig/snippets/{snippet_name}"))
+        if candidates:
+            return candidates[0].resolve()
     return None
 
 
@@ -1090,8 +1358,8 @@ def materialize_scale_variation_card(base_dir: Path, spec: JobSpec, dry_run: boo
     if not spec.source_in_file:
         raise RuntimeError(f"Missing source input card for scale variation job {spec.stem}")
 
-    source_path = card_path(base_dir, spec.source_in_file)
-    target_path = card_path(base_dir, spec.in_file)
+    source_path = base_dir / spec.source_in_file
+    target_path = base_dir / spec.in_file
     if not source_path.exists():
         raise FileNotFoundError(f"Missing source input file {source_path}")
 
@@ -1117,7 +1385,7 @@ def ensure_run_file(
     enable_raw_powheg: bool = False,
 ) -> Optional[JobResult]:
     run_path = base_dir / spec.run_file
-    in_path = card_path(base_dir, spec.in_file)
+    in_path = base_dir / spec.in_file
     materialize_scale_variation_card(base_dir, spec, dry_run=dry_run)
     card_patched = False
     effective_analysis_variant = spec.analysis_variant or analysis_variant
@@ -1126,14 +1394,17 @@ def ensure_run_file(
     if patch_ps_spin_card(in_path, spec):
         card_patched = True
     if run_path.exists() and not force_prepare:
+        if in_path.exists() and run_path.stat().st_mtime < in_path.stat().st_mtime:
+            force_prepare = True
         if not card_patched:
-            return None
+            if not force_prepare:
+                return None
         force_prepare = True
     if not do_prepare:
         raise FileNotFoundError(f"Missing run file {run_path}")
     if not in_path.exists() and not dry_run:
         raise FileNotFoundError(f"Missing input file {in_path}")
-    prepare_cmd = ["Herwig", "read", str(card_relative_path(base_dir, spec.in_file))]
+    prepare_cmd = ["Herwig", "read", spec.in_file]
     dummy_spec = ShardSpec(job=spec, shard_index=1, shard_count=1, tag="", seed=0, events=spec.events)
     if dry_run:
         print(shlex.join(prepare_cmd))
@@ -1169,6 +1440,122 @@ def collect_artifacts(base_dir: Path, stem: str, tag: str, seed: int) -> Dict[st
     return {"out_files": out_files, "log_files": log_files, "yoda_files": yoda_files}
 
 
+def campaign_monitor_dir(campaign_dir: Path) -> Path:
+    return campaign_dir / "monitor"
+
+
+def campaign_status_json_path(campaign_dir: Path) -> Path:
+    return campaign_monitor_dir(campaign_dir) / "status.json"
+
+
+def campaign_status_txt_path(campaign_dir: Path) -> Path:
+    return campaign_monitor_dir(campaign_dir) / "status.txt"
+
+
+def fmt_seconds_compact(value: Optional[float]) -> str:
+    if value is None or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return "n/a"
+    total = int(round(float(value)))
+    hours, rem = divmod(total, 3600)
+    minutes, seconds = divmod(rem, 60)
+    return f"{hours:d}:{minutes:02d}:{seconds:02d}"
+
+
+def build_campaign_monitor_payload(
+    *,
+    tag: str,
+    phase: str,
+    started_at: float,
+    pdf_profile: str,
+    poldis_mode: str,
+    message: Optional[str] = None,
+    herwig: Optional[Dict[str, object]] = None,
+    poldis: Optional[Dict[str, object]] = None,
+    extract_status: Optional[Dict[str, int]] = None,
+) -> Dict[str, object]:
+    payload: Dict[str, object] = {
+        "tag": tag,
+        "phase": phase,
+        "elapsed_s": max(0.0, time.time() - started_at),
+        "pdf_profile": pdf_profile,
+        "pdfs": dict(PDF_PROFILES[pdf_profile]),
+        "poldis_mode": poldis_mode,
+    }
+    if message:
+        payload["message"] = message
+    if herwig is not None:
+        payload["herwig"] = herwig
+    if poldis is not None:
+        payload["poldis"] = poldis
+    if extract_status is not None:
+        payload["extract_status"] = extract_status
+    return payload
+
+
+def render_campaign_monitor_text(payload: Mapping[str, object]) -> str:
+    lines = [
+        f"Tag: {payload['tag']}",
+        f"Phase: {payload['phase']}",
+        f"Elapsed: {fmt_seconds_compact(payload.get('elapsed_s'))}",
+        f"PDF profile: {payload['pdf_profile']}",
+        f"Unpolarized PDF: {payload['pdfs']['unpolarized']}",
+        f"Polarized diff PDF: {payload['pdfs']['polarized_diff']}",
+        f"POLDIS mode: {payload['poldis_mode']}",
+    ]
+    message = payload.get("message")
+    if isinstance(message, str) and message:
+        lines.append(f"Message: {message}")
+
+    herwig = payload.get("herwig")
+    if isinstance(herwig, dict):
+        lines.extend(
+            [
+                "",
+                "Herwig",
+                "------",
+                f"Shards: completed {herwig.get('completed', 0)}/{herwig.get('total', 0)} | "
+                f"running {herwig.get('running', 0)} | pending {herwig.get('pending', 0)} | failed {herwig.get('failed', 0)}",
+            ]
+        )
+        logical_rows = herwig.get("logical_rows")
+        if isinstance(logical_rows, list) and logical_rows:
+            lines.append("Logical runs with work remaining:")
+            lines.extend(render_table(["Run", "Running", "Pending", "Total"], logical_rows, aligns=("l", "r", "r", "r")))
+        active_rows = herwig.get("active_rows")
+        if isinstance(active_rows, list) and active_rows:
+            lines.append("Active shards:")
+            lines.extend(render_table(["Run", "Tag", "Progress", "Events", "Seed", "Runtime"], active_rows, aligns=("l", "l", "r", "r", "r", "r")))
+
+    poldis = payload.get("poldis")
+    if isinstance(poldis, dict):
+        lines.extend(
+            [
+                "",
+                "POLDIS",
+                "------",
+                f"References ready: {poldis.get('completed', 0)}/{poldis.get('total', 0)}",
+            ]
+        )
+        rows = poldis.get("rows")
+        if isinstance(rows, list) and rows:
+            lines.extend(render_table(["Setup", "Status", "Progress", "Variant", "Log"], rows, aligns=("l", "l", "r", "l", "l")))
+
+    extract_status = payload.get("extract_status")
+    if isinstance(extract_status, dict) and extract_status:
+        rows = [[key, str(value)] for key, value in sorted(extract_status.items())]
+        lines.extend(["", "Extraction", "----------"])
+        lines.extend(render_table(["Stage", "Status"], rows, aligns=("l", "r")))
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def write_campaign_monitor_files(campaign_dir: Path, payload: Mapping[str, object]) -> None:
+    mon_dir = campaign_monitor_dir(campaign_dir)
+    mon_dir.mkdir(parents=True, exist_ok=True)
+    campaign_status_json_path(campaign_dir).write_text(json.dumps(payload, indent=2, sort_keys=True))
+    campaign_status_txt_path(campaign_dir).write_text(render_campaign_monitor_text(payload))
+
+
 def choose_shards(logical_jobs: int, max_jobs: int, requested_shards: int) -> int:
     if requested_shards > 0:
         return requested_shards
@@ -1184,6 +1571,61 @@ def split_events(total_events: int, shards: int) -> List[int]:
     remainder = total_events % shards
     parts = [base + (1 if index < remainder else 0) for index in range(shards)]
     return [part for part in parts if part > 0]
+
+
+def requested_event_counts_from_args(args: argparse.Namespace) -> Dict[str, int]:
+    return {
+        "LO": int(getattr(args, "lo_events", 0)),
+        "POSNLO": int(getattr(args, "posnlo_events", 0)),
+        "NEGNLO": int(getattr(args, "negnlo_events", 0)),
+    }
+
+
+def manifest_event_counts(manifest: Dict[str, object], key: str = "event_counts") -> Dict[str, int]:
+    raw_counts = manifest.get(key, {})
+    counts: Dict[str, int] = {}
+    for order in ORDER_ORDER:
+        value = raw_counts.get(order) if isinstance(raw_counts, dict) else 0
+        try:
+            counts[order] = int(value)
+        except (TypeError, ValueError):
+            counts[order] = 0
+    return counts
+
+
+def original_manifest_event_counts(manifest: Dict[str, object]) -> Dict[str, int]:
+    original_counts = manifest_event_counts(manifest, key="original_event_counts")
+    if any(value > 0 for value in original_counts.values()):
+        return original_counts
+    return manifest_event_counts(manifest, key="event_counts")
+
+
+def original_manifest_requested_shards(manifest: Dict[str, object]) -> int:
+    value = manifest.get("original_shards_per_logical_run", manifest.get("shards_per_logical_run", 0))
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def original_manifest_seed_base(manifest: Dict[str, object]) -> int:
+    value = manifest.get("original_seed_base", manifest.get("seed_base", 100000))
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 100000
+
+
+def original_manifest_jobs_limit(manifest: Dict[str, object]) -> int:
+    value = manifest.get("original_jobs_limit", manifest.get("jobs_limit", os.cpu_count() or 1))
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return os.cpu_count() or 1
+
+
+def job_sort_key(job: JobSpec) -> tuple[str, str, str, str]:
+    return (job.setup, job.order, job.helicity, job.stem)
 
 
 def build_shards(jobs: Sequence[JobSpec], base_tag: str, requested_shards: int, max_jobs: int, seed_base: int) -> List[ShardSpec]:
@@ -1256,14 +1698,14 @@ def latest_progress_marker(result: JobResult) -> str:
     return f"{cur_val}/{total_val} ({percent:.1f}%)"
 
 
-def progress_lines(
+def build_herwig_progress_payload(
     all_shards: Sequence[ShardSpec],
     pending: Sequence[ShardSpec],
     active_results: Sequence[JobResult],
     finished: Sequence[JobResult],
     max_listed: int,
     started_at: float,
-) -> List[str]:
+) -> Dict[str, object]:
     total = len(all_shards)
     done = sum(1 for item in finished if item.returncode == 0)
     running = len(active_results)
@@ -1303,16 +1745,42 @@ def progress_lines(
             ]
         )
 
+    return {
+        "completed": done,
+        "running": running,
+        "pending": waiting,
+        "failed": failed,
+        "total": total,
+        "elapsed_s": elapsed,
+        "logical_rows": logical_rows,
+        "active_rows": running_rows,
+    }
+
+
+def progress_lines(
+    all_shards: Sequence[ShardSpec],
+    pending: Sequence[ShardSpec],
+    active_results: Sequence[JobResult],
+    finished: Sequence[JobResult],
+    max_listed: int,
+    started_at: float,
+) -> List[str]:
+    display_tag = "n/a"
+    if all_shards:
+        display_tag = re.sub(r"-s\d{3}$", "", all_shards[0].tag)
+    payload = build_herwig_progress_payload(all_shards, pending, active_results, finished, max_listed, started_at)
     lines = [
-        f"Tag: {all_shards[0].tag.rsplit('-s', 1)[0] if all_shards else 'n/a'}",
-        f"Elapsed: {elapsed:.0f}s",
-        f"Shards: completed {done}/{total} | running {running} | pending {waiting} | failed {failed}",
+        f"Tag: {display_tag}",
+        f"Elapsed: {float(payload['elapsed_s']):.0f}s",
+        f"Shards: completed {payload['completed']}/{payload['total']} | running {payload['running']} | pending {payload['pending']} | failed {payload['failed']}",
     ]
-    if logical_rows:
+    logical_rows = payload.get("logical_rows")
+    if isinstance(logical_rows, list) and logical_rows:
         lines.append("")
         lines.append("Logical runs with work remaining:")
         lines.extend(render_table(["Run", "Running", "Pending", "Total"], logical_rows, aligns=("l", "r", "r", "r")))
-    if running_rows:
+    running_rows = payload.get("active_rows")
+    if isinstance(running_rows, list) and running_rows:
         lines.append("")
         lines.append("Active shards:")
         lines.extend(render_table(["Run", "Tag", "Progress", "Events", "Seed", "Runtime"], running_rows, aligns=("l", "l", "r", "r", "r", "r")))
@@ -1340,6 +1808,9 @@ def run_jobs(
     progress_interval: float,
     max_listed: int,
     analysis_variant: str,
+    pdf_profile: str = DEFAULT_PDF_PROFILE,
+    poldis_mode: str = DEFAULT_POLDIS_MODE,
+    monitor_callback: Optional[Callable[[Dict[str, object]], None]] = None,
 ) -> List[JobResult]:
     pending = list(jobs)
     active: List[tuple[subprocess.Popen[str], JobResult, object]] = []
@@ -1374,10 +1845,33 @@ def run_jobs(
         if progress_interval >= 0.0:
             now = time.time()
             if now - last_progress >= progress_interval or (not pending and active):
+                active_results = [result for _, result, _ in active]
+                herwig_payload = build_herwig_progress_payload(
+                    jobs,
+                    pending,
+                    active_results,
+                    finished,
+                    max_listed,
+                    campaign_started,
+                )
                 emit_progress(
-                    progress_lines(jobs, pending, [result for _, result, _ in active], finished, max_listed, campaign_started),
+                    progress_lines(jobs, pending, active_results, finished, max_listed, campaign_started),
                     interactive,
                 )
+                if monitor_callback is not None:
+                    monitor_callback(herwig_payload)
+                else:
+                    write_campaign_monitor_files(
+                        campaign_dir,
+                        build_campaign_monitor_payload(
+                            tag=campaign_dir.name,
+                            phase="running-herwig",
+                            started_at=campaign_started,
+                            pdf_profile=pdf_profile,
+                            poldis_mode=poldis_mode,
+                            herwig=herwig_payload,
+                        ),
+                    )
                 last_progress = now
         if not active:
             continue
@@ -1405,9 +1899,39 @@ def run_jobs(
                     progress_lines(jobs, pending, [], finished, max_listed, campaign_started),
                     interactive,
                 )
+                final_payload = build_herwig_progress_payload(jobs, pending, [], finished, max_listed, campaign_started)
+                if monitor_callback is not None:
+                    monitor_callback(final_payload)
+                else:
+                    write_campaign_monitor_files(
+                        campaign_dir,
+                        build_campaign_monitor_payload(
+                            tag=campaign_dir.name,
+                            phase="running-herwig",
+                            started_at=campaign_started,
+                            pdf_profile=pdf_profile,
+                            poldis_mode=poldis_mode,
+                            herwig=final_payload,
+                        ),
+                    )
                 return finished
         active = still_active
     emit_progress(progress_lines(jobs, pending, [], finished, max_listed, campaign_started), interactive)
+    final_payload = build_herwig_progress_payload(jobs, pending, [], finished, max_listed, campaign_started)
+    if monitor_callback is not None:
+        monitor_callback(final_payload)
+    else:
+        write_campaign_monitor_files(
+            campaign_dir,
+            build_campaign_monitor_payload(
+                tag=campaign_dir.name,
+                phase="running-herwig",
+                started_at=campaign_started,
+                pdf_profile=pdf_profile,
+                poldis_mode=poldis_mode,
+                herwig=final_payload,
+            ),
+        )
     return finished
 
 
@@ -1420,6 +1944,283 @@ def run_extractor(cmd: List[str], output_path: Path, base_dir: Path, dry_run: bo
     if proc.stderr:
         output_path.with_suffix(output_path.suffix + ".stderr").write_text(proc.stderr)
     return proc.returncode
+
+
+def run_logged_command(cmd: Sequence[str], cwd: Path, log_path: Path, dry_run: bool) -> None:
+    if dry_run:
+        print(shlex.join(list(cmd)))
+        return
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("w") as handle:
+        handle.write(f"$ {shlex.join(list(cmd))}\n")
+        handle.flush()
+        proc = subprocess.run(list(cmd), cwd=cwd, text=True, stdout=handle, stderr=subprocess.STDOUT)
+    if proc.returncode != 0:
+        raise RuntimeError(f"Command failed in {cwd}: {shlex.join(list(cmd))}\nSee {log_path}")
+
+
+def dynamic_poldis_command(
+    base_dir: Path,
+    campaign_tag: str,
+    pdf_profile: str,
+    setup: str,
+    *,
+    events: int,
+    variant_jobs: int,
+    dry_run: bool,
+) -> List[str]:
+    cmd = [
+        "python3.10",
+        str(base_dir / "run_poldis_window_reference.py"),
+        "--base-dir",
+        str(base_dir),
+        "--tag",
+        dynamic_poldis_reference_campaign_tag(campaign_tag, pdf_profile),
+        "--setup",
+        setup,
+        "--window",
+        POLDIS_WINDOW_LABEL,
+        "--pdf-profile",
+        pdf_profile,
+        "--events",
+        str(events),
+        "--jobs",
+        str(max(1, variant_jobs)),
+    ]
+    if dry_run:
+        cmd.append("--dry-run")
+    return cmd
+
+
+def dynamic_poldis_run_log_path(campaign_dir: Path, setup: str) -> Path:
+    return campaign_refs_dir(campaign_dir) / "poldis" / f"{setup.lower()}.log"
+
+
+def summarize_dynamic_poldis_status(
+    base_dir: Path,
+    campaign_tag: str,
+    pdf_profile: str,
+    setups: Sequence[str],
+) -> Dict[str, object]:
+    rows: List[List[str]] = []
+    completed = 0
+    for setup in setups:
+        ref_json = dynamic_poldis_reference_json_path(base_dir, campaign_tag, pdf_profile, setup)
+        status_json = dynamic_poldis_monitor_json_path(base_dir, campaign_tag, pdf_profile, setup)
+        status_payload = load_json_if_exists(status_json)
+        if ref_json.exists():
+            completed += 1
+        if isinstance(status_payload, dict):
+            phase = str(status_payload.get("phase", "pending"))
+            variant = str(status_payload.get("variant", "-"))
+            progress_value = status_payload.get("overall_percent")
+            progress = (
+                f"{float(progress_value):.1f}%"
+                if isinstance(progress_value, (int, float))
+                else ("100.0%" if ref_json.exists() else "-")
+            )
+            log_value = status_payload.get("log") or (
+                str(ref_json) if ref_json.exists() else str(status_json)
+            )
+            status = "ready" if ref_json.exists() else phase
+        else:
+            progress = "100.0%" if ref_json.exists() else "-"
+            variant = "all" if ref_json.exists() else "-"
+            log_value = str(
+                ref_json if ref_json.exists() else dynamic_poldis_monitor_txt_path(base_dir, campaign_tag, pdf_profile, setup)
+            )
+            status = "ready" if ref_json.exists() else "pending"
+        rows.append([setup, status, progress, variant, log_value])
+    return {"completed": completed, "total": len(setups), "rows": rows}
+
+
+def write_dynamic_poldis_totals_json(
+    campaign_dir: Path,
+    base_dir: Path,
+    campaign_tag: str,
+    pdf_profile: str,
+    setups: Sequence[str],
+) -> Path:
+    payload: Dict[str, object] = {
+        "tag": campaign_tag,
+        "pdf_profile": pdf_profile,
+        "pdfs": dict(PDF_PROFILES[pdf_profile]),
+        "window": POLDIS_WINDOW_LABEL,
+        "poldis_reference_tag": dynamic_poldis_reference_campaign_tag(campaign_tag, pdf_profile),
+        "setups": {},
+    }
+    for setup in setups:
+        ref_json = dynamic_poldis_reference_json_path(base_dir, campaign_tag, pdf_profile, setup)
+        ref_payload = json.loads(ref_json.read_text())
+        payload["setups"][setup] = {
+            "reference_json": str(ref_json),
+            "reference_txt": str(dynamic_poldis_reference_txt_path(base_dir, campaign_tag, pdf_profile, setup)),
+            "pdf_profile": ref_payload.get("pdf_profile", pdf_profile),
+            "pdfs": ref_payload.get("pdfs", dict(PDF_PROFILES[pdf_profile])),
+            "unpolarized": ref_payload["unpolarized"],
+            "polarized": ref_payload["polarized"],
+        }
+    out_path = campaign_dynamic_poldis_totals_json_path(campaign_dir)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+    return out_path
+
+
+def ensure_dynamic_poldis_references(
+    *,
+    base_dir: Path,
+    campaign_dir: Path,
+    campaign_tag: str,
+    pdf_profile: str,
+    poldis_mode: str,
+    setups: Sequence[str],
+    jobs: int,
+    variant_jobs: int,
+    events: int,
+    dry_run: bool,
+    progress_interval: float,
+    monitor_callback: Optional[Callable[[Dict[str, object]], None]] = None,
+) -> Optional[Path]:
+    selected_setups = normalize_poldis_setups(setups)
+    if not selected_setups:
+        return None
+
+    pending_setups = [
+        setup
+        for setup in selected_setups
+        if not dynamic_poldis_reference_json_path(base_dir, campaign_tag, pdf_profile, setup).exists()
+    ]
+
+    if dry_run:
+        for setup in pending_setups:
+            run_logged_command(
+                dynamic_poldis_command(
+                    base_dir,
+                    campaign_tag,
+                    pdf_profile,
+                    setup,
+                    events=events,
+                    variant_jobs=variant_jobs,
+                    dry_run=True,
+                ),
+                cwd=base_dir,
+                log_path=dynamic_poldis_run_log_path(campaign_dir, setup),
+                dry_run=True,
+            )
+        return None
+
+    campaign_started = time.time()
+    initial_summary = summarize_dynamic_poldis_status(base_dir, campaign_tag, pdf_profile, selected_setups)
+    if monitor_callback is not None:
+        monitor_callback(initial_summary)
+    else:
+        write_campaign_monitor_files(
+            campaign_dir,
+            build_campaign_monitor_payload(
+                tag=campaign_tag,
+                phase="running-poldis",
+                started_at=campaign_started,
+                pdf_profile=pdf_profile,
+                poldis_mode=poldis_mode,
+                poldis=initial_summary,
+            ),
+        )
+
+    if pending_setups:
+        worker_count = max(1, min(jobs, len(pending_setups)))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+            future_to_setup = {
+                executor.submit(
+                    run_logged_command,
+                    dynamic_poldis_command(
+                        base_dir,
+                        campaign_tag,
+                        pdf_profile,
+                        setup,
+                        events=events,
+                        variant_jobs=variant_jobs,
+                        dry_run=False,
+                    ),
+                    base_dir,
+                    dynamic_poldis_run_log_path(campaign_dir, setup),
+                    False,
+                ): setup
+                for setup in pending_setups
+            }
+            while future_to_setup:
+                done, _ = concurrent.futures.wait(
+                    set(future_to_setup),
+                    timeout=max(progress_interval, 0.5),
+                    return_when=concurrent.futures.FIRST_COMPLETED,
+                )
+                summary = summarize_dynamic_poldis_status(base_dir, campaign_tag, pdf_profile, selected_setups)
+                if monitor_callback is not None:
+                    monitor_callback(summary)
+                else:
+                    write_campaign_monitor_files(
+                        campaign_dir,
+                        build_campaign_monitor_payload(
+                            tag=campaign_tag,
+                            phase="running-poldis",
+                            started_at=campaign_started,
+                            pdf_profile=pdf_profile,
+                            poldis_mode=poldis_mode,
+                            poldis=summary,
+                        ),
+                    )
+                for future in done:
+                    setup = future_to_setup.pop(future)
+                    future.result()
+                    print_stage(f"POLDIS {pdf_profile}:{setup}:{POLDIS_WINDOW_LABEL} ready")
+
+    totals_json = write_dynamic_poldis_totals_json(campaign_dir, base_dir, campaign_tag, pdf_profile, selected_setups)
+    final_summary = summarize_dynamic_poldis_status(base_dir, campaign_tag, pdf_profile, selected_setups)
+    if monitor_callback is not None:
+        monitor_callback(final_summary)
+    else:
+        write_campaign_monitor_files(
+            campaign_dir,
+            build_campaign_monitor_payload(
+                tag=campaign_tag,
+                phase="running-poldis",
+                started_at=campaign_started,
+                pdf_profile=pdf_profile,
+                poldis_mode=poldis_mode,
+                poldis=final_summary,
+            ),
+        )
+    return totals_json
+
+
+def maybe_extend_results_with_poldis_refs(cmd: List[str], poldis_refs_json: Optional[str]) -> None:
+    if poldis_refs_json:
+        cmd.extend(["--poldis-refs-json", poldis_refs_json])
+
+
+def apply_profile_and_poldis_manifest_config(manifest: Dict[str, object], args: argparse.Namespace) -> None:
+    pdf_profile = getattr(args, "pdf_profile", None)
+    if isinstance(pdf_profile, str) and pdf_profile in PDF_PROFILES:
+        manifest["pdf_profile"] = pdf_profile
+        manifest["pdfs"] = dict(PDF_PROFILES[pdf_profile])
+    generated_root = getattr(args, "generated_profile_inputs_root", None)
+    if generated_root:
+        manifest["generated_profile_inputs_root"] = str(generated_root)
+    poldis_mode = getattr(args, "poldis", None)
+    if isinstance(poldis_mode, str):
+        manifest["poldis_mode"] = poldis_mode
+    for attr, key in (
+        ("poldis_jobs", "poldis_jobs"),
+        ("poldis_variant_jobs", "poldis_variant_jobs"),
+        ("poldis_events", "poldis_events"),
+    ):
+        value = getattr(args, attr, None)
+        if value is not None:
+            manifest[key] = int(value)
+    dynamic_refs_json = getattr(args, "dynamic_poldis_refs_json", None)
+    if dynamic_refs_json:
+        manifest["dynamic_poldis_refs_json"] = str(dynamic_refs_json)
+        manifest["dynamic_poldis_reference_tag"] = dynamic_poldis_reference_campaign_tag(args.tag, str(pdf_profile))
+        manifest["dynamic_poldis_window"] = POLDIS_WINDOW_LABEL
 
 
 def choose_yoda_merge_tool(preference: str, purpose: str = "generic") -> Optional[str]:
@@ -1441,9 +2242,9 @@ def choose_yoda_merge_tool(preference: str, purpose: str = "generic") -> Optiona
 def rivet_merge_env(base_dir: Path) -> Dict[str, str]:
     env = os.environ.copy()
     analysis_paths: List[str] = []
-    analysis_dir = analyses_dir(base_dir).resolve()
-    if analysis_dir.exists():
-        analysis_paths.append(str(analysis_dir))
+    analyses_dir = (base_dir.parent / "analyses").resolve()
+    if analyses_dir.exists():
+        analysis_paths.append(str(analyses_dir))
     base_dir_resolved = base_dir.resolve()
     if base_dir_resolved.exists():
         analysis_paths.append(str(base_dir_resolved))
@@ -1688,6 +2489,8 @@ def write_manifest(
         analysis_variants = sorted({item.spec.job.analysis_variant for item in prepared if item.spec.job.analysis_variant})
     successful_finished = [item for item in finished if item.returncode == 0]
     failed_finished = unresolved_failed_results(finished)
+    target_shards = getattr(args, "target_shards", None)
+    original_event_counts = getattr(args, "original_event_counts", None)
 
     def manifest_job_result_entry(item: JobResult) -> Dict[str, object]:
         return {
@@ -1727,6 +2530,7 @@ def write_manifest(
             "POSNLO": args.posnlo_events,
             "NEGNLO": args.negnlo_events,
         },
+        "change_number_of_events": bool(getattr(args, "change_number_of_events", False)),
         "prepared": [
             {
                 "spec": asdict(item.spec),
@@ -1782,8 +2586,25 @@ def write_manifest(
             }
         ),
     }
+    if isinstance(original_event_counts, dict):
+        manifest["original_event_counts"] = {
+            order: int(original_event_counts.get(order, 0))
+            for order in ORDER_ORDER
+        }
+        manifest["original_shards_per_logical_run"] = int(
+            getattr(args, "original_requested_shards", getattr(args, "shards", 0))
+        )
+        manifest["original_seed_base"] = int(
+            getattr(args, "original_seed_base", getattr(args, "seed_base", 100000))
+        )
+        manifest["original_jobs_limit"] = int(
+            getattr(args, "original_jobs_limit", getattr(args, "jobs", 1))
+        )
+    if isinstance(target_shards, list):
+        manifest["target_shards"] = [asdict(spec) for spec in target_shards]
     if powheg_options_file:
         manifest["powheg_options_file"] = powheg_options_file
+    apply_profile_and_poldis_manifest_config(manifest, args)
     (campaign_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
 
 
@@ -1796,6 +2617,67 @@ def load_manifest(campaign_dir: Path) -> Dict[str, object]:
 
 def save_manifest(campaign_dir: Path, manifest: Dict[str, object]) -> None:
     (campaign_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
+
+
+def persist_campaign_plan_manifest(
+    campaign_dir: Path,
+    args: argparse.Namespace,
+    analysis_variant: str,
+) -> None:
+    manifest = load_manifest(campaign_dir)
+    analysis_variants = manifest.get("analysis_variants", [])
+    if not isinstance(analysis_variants, list):
+        analysis_variants = []
+    if analysis_variant and analysis_variant not in analysis_variants:
+        analysis_variants = sorted({*analysis_variants, analysis_variant})
+
+    manifest["tag"] = args.tag
+    manifest["base_dir"] = str(args.base_dir.resolve())
+    manifest["jobs_limit"] = int(getattr(args, "jobs", 1))
+    manifest["shards_per_logical_run"] = int(getattr(args, "shards", 0))
+    manifest["seed_base"] = int(getattr(args, "seed_base", 100000))
+    manifest["merge_yoda"] = not bool(getattr(args, "no_merge_yoda", False))
+    manifest["force_prepare"] = bool(getattr(args, "force_prepare", False))
+    manifest["raw_powheg"] = bool(getattr(args, "raw_powheg", False))
+    manifest["include_lo"] = bool(getattr(args, "include_lo", False))
+    manifest["extract_diagnostics"] = bool(getattr(args, "diagnostics", False))
+    manifest["scale_variations"] = bool(getattr(args, "scale_variations", False))
+    manifest["scale_variation_factors"] = dict(SCALE_VARIATION_FACTORS)
+    manifest["yoda_merge_tool"] = args.yoda_merge_tool
+    manifest["rivet"] = bool(analysis_variant)
+    manifest["analysis_variant"] = analysis_variant
+    manifest["analysis_variants"] = analysis_variants
+    manifest["ps_mode"] = bool(analysis_variants and all(str(variant).startswith("RIVETPS-") for variant in analysis_variants))
+    manifest["campaign_setups"] = normalize_campaign_setups(getattr(args, "setup", []))
+    manifest["event_counts"] = {
+        "LO": int(getattr(args, "lo_events", 0)),
+        "POSNLO": int(getattr(args, "posnlo_events", 0)),
+        "NEGNLO": int(getattr(args, "negnlo_events", 0)),
+    }
+    manifest["change_number_of_events"] = bool(getattr(args, "change_number_of_events", False))
+    apply_profile_and_poldis_manifest_config(manifest, args)
+
+    original_event_counts = getattr(args, "original_event_counts", None)
+    if isinstance(original_event_counts, dict):
+        manifest["original_event_counts"] = {
+            order: int(original_event_counts.get(order, 0))
+            for order in ORDER_ORDER
+        }
+        manifest["original_shards_per_logical_run"] = int(
+            getattr(args, "original_requested_shards", getattr(args, "shards", 0))
+        )
+        manifest["original_seed_base"] = int(
+            getattr(args, "original_seed_base", getattr(args, "seed_base", 100000))
+        )
+        manifest["original_jobs_limit"] = int(
+            getattr(args, "original_jobs_limit", getattr(args, "jobs", 1))
+        )
+
+    target_shards = getattr(args, "target_shards", None)
+    if isinstance(target_shards, list):
+        manifest["target_shards"] = [asdict(spec) for spec in target_shards]
+
+    save_manifest(campaign_dir, manifest)
 
 
 def merge_nested_manifest_outputs(
@@ -1905,6 +2787,76 @@ def resolve_campaign_dir(base_dir: Path, tag: str) -> Path:
     return base_dir / "campaigns" / tag
 
 
+def campaign_refs_dir(campaign_dir: Path) -> Path:
+    return campaign_dir / "refs"
+
+
+def dynamic_poldis_reference_campaign_tag(tag: str, pdf_profile: str) -> str:
+    return f"{tag}-poldis-{pdf_profile}"
+
+
+def dynamic_poldis_reference_dir(base_dir: Path, tag: str, pdf_profile: str, setup: str) -> Path:
+    helper_tag = dynamic_poldis_reference_campaign_tag(tag, pdf_profile)
+    return resolve_campaign_dir(base_dir, helper_tag) / f"poldis-{setup.lower()}-{POLDIS_WINDOW_LABEL}"
+
+
+def dynamic_poldis_reference_json_path(base_dir: Path, tag: str, pdf_profile: str, setup: str) -> Path:
+    return dynamic_poldis_reference_dir(base_dir, tag, pdf_profile, setup) / "reference.json"
+
+
+def dynamic_poldis_reference_txt_path(base_dir: Path, tag: str, pdf_profile: str, setup: str) -> Path:
+    return dynamic_poldis_reference_dir(base_dir, tag, pdf_profile, setup) / "reference.txt"
+
+
+def dynamic_poldis_monitor_json_path(base_dir: Path, tag: str, pdf_profile: str, setup: str) -> Path:
+    return dynamic_poldis_reference_dir(base_dir, tag, pdf_profile, setup) / "monitor" / "status.json"
+
+
+def dynamic_poldis_monitor_txt_path(base_dir: Path, tag: str, pdf_profile: str, setup: str) -> Path:
+    return dynamic_poldis_reference_dir(base_dir, tag, pdf_profile, setup) / "monitor" / "status.txt"
+
+
+def campaign_dynamic_poldis_totals_json_path(campaign_dir: Path) -> Path:
+    return campaign_refs_dir(campaign_dir) / "poldis-totals.json"
+
+
+def normalize_poldis_setups(setups: Sequence[str]) -> List[str]:
+    selected = normalize_campaign_setups(setups)
+    return [setup for setup in selected if setup in POLDIS_RUNNABLE_SETUPS]
+
+
+def poldis_variant_slot_cost(variant_jobs: int) -> int:
+    return max(1, min(2, int(variant_jobs)))
+
+
+def resolve_concurrent_campaign_slots(
+    total_jobs: int,
+    requested_poldis_jobs: int,
+    requested_poldis_variant_jobs: int,
+    poldis_setup_count: int,
+) -> tuple[int, int, int]:
+    total_capacity = max(1, int(total_jobs))
+    effective_variant_jobs = poldis_variant_slot_cost(requested_poldis_variant_jobs)
+    max_helper_jobs = max(0, min(int(requested_poldis_jobs), int(poldis_setup_count)))
+    effective_poldis_jobs = max_helper_jobs
+    while effective_poldis_jobs > 0 and total_capacity - effective_poldis_jobs * effective_variant_jobs < 1:
+        effective_poldis_jobs -= 1
+    herwig_jobs = total_capacity - effective_poldis_jobs * effective_variant_jobs
+    if effective_poldis_jobs == 0:
+        herwig_jobs = total_capacity
+    herwig_jobs = max(1, herwig_jobs)
+    return herwig_jobs, effective_poldis_jobs, effective_variant_jobs
+
+
+def load_json_if_exists(path: Path) -> Optional[object]:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return None
+
+
 def raw_powheg_output_path(
     campaign_dir: Path,
     result: JobResult,
@@ -1972,7 +2924,7 @@ def build_raw_powheg_yoda_files(
     if analysis_variant != "RIVETFO":
         return []
 
-    script = script_path("powheg_raw_momenta_to_yoda.py")
+    script = base_dir / "powheg_raw_momenta_to_yoda.py"
     output_dir = campaign_dir / "raw-powheg"
     output_dir.mkdir(parents=True, exist_ok=True)
     built: List[RawPOWHEGYODAResult] = []
@@ -2333,6 +3285,141 @@ def yoda_has_analysis_objects(path: Path, analysis_name: str) -> bool:
     return False
 
 
+def cached_yoda_has_analysis_objects(path: Path, analysis_name: str) -> bool:
+    resolved = str(path.resolve())
+    key = (resolved, analysis_name)
+    if key not in _YODA_ANALYSIS_OBJECT_CACHE:
+        _YODA_ANALYSIS_OBJECT_CACHE[key] = yoda_has_analysis_objects(Path(resolved), analysis_name)
+    return _YODA_ANALYSIS_OBJECT_CACHE[key]
+
+
+def required_helicities_for_setup(setup: str) -> Sequence[str]:
+    return GAMMA_HELICITIES if setup == "GAMMA" else FULL_HELICITIES
+
+
+def format_analysis_input_value(value: object, max_items: int = 3) -> str:
+    if value is None:
+        return "none"
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, os.PathLike):
+        return os.fspath(value)
+    if isinstance(value, (list, tuple)):
+        items = [str(path) for path in value]
+        preview = ", ".join(items[:max_items])
+        if len(items) > max_items:
+            preview += ", ..."
+        return f"[{preview}]"
+    return str(value)
+
+
+def materialize_analysis_input_value(value: object) -> Optional[object]:
+    if value is None:
+        return None
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, os.PathLike):
+        return os.fspath(value)
+    if isinstance(value, (list, tuple)):
+        return [str(path) for path in value]
+    return str(value)
+
+
+def load_analysis_input_sources(
+    base_dir: Path,
+    tag: str,
+    setup: str,
+    order: str,
+    analysis_name: str,
+    fallback_analysis_variant: str,
+    scale_variation: str = "nominal",
+    scale_variations: bool = False,
+    context_label: str = "",
+) -> Dict[str, object]:
+    required_helicities = required_helicities_for_setup(setup)
+    merged_inputs: Dict[str, Path] = {}
+    merged_error: Optional[Exception] = None
+    try:
+        merged_inputs = find_order_yoda_inputs(
+            base_dir,
+            tag,
+            setup,
+            order,
+            analysis_variant=fallback_analysis_variant,
+            scale_variation=scale_variation,
+        )
+    except Exception as exc:
+        merged_error = exc
+
+    needs_shards = merged_error is not None or any(
+        hel not in merged_inputs or not cached_yoda_has_analysis_objects(merged_inputs[hel], analysis_name)
+        for hel in required_helicities
+    )
+    shard_inputs: Dict[str, List[Path]] = {}
+    shard_error: Optional[Exception] = None
+    if needs_shards:
+        try:
+            shard_inputs = find_order_yoda_shards(
+                base_dir,
+                tag,
+                setup,
+                order,
+                fallback_analysis_variant,
+                scale_variation=scale_variation,
+                scale_variations=scale_variations,
+            )
+        except Exception as exc:
+            shard_error = exc
+
+    selected: Dict[str, object] = {}
+    missing: List[str] = []
+    label = context_label or setup
+    for hel in required_helicities:
+        merged_path = merged_inputs.get(hel)
+        if merged_path is not None and cached_yoda_has_analysis_objects(merged_path, analysis_name):
+            selected[hel] = merged_path
+            continue
+
+        shard_matches = [
+            path for path in shard_inputs.get(hel, [])
+            if cached_yoda_has_analysis_objects(path, analysis_name)
+        ]
+        if shard_matches:
+            if merged_path is None:
+                reason = "merged input was unavailable"
+            else:
+                reason = f"merged input {merged_path.name} did not contain {analysis_name}"
+            print(
+                f"[warn] Using shard fallback for {label} {order} {hel}: {reason}.",
+                flush=True,
+            )
+            selected[hel] = shard_matches
+            continue
+
+        details: List[str] = []
+        if merged_path is not None:
+            details.append(f"merged={merged_path}")
+        elif merged_error is not None:
+            details.append(f"merged-error={merged_error}")
+        else:
+            details.append("merged=none")
+        if hel in shard_inputs:
+            details.append(f"shards={format_analysis_input_value(shard_inputs.get(hel, []))}")
+        elif shard_error is not None:
+            details.append(f"shard-error={shard_error}")
+        else:
+            details.append("shards=none")
+        missing.append(f"{hel} ({'; '.join(details)})")
+
+    if missing:
+        raise FileNotFoundError(
+            f"Could not find {analysis_name} analysis objects for {label} {order} inputs: "
+            + "; ".join(missing)
+        )
+
+    return selected
+
+
 def merge_analysis_inputs(
     base_dir: Path,
     campaign_dir: Path,
@@ -2420,14 +3507,9 @@ def analyze_herwig_campaign(
             print(f"[dry-run] analyze-herwig-plot {setup} -> {plot_path}")
             return setup, str(output_path), str(plot_path)
 
-        def build_objects_from_inputs(pos_inputs: Dict[str, object], neg_inputs: Dict[str, object], shard_mode: bool) -> Dict[str, object]:
+        def build_objects_from_inputs(pos_inputs: Dict[str, object], neg_inputs: Dict[str, object]) -> Dict[str, object]:
             def one(mapping: Dict[str, object], helicity: str) -> Optional[object]:
-                value = mapping.get(helicity)
-                if value is None:
-                    return None
-                if shard_mode:
-                    return [str(path) for path in value]
-                return str(value)
+                return materialize_analysis_input_value(mapping.get(helicity))
 
             return build_dis_polarized_objects(
                 setup=setup,
@@ -2444,72 +3526,58 @@ def analyze_herwig_campaign(
                 analysis=analysis_name,
             )
 
-        use_shard_fallback = False
-        try:
-            pos_inputs = find_order_yoda_inputs(base_dir, tag, setup, "POSNLO", scale_variation="nominal")
-            neg_inputs = find_order_yoda_inputs(base_dir, tag, setup, "NEGNLO", scale_variation="nominal")
-            variation_pos_inputs = {
-                variation_name: find_order_yoda_inputs(base_dir, tag, setup, "POSNLO", scale_variation=variation_name)
-                for variation_name in variation_names
-            }
-            variation_neg_inputs = {
-                variation_name: find_order_yoda_inputs(base_dir, tag, setup, "NEGNLO", scale_variation=variation_name)
-                for variation_name in variation_names
-            }
-            if not yoda_has_analysis_objects(pos_inputs["PP"], analysis_name):
-                use_shard_fallback = True
-            for variation_name in variation_names:
-                if not yoda_has_analysis_objects(variation_pos_inputs[variation_name]["PP"], analysis_name):
-                    use_shard_fallback = True
-                    break
-        except Exception:
-            use_shard_fallback = True
-
-        if use_shard_fallback:
-            pos_inputs = find_order_yoda_shards(
+        pos_inputs = load_analysis_input_sources(
+            base_dir,
+            tag,
+            setup,
+            "POSNLO",
+            analysis_name,
+            analysis_variant,
+            scale_variation="nominal",
+            scale_variations=scale_variations,
+            context_label=setup,
+        )
+        neg_inputs = load_analysis_input_sources(
+            base_dir,
+            tag,
+            setup,
+            "NEGNLO",
+            analysis_name,
+            analysis_variant,
+            scale_variation="nominal",
+            scale_variations=scale_variations,
+            context_label=setup,
+        )
+        variation_pos_inputs = {
+            variation_name: load_analysis_input_sources(
                 base_dir,
                 tag,
                 setup,
                 "POSNLO",
+                analysis_name,
                 analysis_variant,
-                scale_variation="nominal",
+                scale_variation=variation_name,
                 scale_variations=scale_variations,
+                context_label=setup,
             )
-            neg_inputs = find_order_yoda_shards(
+            for variation_name in variation_names
+        }
+        variation_neg_inputs = {
+            variation_name: load_analysis_input_sources(
                 base_dir,
                 tag,
                 setup,
                 "NEGNLO",
+                analysis_name,
                 analysis_variant,
-                scale_variation="nominal",
+                scale_variation=variation_name,
                 scale_variations=scale_variations,
+                context_label=setup,
             )
-            variation_pos_inputs = {
-                variation_name: find_order_yoda_shards(
-                    base_dir,
-                    tag,
-                    setup,
-                    "POSNLO",
-                    analysis_variant,
-                    scale_variation=variation_name,
-                    scale_variations=scale_variations,
-                )
-                for variation_name in variation_names
-            }
-            variation_neg_inputs = {
-                variation_name: find_order_yoda_shards(
-                    base_dir,
-                    tag,
-                    setup,
-                    "NEGNLO",
-                    analysis_variant,
-                    scale_variation=variation_name,
-                    scale_variations=scale_variations,
-                )
-                for variation_name in variation_names
-            }
+            for variation_name in variation_names
+        }
 
-        objects = build_objects_from_inputs(pos_inputs, neg_inputs, use_shard_fallback)
+        objects = build_objects_from_inputs(pos_inputs, neg_inputs)
         apply_legend_annotation(objects, legend_label)
         apply_setup_style_annotation(objects, setup)
         output_path = analysis_dir / f"Herwig_{analysis_name}_{setup}_NLO_polarized.yoda.gz"
@@ -2524,7 +3592,6 @@ def analyze_herwig_campaign(
                 variation_objects = build_objects_from_inputs(
                     variation_pos_inputs[variation_name],
                     variation_neg_inputs.get(variation_name, {}),
-                    use_shard_fallback,
                 )
                 variation_plot_objects = build_plot_scatter_objects(variation_objects)
                 apply_legend_annotation(variation_plot_objects, legend_label)
@@ -2598,15 +3665,9 @@ def analyze_ps_herwig_campaign(
         def build_objects_from_inputs(
             pos_inputs: Dict[str, object],
             neg_inputs: Dict[str, object],
-            shard_mode: bool,
         ) -> Dict[str, object]:
             def one(mapping: Dict[str, object], helicity: str) -> Optional[object]:
-                value = mapping.get(helicity)
-                if value is None:
-                    return None
-                if shard_mode:
-                    return [str(path) for path in value]
-                return str(value)
+                return materialize_analysis_input_value(mapping.get(helicity))
 
             return build_dis_polarized_objects(
                 setup=setup,
@@ -2623,100 +3684,59 @@ def analyze_ps_herwig_campaign(
                 analysis=analysis_name,
             )
 
-        use_shard_fallback = False
-        try:
-            pos_inputs = find_order_yoda_inputs(
+        context_label = f"{setup}/{family}"
+        pos_inputs = load_analysis_input_sources(
+            base_dir,
+            tag,
+            setup,
+            "POSNLO",
+            analysis_name,
+            family,
+            scale_variation="nominal",
+            scale_variations=scale_variations,
+            context_label=context_label,
+        )
+        neg_inputs = load_analysis_input_sources(
+            base_dir,
+            tag,
+            setup,
+            "NEGNLO",
+            analysis_name,
+            family,
+            scale_variation="nominal",
+            scale_variations=scale_variations,
+            context_label=context_label,
+        )
+        variation_pos_inputs = {
+            variation_name: load_analysis_input_sources(
                 base_dir,
                 tag,
                 setup,
                 "POSNLO",
-                analysis_variant=family,
-                scale_variation="nominal",
+                analysis_name,
+                family,
+                scale_variation=variation_name,
+                scale_variations=scale_variations,
+                context_label=context_label,
             )
-            neg_inputs = find_order_yoda_inputs(
+            for variation_name in variation_names
+        }
+        variation_neg_inputs = {
+            variation_name: load_analysis_input_sources(
                 base_dir,
                 tag,
                 setup,
                 "NEGNLO",
-                analysis_variant=family,
-                scale_variation="nominal",
-            )
-            variation_pos_inputs = {
-                variation_name: find_order_yoda_inputs(
-                    base_dir,
-                    tag,
-                    setup,
-                    "POSNLO",
-                    analysis_variant=family,
-                    scale_variation=variation_name,
-                )
-                for variation_name in variation_names
-            }
-            variation_neg_inputs = {
-                variation_name: find_order_yoda_inputs(
-                    base_dir,
-                    tag,
-                    setup,
-                    "NEGNLO",
-                    analysis_variant=family,
-                    scale_variation=variation_name,
-                )
-                for variation_name in variation_names
-            }
-            if not yoda_has_analysis_objects(pos_inputs["PP"], analysis_name):
-                use_shard_fallback = True
-            for variation_name in variation_names:
-                if not yoda_has_analysis_objects(variation_pos_inputs[variation_name]["PP"], analysis_name):
-                    use_shard_fallback = True
-                    break
-        except Exception:
-            use_shard_fallback = True
-
-        if use_shard_fallback:
-            pos_inputs = find_order_yoda_shards(
-                base_dir,
-                tag,
-                setup,
-                "POSNLO",
+                analysis_name,
                 family,
-                scale_variation="nominal",
+                scale_variation=variation_name,
                 scale_variations=scale_variations,
+                context_label=context_label,
             )
-            neg_inputs = find_order_yoda_shards(
-                base_dir,
-                tag,
-                setup,
-                "NEGNLO",
-                family,
-                scale_variation="nominal",
-                scale_variations=scale_variations,
-            )
-            variation_pos_inputs = {
-                variation_name: find_order_yoda_shards(
-                    base_dir,
-                    tag,
-                    setup,
-                    "POSNLO",
-                    family,
-                    scale_variation=variation_name,
-                    scale_variations=scale_variations,
-                )
-                for variation_name in variation_names
-            }
-            variation_neg_inputs = {
-                variation_name: find_order_yoda_shards(
-                    base_dir,
-                    tag,
-                    setup,
-                    "NEGNLO",
-                    family,
-                    scale_variation=variation_name,
-                    scale_variations=scale_variations,
-                )
-                for variation_name in variation_names
-            }
+            for variation_name in variation_names
+        }
 
-        objects = build_objects_from_inputs(pos_inputs, neg_inputs, use_shard_fallback)
+        objects = build_objects_from_inputs(pos_inputs, neg_inputs)
         apply_legend_annotation(objects, legend_label)
         apply_variant_style_annotation(objects, family)
         output_path = analysis_dir / f"Herwig_{analysis_name}_{family}_{setup}_NLO_polarized.yoda.gz"
@@ -2731,7 +3751,6 @@ def analyze_ps_herwig_campaign(
                 variation_objects = build_objects_from_inputs(
                     variation_pos_inputs[variation_name],
                     variation_neg_inputs.get(variation_name, {}),
-                    use_shard_fallback,
                 )
                 variation_plot_objects = build_plot_scatter_objects(variation_objects)
                 apply_legend_annotation(variation_plot_objects, legend_label)
@@ -2973,7 +3992,7 @@ def run_spin_diagnostic_extractor(
     campaign_dir = resolve_campaign_dir(base_dir, tag)
     cmd = [
         "python3.10",
-        str(script_path("extract_powheg_real_spin_diagnostics.py")),
+        str(base_dir / "extract_powheg_real_spin_diagnostics.py"),
         "--base-dir",
         str(base_dir),
         "-t",
@@ -3031,6 +4050,7 @@ def run_ps_rivetplot_campaign(
     tool = choose_rivet_mkhtml_tool(rivet_mkhtml_tool)
     if tool is None:
         raise FileNotFoundError(f"Could not find rivet-mkhtml tool '{rivet_mkhtml_tool}'")
+    plot_config = resolve_plot_config_path(base_dir, analysis_name)
 
     selected = multi_family_ps_setups(setups)
     if not selected:
@@ -3124,20 +4144,27 @@ def run_ps_rivetplot_campaign(
 
         command: List[str] = [
             sys.executable,
-            str(script_path("rivet_mkhtml_safe.py")),
+            str((Path(__file__).resolve().parent / "rivet_mkhtml_safe.py")),
             tool,
             *file_args,
+        ]
+        if plot_config is not None:
+            command.extend(["-c", str(plot_config)])
+        command.extend([
             "--verbose",
             "-o",
             str(this_plot_dir),
-        ]
+        ])
+        env = rivet_runtime_env(base_dir)
+        print_stage(f"Rivet plot paths for {setup}: {env.get('RIVET_PLOT_PATH', '<unset>')}")
+        for debug_line in debug_plot_metadata_lines(plot_config, analysis_name):
+            print_stage(debug_line)
         if dry_run:
             print(shlex.join(command))
         else:
             if this_plot_dir.exists():
                 shutil.rmtree(this_plot_dir)
             this_plot_dir.mkdir(parents=True, exist_ok=True)
-            env = os.environ.copy()
             if not scale_variations_enabled:
                 env["DISPOL_FORCE_NO_ERROR_BANDS"] = "1"
             proc = subprocess.run(command, cwd=base_dir, text=True, capture_output=True, env=env)
@@ -3196,6 +4223,7 @@ def run_ps_hadronization_rivetplot_campaign(
     tool = choose_rivet_mkhtml_tool(rivet_mkhtml_tool)
     if tool is None:
         raise FileNotFoundError(f"Could not find rivet-mkhtml tool '{rivet_mkhtml_tool}'")
+    plot_config = resolve_plot_config_path(base_dir, analysis_name)
     if not has_ps_hadronization_toggle_inputs(setups):
         raise ValueError(
             "PS hadronization toggle plots require both --setup SPINCOMP and --setup SPINHAD in the same campaign."
@@ -3295,21 +4323,28 @@ def run_ps_hadronization_rivetplot_campaign(
 
     command: List[str] = [
         sys.executable,
-        str(script_path("rivet_mkhtml_safe.py")),
+        str((Path(__file__).resolve().parent / "rivet_mkhtml_safe.py")),
         tool,
         f"{no_had_plot_input}:Title=Full (No Hadronization)",
         f"{had_plot_input}:Title=Full (Hadronization)",
+    ]
+    if plot_config is not None:
+        command.extend(["-c", str(plot_config)])
+    command.extend([
         "--verbose",
         "-o",
         str(this_plot_dir),
-    ]
+    ])
+    env = rivet_runtime_env(base_dir)
+    print_stage(f"Rivet plot paths for PS hadronization toggle: {env.get('RIVET_PLOT_PATH', '<unset>')}")
+    for debug_line in debug_plot_metadata_lines(plot_config, analysis_name):
+        print_stage(debug_line)
     if dry_run:
         print(shlex.join(command))
     else:
         if this_plot_dir.exists():
             shutil.rmtree(this_plot_dir)
         this_plot_dir.mkdir(parents=True, exist_ok=True)
-        env = os.environ.copy()
         if not scale_variations_enabled:
             env["DISPOL_FORCE_NO_ERROR_BANDS"] = "1"
         proc = subprocess.run(command, cwd=base_dir, text=True, capture_output=True, env=env)
@@ -3384,7 +4419,6 @@ def run_ps_plotting_campaign(
     return outputs
 
 
-
 def run_rivetplot_campaign(
     base_dir: Path,
     tag: str,
@@ -3427,6 +4461,7 @@ def run_rivetplot_campaign(
     tool = choose_rivet_mkhtml_tool(rivet_mkhtml_tool)
     if tool is None:
         raise FileNotFoundError(f"Could not find rivet-mkhtml tool '{rivet_mkhtml_tool}'")
+    plot_config = resolve_plot_config_path(base_dir, analysis_name)
 
     selected = normalize_setups(setups)
     if plot_dir is not None and len(selected) != 1:
@@ -3515,10 +4550,12 @@ def run_rivetplot_campaign(
         reference_plot_input = sanitize_input_yoda(reference_output, f"reference_{setup.lower()}")
         command: List[str] = [
             sys.executable,
-            str(script_path("rivet_mkhtml_safe.py")),
+            str((Path(__file__).resolve().parent / "rivet_mkhtml_safe.py")),
             tool,
             *command[1:],
         ]
+        if plot_config is not None:
+            command.extend(["-c", str(plot_config)])
         command.extend(
             [
                 reference_plot_input,
@@ -3530,12 +4567,20 @@ def run_rivetplot_campaign(
             ]
         )
         if dry_run:
+            env = rivet_runtime_env(base_dir)
+            print_stage(f"Rivet plot paths for {setup}: {env.get('RIVET_PLOT_PATH', '<unset>')}")
+            for debug_line in debug_plot_metadata_lines(plot_config, analysis_name):
+                print_stage(debug_line)
             print(shlex.join(command))
         else:
             if this_plot_dir.exists():
                 shutil.rmtree(this_plot_dir)
             this_plot_dir.mkdir(parents=True, exist_ok=True)
-            proc = subprocess.run(command, cwd=base_dir, text=True, capture_output=True)
+            env = rivet_runtime_env(base_dir)
+            print_stage(f"Rivet plot paths for {setup}: {env.get('RIVET_PLOT_PATH', '<unset>')}")
+            for debug_line in debug_plot_metadata_lines(plot_config, analysis_name):
+                print_stage(debug_line)
+            proc = subprocess.run(command, cwd=base_dir, text=True, capture_output=True, env=env)
             if proc.stdout:
                 (this_plot_dir.parent / f"{this_plot_dir.name}.mkhtml.stdout").write_text(proc.stdout)
             if proc.stderr:
@@ -3600,6 +4645,57 @@ def collect_existing_yoda_results(
     return results
 
 
+def shard_spec_from_manifest_entry(spec_data: object) -> Optional[ShardSpec]:
+    if not isinstance(spec_data, dict):
+        return None
+    job_data = spec_data.get("job", {})
+    if not isinstance(job_data, dict):
+        return None
+    try:
+        job = JobSpec(
+            setup=str(job_data.get("setup", "")),
+            order=str(job_data.get("order", "")),
+            helicity=str(job_data.get("helicity", "")),
+            stem=str(job_data.get("stem", "")),
+            run_file=str(job_data.get("run_file", "")),
+            in_file=str(job_data.get("in_file", "")),
+            events=int(job_data.get("events", 0)),
+            analysis_variant=str(job_data.get("analysis_variant", "")),
+            scale_variation=str(job_data.get("scale_variation", "nominal")),
+            scale_factor=float(job_data.get("scale_factor", 1.0)),
+            source_in_file=str(job_data.get("source_in_file", "")),
+        )
+        return ShardSpec(
+            job=job,
+            shard_index=int(spec_data.get("shard_index", 1)),
+            shard_count=int(spec_data.get("shard_count", 1)),
+            tag=str(spec_data.get("tag", "")),
+            seed=int(spec_data.get("seed", 0)),
+            events=int(spec_data.get("events", 0)),
+            rerun_parent_tag=str(spec_data.get("rerun_parent_tag", "")),
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def load_target_shards_from_manifest(manifest: Dict[str, object]) -> List[ShardSpec]:
+    entries = manifest.get("target_shards", [])
+    if not isinstance(entries, list):
+        return []
+    shards: List[ShardSpec] = []
+    seen_slots: set[tuple[str, str, int]] = set()
+    for entry in entries:
+        spec = shard_spec_from_manifest_entry(entry)
+        if spec is None:
+            continue
+        slot = (spec.job.stem, spec.tag, spec.seed)
+        if slot in seen_slots:
+            continue
+        seen_slots.add(slot)
+        shards.append(spec)
+    return shards
+
+
 def collect_existing_job_artifacts_from_manifest(campaign_dir: Path) -> List[JobResult]:
     manifest = load_manifest(campaign_dir)
     results: List[JobResult] = []
@@ -3611,34 +4707,9 @@ def collect_existing_job_artifacts_from_manifest(campaign_dir: Path) -> List[Job
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
-            spec_data = entry.get("spec", {})
-            if not isinstance(spec_data, dict):
+            spec = shard_spec_from_manifest_entry(entry.get("spec"))
+            if spec is None:
                 continue
-            job_data = spec_data.get("job", {})
-            if not isinstance(job_data, dict):
-                continue
-            job = JobSpec(
-                setup=str(job_data.get("setup", "")),
-                order=str(job_data.get("order", "")),
-                helicity=str(job_data.get("helicity", "")),
-                stem=str(job_data.get("stem", "")),
-                run_file=str(job_data.get("run_file", "")),
-                in_file=str(job_data.get("in_file", "")),
-                events=int(job_data.get("events", 0)),
-                analysis_variant=str(job_data.get("analysis_variant", "")),
-                scale_variation=str(job_data.get("scale_variation", "nominal")),
-                scale_factor=float(job_data.get("scale_factor", 1.0)),
-                source_in_file=str(job_data.get("source_in_file", "")),
-            )
-            spec = ShardSpec(
-                job=job,
-                shard_index=int(spec_data.get("shard_index", 1)),
-                shard_count=int(spec_data.get("shard_count", 1)),
-                tag=str(spec_data.get("tag", "")),
-                seed=int(spec_data.get("seed", 0)),
-                events=int(spec_data.get("events", 0)),
-                rerun_parent_tag=str(spec_data.get("rerun_parent_tag", "")),
-            )
             slot = (spec.job.stem, spec.tag, spec.seed)
             if slot in seen_slots:
                 continue
@@ -3668,34 +4739,9 @@ def collect_existing_prepared_from_manifest(campaign_dir: Path) -> List[JobResul
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        spec_data = entry.get("spec", {})
-        if not isinstance(spec_data, dict):
+        spec = shard_spec_from_manifest_entry(entry.get("spec"))
+        if spec is None:
             continue
-        job_data = spec_data.get("job", {})
-        if not isinstance(job_data, dict):
-            continue
-        job = JobSpec(
-            setup=str(job_data.get("setup", "")),
-            order=str(job_data.get("order", "")),
-            helicity=str(job_data.get("helicity", "")),
-            stem=str(job_data.get("stem", "")),
-            run_file=str(job_data.get("run_file", "")),
-            in_file=str(job_data.get("in_file", "")),
-            events=int(job_data.get("events", 0)),
-            analysis_variant=str(job_data.get("analysis_variant", "")),
-            scale_variation=str(job_data.get("scale_variation", "nominal")),
-            scale_factor=float(job_data.get("scale_factor", 1.0)),
-            source_in_file=str(job_data.get("source_in_file", "")),
-        )
-        spec = ShardSpec(
-            job=job,
-            shard_index=int(spec_data.get("shard_index", 1)),
-            shard_count=int(spec_data.get("shard_count", 1)),
-            tag=str(spec_data.get("tag", "")),
-            seed=int(spec_data.get("seed", 0)),
-            events=int(spec_data.get("events", 0)),
-            rerun_parent_tag=str(spec_data.get("rerun_parent_tag", "")),
-        )
         results.append(
             JobResult(
                 spec=spec,
@@ -3716,6 +4762,10 @@ def rerun_parent_slot_key(spec: ShardSpec) -> Optional[tuple[str, str]]:
     if not spec.rerun_parent_tag:
         return None
     return (spec.job.stem, spec.rerun_parent_tag)
+
+
+def original_shard_slot_key(spec: ShardSpec) -> tuple[str, str]:
+    return rerun_parent_slot_key(spec) or shard_slot_key(spec)
 
 
 def unresolved_failed_results(results: Sequence[JobResult]) -> List[JobResult]:
@@ -3741,6 +4791,14 @@ def unresolved_failed_results(results: Sequence[JobResult]) -> List[JobResult]:
     return unresolved
 
 
+def generate_unique_rerun_seed(used_seeds: set[int]) -> int:
+    new_seed = 0
+    while new_seed <= 0 or new_seed in used_seeds:
+        new_seed = secrets.randbelow(2_000_000_000)
+    used_seeds.add(new_seed)
+    return new_seed
+
+
 def build_failed_rerun_shards_with_random_seeds(
     existing_results: Sequence[JobResult],
     base_tag: str,
@@ -3761,28 +4819,26 @@ def build_failed_rerun_shards_with_random_seeds(
     rerun_specs: List[ShardSpec] = []
     for item in failed:
         stem_tags = used_tags_by_stem.setdefault(item.spec.job.stem, set())
+        original_tag = original_shard_slot_key(item.spec)[1]
         event_parts = split_events(item.spec.events, rerun_shards)
         shard_count = len(event_parts)
         for child_index, events in enumerate(event_parts, start=1):
-            new_seed = 0
-            while new_seed <= 0 or new_seed in used_seeds:
-                new_seed = secrets.randbelow(2_000_000_000)
-            used_seeds.add(new_seed)
+            new_seed = generate_unique_rerun_seed(used_seeds)
 
             if shard_count == 1:
-                new_tag = item.spec.tag
+                new_tag = original_tag
                 rerun_parent_tag = ""
             else:
-                if item.spec.tag == base_tag:
+                if original_tag == base_tag:
                     tag_prefix = f"{base_tag}-sr"
                 else:
-                    tag_prefix = f"{item.spec.tag}r"
+                    tag_prefix = f"{original_tag}r"
                 suffix_index = child_index
                 new_tag = f"{tag_prefix}{suffix_index:03d}"
                 while new_tag in stem_tags:
                     suffix_index += 1
                     new_tag = f"{tag_prefix}{suffix_index:03d}"
-                rerun_parent_tag = item.spec.tag
+                rerun_parent_tag = original_tag
 
             stem_tags.add(new_tag)
             rerun_specs.append(
@@ -3797,6 +4853,164 @@ def build_failed_rerun_shards_with_random_seeds(
                 )
             )
     return rerun_specs
+
+
+def build_changed_event_target_shards(
+    existing_results: Sequence[JobResult],
+    manifest: Dict[str, object],
+    args: argparse.Namespace,
+    requested_setups: Sequence[str],
+    analysis_variant: str,
+    analysis_variants_by_setup: Optional[Dict[str, Sequence[str]]],
+    scale_variations: bool,
+    include_lo: bool,
+    pdf_profile: str,
+) -> ChangedEventPlan:
+    target_event_counts = requested_event_counts_from_args(args)
+    original_event_counts = original_manifest_event_counts(manifest)
+    original_requested_shards = original_manifest_requested_shards(manifest)
+    original_seed_base = original_manifest_seed_base(manifest)
+    original_jobs_limit = original_manifest_jobs_limit(manifest)
+
+    for order in ORDER_ORDER:
+        target = target_event_counts.get(order, 0)
+        original = original_event_counts.get(order, 0)
+        if target < 0:
+            raise ValueError(f"--change-number-of-events received a negative {order} target ({target}).")
+        if target > original:
+            raise ValueError(
+                f"--change-number-of-events only supports lowering event totals: requested {order}={target}, "
+                f"but the existing campaign was prepared with {order}={original}."
+            )
+
+    if original_requested_shards != int(args.shards):
+        raise ValueError(
+            f"--change-number-of-events requires the original shard layout. Use --shards {original_requested_shards} "
+            f"(existing manifest has shards_per_logical_run={original_requested_shards})."
+        )
+    if original_seed_base != int(args.seed_base):
+        raise ValueError(
+            f"--change-number-of-events requires the original seed base. Use --seed-base {original_seed_base} "
+            f"(existing manifest has seed_base={original_seed_base})."
+        )
+
+    original_jobs = build_jobs(
+        original_event_counts["LO"],
+        original_event_counts["POSNLO"],
+        original_event_counts["NEGNLO"],
+        analysis_variant,
+        analysis_variants_by_setup=analysis_variants_by_setup,
+        setups=requested_setups,
+        scale_variations=scale_variations,
+        campaign_tag=args.tag,
+        include_lo=include_lo,
+        pdf_profile=pdf_profile,
+    )
+    original_expected_shards = build_shards(
+        original_jobs,
+        args.tag,
+        original_requested_shards,
+        max(1, original_jobs_limit),
+        original_seed_base,
+    )
+    original_by_slot = {shard_slot_key(spec): spec for spec in original_expected_shards}
+    original_by_stem: Dict[str, List[ShardSpec]] = {}
+    for spec in original_expected_shards:
+        original_by_stem.setdefault(spec.job.stem, []).append(spec)
+
+    successful_existing = [item for item in existing_results if item.returncode == 0]
+    successful_slots: set[tuple[str, str]] = set()
+    completed_events_by_stem: Dict[str, int] = {}
+    for item in successful_existing:
+        slot = original_shard_slot_key(item.spec)
+        original_spec = original_by_slot.get(slot)
+        if original_spec is None:
+            raise ValueError(
+                f"Existing successful shard {item.spec.job.stem}[{item.spec.tag}] is not part of the original manifest layout."
+            )
+        if item.spec.rerun_parent_tag and item.spec.events != original_spec.events:
+            raise ValueError(
+                "--change-number-of-events only supports campaigns whose rerun shards still match the original "
+                f"per-shard event count; found {item.spec.job.stem}[{item.spec.tag}] with {item.spec.events} "
+                f"events but the original shard has {original_spec.events}."
+            )
+        if slot in successful_slots:
+            continue
+        successful_slots.add(slot)
+        completed_events_by_stem[item.spec.job.stem] = completed_events_by_stem.get(item.spec.job.stem, 0) + item.spec.events
+
+    failed_by_slot: Dict[tuple[str, str], JobResult] = {}
+    for item in unresolved_failed_results(existing_results):
+        slot = original_shard_slot_key(item.spec)
+        original_spec = original_by_slot.get(slot)
+        if original_spec is None:
+            raise ValueError(
+                f"Existing failed shard {item.spec.job.stem}[{item.spec.tag}] is not part of the original manifest layout."
+            )
+        if item.spec.rerun_parent_tag and item.spec.events != original_spec.events:
+            raise ValueError(
+                "--change-number-of-events only supports campaigns whose rerun shards still match the original "
+                f"per-shard event count; found failed shard {item.spec.job.stem}[{item.spec.tag}] with {item.spec.events} "
+                f"events but the original shard has {original_spec.events}."
+            )
+        failed_by_slot[slot] = item
+
+    used_seeds = {item.spec.seed for item in existing_results if item.spec.seed > 0}
+    target_shards: List[ShardSpec] = []
+    planned_shards: List[ShardSpec] = []
+    jobs_satisfied = 0
+    jobs_over_target = 0
+    failed_reruns = 0
+    missing_original = 0
+
+    for job in original_jobs:
+        target = target_event_counts.get(job.order, 0)
+        completed = completed_events_by_stem.get(job.stem, 0)
+        if completed >= target:
+            jobs_satisfied += 1
+            if completed > target:
+                jobs_over_target += 1
+
+        remaining = max(0, target - completed)
+        for original_spec in original_by_stem.get(job.stem, []):
+            slot = shard_slot_key(original_spec)
+            if slot in successful_slots:
+                target_shards.append(original_spec)
+                continue
+            if remaining <= 0:
+                continue
+            if original_spec.events > remaining:
+                raise ValueError(
+                    f"--change-number-of-events cannot hit the requested total for {job.stem} without creating a "
+                    f"partial shard: {remaining} events remain, but the next original shard has {original_spec.events} events."
+                )
+            target_shards.append(original_spec)
+            if slot in failed_by_slot:
+                planned_shards.append(replace(original_spec, seed=generate_unique_rerun_seed(used_seeds)))
+                failed_reruns += 1
+            else:
+                planned_shards.append(original_spec)
+                missing_original += 1
+            remaining -= original_spec.events
+        if remaining != 0:
+            raise ValueError(
+                f"--change-number-of-events could not satisfy the requested total for {job.stem}; "
+                f"{remaining} events would still be missing after exhausting the original shard layout."
+            )
+
+    return ChangedEventPlan(
+        successful_existing=successful_existing,
+        target_shards=target_shards,
+        planned_shards=planned_shards,
+        original_event_counts=original_event_counts,
+        original_requested_shards=original_requested_shards,
+        original_seed_base=original_seed_base,
+        original_jobs_limit=original_jobs_limit,
+        jobs_satisfied=jobs_satisfied,
+        jobs_over_target=jobs_over_target,
+        failed_reruns=failed_reruns,
+        missing_original=missing_original,
+    )
 
 
 def update_manifest_postprocess(
@@ -3854,6 +5068,7 @@ def update_manifest_postprocess(
     ]
     manifest["all_merged_yoda_files"] = sorted({item.output_file for item in yoda_merge_results if item.output_file is not None})
     manifest["all_nlo_yoda_files"] = sorted({item.output_file for item in yoda_nlo_results if item.output_file is not None})
+    apply_profile_and_poldis_manifest_config(manifest, args)
     save_manifest(campaign_dir, manifest)
 
 
@@ -3865,12 +5080,17 @@ def run_campaign_command(args: argparse.Namespace) -> int:
     enable_raw_powheg = bool(getattr(args, "raw_powheg", False))
     rerun_failed = bool(getattr(args, "rerun_failed_random_seed", False))
     rerun_failed_shards = int(getattr(args, "rerun_failed_shards", 1))
+    change_number_of_events = bool(getattr(args, "change_number_of_events", False))
     manifest: Dict[str, object] = {}
 
     if rerun_failed_shards < 1:
         raise ValueError("--rerun-failed-shards must be at least 1.")
     if rerun_failed_shards != 1 and not rerun_failed:
         raise ValueError("--rerun-failed-shards is only meaningful together with --rerun-failed-random-seed.")
+    if change_number_of_events and not rerun_failed:
+        raise ValueError("--change-number-of-events is only meaningful together with --rerun-failed-random-seed.")
+    if change_number_of_events and rerun_failed_shards != 1:
+        raise ValueError("--change-number-of-events requires --rerun-failed-shards 1 so the original shard size stays unchanged.")
 
     existing_prepared: List[JobResult] = []
     existing_finished: List[JobResult] = []
@@ -3887,6 +5107,18 @@ def run_campaign_command(args: argparse.Namespace) -> int:
             )
         analysis_variant = analysis_variant or manifest_variant
         enable_raw_powheg = bool(enable_raw_powheg or manifest.get("raw_powheg"))
+        stored_target_shards = load_target_shards_from_manifest(manifest)
+        if stored_target_shards:
+            args.target_shards = stored_target_shards
+        stored_original_event_counts = original_manifest_event_counts(manifest)
+        if any(value > 0 for value in stored_original_event_counts.values()):
+            args.original_event_counts = stored_original_event_counts
+            args.original_requested_shards = original_manifest_requested_shards(manifest)
+            args.original_seed_base = original_manifest_seed_base(manifest)
+            args.original_jobs_limit = original_manifest_jobs_limit(manifest)
+        args.change_number_of_events = bool(change_number_of_events or manifest.get("change_number_of_events", False))
+    pdf_profile = resolve_pdf_profile_requested(getattr(args, "pdf_profile", None), manifest if rerun_failed else None)
+    poldis_mode = resolve_poldis_mode_requested(getattr(args, "poldis", None), pdf_profile, manifest if rerun_failed else None)
     scale_variations = resolve_scale_variations_requested(getattr(args, "scale_variations", None), manifest, default=False)
     include_lo = resolve_include_lo_requested(getattr(args, "include_lo", None), manifest, analysis_variant)
     diagnostics_enabled = resolve_extract_diagnostics_requested(getattr(args, "diagnostics", None), manifest if rerun_failed else None)
@@ -3910,50 +5142,103 @@ def run_campaign_command(args: argparse.Namespace) -> int:
     args.include_lo = include_lo
     args.diagnostics = diagnostics_enabled
     args.resolved_analysis_variant = analysis_variant
+    args.pdf_profile = pdf_profile
+    args.poldis = poldis_mode
+    existing_dynamic_refs = manifest.get("dynamic_poldis_refs_json") if isinstance(manifest.get("dynamic_poldis_refs_json"), str) else None
+    if existing_dynamic_refs and Path(existing_dynamic_refs).exists():
+        args.dynamic_poldis_refs_json = existing_dynamic_refs
+    else:
+        args.dynamic_poldis_refs_json = None
     if rerun_failed:
         existing_prepared = collect_existing_prepared_from_manifest(campaign_dir)
-        existing_finished = collect_existing_job_artifacts_from_manifest(campaign_dir)
-        rerun_shards = build_failed_rerun_shards_with_random_seeds(
-            existing_finished,
-            args.tag,
-            rerun_failed_shards,
-        )
-        expected_jobs = build_jobs(
-            args.lo_events,
-            args.posnlo_events,
-            args.negnlo_events,
-            analysis_variant,
-            analysis_variants_by_setup=analysis_variants_by_setup,
-            setups=requested_setups,
-            scale_variations=scale_variations,
-            campaign_tag=args.tag,
-            include_lo=include_lo,
-        )
-        expected_shards = build_shards(
-            expected_jobs,
-            args.tag,
-            args.shards,
-            max(1, args.jobs),
-            args.seed_base,
-        )
-        existing_slots = {shard_slot_key(item.spec) for item in existing_finished}
-        missing_shards = [
-            spec
-            for spec in expected_shards
-            if shard_slot_key(spec) not in existing_slots
-        ]
-        missing_jobs = sorted({spec.job.stem for spec in missing_shards})
-        shards = [*missing_shards, *rerun_shards]
-        jobs = sorted({item.job for item in shards}, key=lambda job: (job.setup, job.order, job.helicity, job.stem))
-        unresolved_before = unresolved_failed_results(existing_finished)
-        print_stage(
-            f"Rerunning failed shards for campaign '{args.tag}' "
-            f"({len(unresolved_before)} unresolved, {len(missing_jobs)} logical runs with missing shards, "
-            f"{len(shards)} total replacement/new shards, rerun_shards={rerun_failed_shards}, "
-            f"variant={analysis_variant or 'default'})"
-        )
-        if not shards:
-            print_stage("No unresolved failed shards or missing logical runs remain; reusing existing campaign outputs")
+        all_existing_results = collect_existing_job_artifacts_from_manifest(campaign_dir)
+        stored_target_shards = list(getattr(args, "target_shards", []))
+        if change_number_of_events:
+            change_plan = build_changed_event_target_shards(
+                all_existing_results,
+                manifest,
+                args,
+                requested_setups,
+                analysis_variant,
+                analysis_variants_by_setup,
+                scale_variations,
+                include_lo,
+                pdf_profile,
+            )
+            existing_finished = change_plan.successful_existing
+            shards = change_plan.planned_shards
+            jobs = sorted({item.job for item in shards}, key=job_sort_key)
+            args.target_shards = change_plan.target_shards
+            args.original_event_counts = change_plan.original_event_counts
+            args.original_requested_shards = change_plan.original_requested_shards
+            args.original_seed_base = change_plan.original_seed_base
+            args.original_jobs_limit = change_plan.original_jobs_limit
+            print_stage(
+                f"Adjusting event totals for campaign '{args.tag}' while preserving the original shard size "
+                f"(reusing {len(existing_finished)} successful shards, scheduling {change_plan.failed_reruns} failed reruns "
+                f"and {change_plan.missing_original} original missing shards, {change_plan.jobs_satisfied} logical runs already "
+                f"meet the new target, variant={analysis_variant or 'default'})"
+            )
+            if change_plan.jobs_over_target:
+                print_stage(
+                    f"{change_plan.jobs_over_target} logical runs already exceed the new target and will be kept as-is."
+                )
+            if not shards:
+                print_stage("No additional shards are needed; reusing existing campaign outputs")
+        else:
+            if stored_target_shards:
+                requested_counts = requested_event_counts_from_args(args)
+                manifest_counts = manifest_event_counts(manifest)
+                if requested_counts != manifest_counts:
+                    raise ValueError(
+                        "This campaign already stores a reduced target shard layout in its manifest. "
+                        "Use the same event counts as the manifest, or rerun with --change-number-of-events to choose a new lower target."
+                    )
+                expected_shards = stored_target_shards
+            else:
+                expected_jobs = build_jobs(
+                    args.lo_events,
+                    args.posnlo_events,
+                    args.negnlo_events,
+                    analysis_variant,
+                    analysis_variants_by_setup=analysis_variants_by_setup,
+                    setups=requested_setups,
+                    scale_variations=scale_variations,
+                    campaign_tag=args.tag,
+                    include_lo=include_lo,
+                    pdf_profile=pdf_profile,
+                )
+                expected_shards = build_shards(
+                    expected_jobs,
+                    args.tag,
+                    args.shards,
+                    max(1, args.jobs),
+                    args.seed_base,
+                )
+            existing_finished = all_existing_results
+            rerun_shards = build_failed_rerun_shards_with_random_seeds(
+                all_existing_results,
+                args.tag,
+                rerun_failed_shards,
+            )
+            existing_slots = {original_shard_slot_key(item.spec) for item in all_existing_results}
+            missing_shards = [
+                spec
+                for spec in expected_shards
+                if shard_slot_key(spec) not in existing_slots
+            ]
+            missing_jobs = sorted({spec.job.stem for spec in missing_shards})
+            shards = [*missing_shards, *rerun_shards]
+            jobs = sorted({item.job for item in shards}, key=job_sort_key)
+            unresolved_before = unresolved_failed_results(all_existing_results)
+            print_stage(
+                f"Rerunning failed shards for campaign '{args.tag}' "
+                f"({len(unresolved_before)} unresolved, {len(missing_jobs)} logical runs with missing shards, "
+                f"{len(shards)} total replacement/new shards, rerun_shards={rerun_failed_shards}, "
+                f"variant={analysis_variant or 'default'})"
+            )
+            if not shards:
+                print_stage("No unresolved failed shards or missing logical runs remain; reusing existing campaign outputs")
     else:
         jobs = build_jobs(
             args.lo_events,
@@ -3965,6 +5250,7 @@ def run_campaign_command(args: argparse.Namespace) -> int:
             scale_variations=scale_variations,
             campaign_tag=args.tag,
             include_lo=include_lo,
+            pdf_profile=pdf_profile,
         )
         shards = build_shards(jobs, args.tag, args.shards, max(1, args.jobs), args.seed_base)
         print_stage(
@@ -3973,6 +5259,21 @@ def run_campaign_command(args: argparse.Namespace) -> int:
 
     if enable_raw_powheg and analysis_variant != "RIVETFO":
         raise ValueError("--raw-powheg is only supported together with --rivetfo.")
+
+    campaign_started = time.time()
+    write_campaign_monitor_files(
+        campaign_dir,
+        build_campaign_monitor_payload(
+            tag=args.tag,
+            phase="preparing",
+            started_at=campaign_started,
+            pdf_profile=pdf_profile,
+            poldis_mode=poldis_mode,
+            message="Resolving generated inputs and preparing Herwig run files.",
+        ),
+    )
+
+    args.generated_profile_inputs_root = materialize_pdf_profile_inputs(base_dir, args.tag, pdf_profile, args.dry_run)
 
     prepared: List[JobResult] = list(existing_prepared)
     do_prepare = args.force_prepare or not args.no_prepare
@@ -3991,20 +5292,147 @@ def run_campaign_command(args: argparse.Namespace) -> int:
 
     powheg_options_file = None
     if not args.dry_run:
+        persist_campaign_plan_manifest(campaign_dir, args, analysis_variant)
         print_stage("Recording POWHEG-related card options for this campaign")
         powheg_options_file = write_powheg_options_summary(campaign_dir, base_dir, jobs, analysis_variant)
 
-    finished = run_jobs(
-        base_dir,
-        shards,
-        max(1, args.jobs),
-        campaign_dir,
-        args.dry_run,
-        args.keep_going,
-        args.progress_interval,
-        args.max_listed,
-        analysis_variant,
-    )
+    poldis_setups = normalize_poldis_setups(requested_setups)
+    dynamic_poldis_requested = should_build_dynamic_poldis_refs(poldis_mode, pdf_profile) and bool(poldis_setups)
+    finished: List[JobResult]
+    if dynamic_poldis_requested and not args.dry_run:
+        herwig_slots, concurrent_poldis_jobs, concurrent_variant_jobs = resolve_concurrent_campaign_slots(
+            max(1, args.jobs),
+            max(1, args.poldis_jobs),
+            max(1, args.poldis_variant_jobs),
+            len(poldis_setups),
+        )
+    else:
+        herwig_slots = max(1, args.jobs)
+        concurrent_poldis_jobs = max(1, args.poldis_jobs)
+        concurrent_variant_jobs = max(1, args.poldis_variant_jobs)
+
+    if dynamic_poldis_requested and not args.dry_run and concurrent_poldis_jobs > 0:
+        print_stage(
+            f"Running Herwig and POLDIS concurrently under the global --jobs cap "
+            f"(Herwig slots={herwig_slots}, POLDIS helpers={concurrent_poldis_jobs}, "
+            f"POLDIS variants/helper={concurrent_variant_jobs}, total cap={max(1, args.jobs)})"
+        )
+        monitor_lock = threading.Lock()
+        latest_herwig: Optional[Dict[str, object]] = None
+        latest_poldis: Optional[Dict[str, object]] = summarize_dynamic_poldis_status(base_dir, args.tag, pdf_profile, poldis_setups)
+        herwig_active = True
+        poldis_active = True
+
+        def combined_phase() -> str:
+            if herwig_active and poldis_active:
+                return "running-herwig+poldis"
+            if herwig_active:
+                return "running-herwig"
+            if poldis_active:
+                return "running-poldis"
+            return "preparing"
+
+        def flush_combined_monitor(message: Optional[str] = None) -> None:
+            write_campaign_monitor_files(
+                campaign_dir,
+                build_campaign_monitor_payload(
+                    tag=args.tag,
+                    phase=combined_phase(),
+                    started_at=campaign_started,
+                    pdf_profile=pdf_profile,
+                    poldis_mode=poldis_mode,
+                    herwig=latest_herwig,
+                    poldis=latest_poldis,
+                    message=message,
+                ),
+            )
+
+        def herwig_monitor_callback(payload: Dict[str, object]) -> None:
+            nonlocal latest_herwig
+            with monitor_lock:
+                latest_herwig = payload
+                flush_combined_monitor()
+
+        def poldis_monitor_callback(payload: Dict[str, object]) -> None:
+            nonlocal latest_poldis
+            with monitor_lock:
+                latest_poldis = payload
+                flush_combined_monitor()
+
+        with monitor_lock:
+            flush_combined_monitor("Running Herwig shards and dynamic POLDIS references concurrently.")
+
+        herwig_exc: Optional[BaseException] = None
+        poldis_exc: Optional[BaseException] = None
+        dynamic_refs_json: Optional[Path] = None
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            herwig_future = executor.submit(
+                run_jobs,
+                base_dir,
+                shards,
+                herwig_slots,
+                campaign_dir,
+                args.dry_run,
+                args.keep_going,
+                args.progress_interval,
+                args.max_listed,
+                analysis_variant,
+                pdf_profile,
+                poldis_mode,
+                herwig_monitor_callback,
+            )
+            poldis_future = executor.submit(
+                ensure_dynamic_poldis_references,
+                base_dir=base_dir,
+                campaign_dir=campaign_dir,
+                campaign_tag=args.tag,
+                pdf_profile=pdf_profile,
+                poldis_mode=poldis_mode,
+                setups=requested_setups,
+                jobs=concurrent_poldis_jobs,
+                variant_jobs=concurrent_variant_jobs,
+                events=int(args.poldis_events),
+                dry_run=args.dry_run,
+                progress_interval=args.progress_interval,
+                monitor_callback=poldis_monitor_callback,
+            )
+            try:
+                finished = herwig_future.result()
+            except BaseException as exc:  # pragma: no cover - surfaced to caller after cleanup
+                herwig_exc = exc
+                finished = []
+            finally:
+                with monitor_lock:
+                    herwig_active = False
+                    flush_combined_monitor()
+            try:
+                dynamic_refs_json = poldis_future.result()
+            except BaseException as exc:  # pragma: no cover - surfaced to caller after cleanup
+                poldis_exc = exc
+            finally:
+                with monitor_lock:
+                    poldis_active = False
+                    flush_combined_monitor()
+
+        args.dynamic_poldis_refs_json = str(dynamic_refs_json) if dynamic_refs_json is not None else None
+        if herwig_exc is not None:
+            raise herwig_exc
+        if poldis_exc is not None:
+            raise poldis_exc
+    else:
+        finished = run_jobs(
+            base_dir,
+            shards,
+            herwig_slots,
+            campaign_dir,
+            args.dry_run,
+            args.keep_going,
+            args.progress_interval,
+            args.max_listed,
+            analysis_variant,
+            pdf_profile=pdf_profile,
+            poldis_mode=poldis_mode,
+        )
 
     finished = list(existing_finished) + finished
     failed = unresolved_failed_results(finished)
@@ -4013,6 +5441,39 @@ def run_campaign_command(args: argparse.Namespace) -> int:
     yoda_nlo_results: List[YODANLOResult] = []
     raw_powheg_results: List[RawPOWHEGYODAResult] = []
     if not failed:
+        if dynamic_poldis_requested and not args.dynamic_poldis_refs_json:
+            print_stage("Building dynamic POLDIS references for campaign results")
+            dynamic_refs_json = ensure_dynamic_poldis_references(
+                base_dir=base_dir,
+                campaign_dir=campaign_dir,
+                campaign_tag=args.tag,
+                pdf_profile=pdf_profile,
+                poldis_mode=poldis_mode,
+                setups=requested_setups,
+                jobs=concurrent_poldis_jobs,
+                variant_jobs=concurrent_variant_jobs,
+                events=int(args.poldis_events),
+                dry_run=args.dry_run,
+                progress_interval=args.progress_interval,
+            )
+            args.dynamic_poldis_refs_json = str(dynamic_refs_json) if dynamic_refs_json is not None else None
+
+        write_campaign_monitor_files(
+            campaign_dir,
+            build_campaign_monitor_payload(
+                tag=args.tag,
+                phase="extracting",
+                started_at=campaign_started,
+                pdf_profile=pdf_profile,
+                poldis_mode=poldis_mode,
+                poldis=(
+                    summarize_dynamic_poldis_status(base_dir, args.tag, pdf_profile, normalize_poldis_setups(requested_setups))
+                    if args.dynamic_poldis_refs_json
+                    else None
+                ),
+                message="Merging YODA outputs and extracting campaign summaries.",
+            ),
+        )
         if use_raw_powheg_runtime(analysis_variant, enable_raw_powheg):
             print_stage("Converting raw POWHEG log diagnostics to shard YODAs")
             raw_powheg_results = build_raw_powheg_yoda_files(
@@ -4071,7 +5532,7 @@ def run_campaign_command(args: argparse.Namespace) -> int:
         else:
             dis_cmd = [
                 "python3.10",
-                str(script_path("extract_dis_out_results.py")),
+                str(base_dir / "extract_dis_out_results.py"),
                 "--base-dir",
                 str(base_dir),
                 "-t",
@@ -4083,12 +5544,13 @@ def run_campaign_command(args: argparse.Namespace) -> int:
             ]
             extend_results_extractor_scope(dis_cmd, requested_setups)
             dis_cmd.extend(analysis_variant_args(analysis_variant))
+            maybe_extend_results_with_poldis_refs(dis_cmd, args.dynamic_poldis_refs_json)
             print_stage("Extracting DIS run summaries")
             extract_status["results"] = run_extractor(dis_cmd, campaign_dir / "results.txt", base_dir, args.dry_run)
             if diagnostics_enabled:
                 diag_cmd = [
                     "python3.10",
-                    str(script_path("extract_nlo_term_diagnostics.py")),
+                    str(base_dir / "extract_nlo_term_diagnostics.py"),
                     "--base-dir",
                     str(base_dir),
                     "-t",
@@ -4143,6 +5605,35 @@ def run_campaign_command(args: argparse.Namespace) -> int:
                 for item in raw_powheg_results
             ],
         )
+
+    final_poldis_summary = None
+    if args.dynamic_poldis_refs_json:
+        final_poldis_summary = summarize_dynamic_poldis_status(
+            base_dir,
+            args.tag,
+            pdf_profile,
+            normalize_poldis_setups(requested_setups),
+        )
+    write_campaign_monitor_files(
+        campaign_dir,
+        build_campaign_monitor_payload(
+            tag=args.tag,
+            phase="complete",
+            started_at=campaign_started,
+            pdf_profile=pdf_profile,
+            poldis_mode=poldis_mode,
+            herwig={
+                "completed": sum(1 for item in finished if item.returncode == 0),
+                "running": 0,
+                "pending": 0,
+                "failed": len(failed),
+                "total": len(finished),
+            },
+            poldis=final_poldis_summary,
+            extract_status=extract_status,
+            message="Campaign finished." if not failed else "Campaign finished with failed Herwig shards.",
+        ),
+    )
 
     print(f"Campaign tag: {args.tag}")
     print(f"Campaign directory: {campaign_dir}")
@@ -4204,6 +5695,8 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
     scale_variations = resolve_scale_variations_requested(getattr(args, "scale_variations", None), manifest, default=False)
     include_lo = resolve_include_lo_requested(getattr(args, "include_lo", None), manifest, analysis_variant)
     diagnostics_enabled = resolve_extract_diagnostics_requested(getattr(args, "diagnostics", None), manifest)
+    pdf_profile = resolve_pdf_profile_requested(getattr(args, "pdf_profile", None), manifest)
+    poldis_mode = resolve_poldis_mode_requested(getattr(args, "poldis", None), pdf_profile, manifest)
     if ps_mode:
         if include_lo:
             raise ValueError("SPINVAL/SPINCOMP/SPINHAD are NLO-only workflows; do not use --include-lo.")
@@ -4214,9 +5707,29 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
     args.include_lo = include_lo
     args.diagnostics = diagnostics_enabled
     args.resolved_analysis_variant = analysis_variant
+    args.pdf_profile = pdf_profile
+    args.poldis = poldis_mode
+    existing_dynamic_refs = manifest.get("dynamic_poldis_refs_json") if isinstance(manifest.get("dynamic_poldis_refs_json"), str) else None
+    if existing_dynamic_refs and Path(existing_dynamic_refs).exists():
+        args.dynamic_poldis_refs_json = existing_dynamic_refs
+    else:
+        args.dynamic_poldis_refs_json = None
     if getattr(args, "raw_powheg", False) and analysis_variant != "RIVETFO":
         raise ValueError("--raw-powheg is only supported together with --rivetfo.")
     print_stage(f"Postprocessing existing campaign '{args.tag}'")
+
+    campaign_started = time.time()
+    write_campaign_monitor_files(
+        campaign_dir,
+        build_campaign_monitor_payload(
+            tag=args.tag,
+            phase="preparing",
+            started_at=campaign_started,
+            pdf_profile=pdf_profile,
+            poldis_mode=poldis_mode,
+            message="Collecting existing campaign outputs for postprocessing.",
+        ),
+    )
 
     finished = collect_existing_yoda_results(
         base_dir,
@@ -4235,6 +5748,40 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
     yoda_merge_results: List[YODAMergeResult] = []
     yoda_nlo_results: List[YODANLOResult] = []
     raw_powheg_results: List[RawPOWHEGYODAResult] = []
+
+    if should_build_dynamic_poldis_refs(poldis_mode, pdf_profile):
+        print_stage("Building dynamic POLDIS references for campaign results")
+        dynamic_refs_json = ensure_dynamic_poldis_references(
+            base_dir=base_dir,
+            campaign_dir=campaign_dir,
+            campaign_tag=args.tag,
+            pdf_profile=pdf_profile,
+            poldis_mode=poldis_mode,
+            setups=requested_setups,
+            jobs=max(1, args.poldis_jobs),
+            variant_jobs=max(1, args.poldis_variant_jobs),
+            events=int(args.poldis_events),
+            dry_run=args.dry_run,
+            progress_interval=args.progress_interval,
+        )
+        args.dynamic_poldis_refs_json = str(dynamic_refs_json) if dynamic_refs_json is not None else None
+
+    write_campaign_monitor_files(
+        campaign_dir,
+        build_campaign_monitor_payload(
+            tag=args.tag,
+            phase="extracting",
+            started_at=campaign_started,
+            pdf_profile=pdf_profile,
+            poldis_mode=poldis_mode,
+            poldis=(
+                summarize_dynamic_poldis_status(base_dir, args.tag, pdf_profile, normalize_poldis_setups(requested_setups))
+                if args.dynamic_poldis_refs_json
+                else None
+            ),
+            message="Merging YODA outputs and extracting campaign summaries.",
+        ),
+    )
 
     if use_raw_powheg_runtime(analysis_variant, bool(getattr(args, "raw_powheg", False))):
         print_stage("Rebuilding raw POWHEG shard YODAs from existing logs")
@@ -4297,7 +5844,7 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
     else:
         dis_cmd = [
             "python3.10",
-            str(script_path("extract_dis_out_results.py")),
+            str(base_dir / "extract_dis_out_results.py"),
             "--base-dir",
             str(base_dir),
             "-t",
@@ -4309,11 +5856,12 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
         ]
         extend_results_extractor_scope(dis_cmd, requested_setups)
         dis_cmd.extend(analysis_variant_args(analysis_variant))
+        maybe_extend_results_with_poldis_refs(dis_cmd, args.dynamic_poldis_refs_json)
         extract_status["results"] = run_extractor(dis_cmd, campaign_dir / "results.txt", base_dir, args.dry_run)
         if diagnostics_enabled:
             diag_cmd = [
                 "python3.10",
-                str(script_path("extract_nlo_term_diagnostics.py")),
+                str(base_dir / "extract_nlo_term_diagnostics.py"),
                 "--base-dir",
                 str(base_dir),
                 "-t",
@@ -4408,6 +5956,28 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
                 for item in raw_powheg_results
             ],
         )
+
+    final_poldis_summary = None
+    if args.dynamic_poldis_refs_json:
+        final_poldis_summary = summarize_dynamic_poldis_status(
+            base_dir,
+            args.tag,
+            pdf_profile,
+            normalize_poldis_setups(requested_setups),
+        )
+    write_campaign_monitor_files(
+        campaign_dir,
+        build_campaign_monitor_payload(
+            tag=args.tag,
+            phase="complete",
+            started_at=campaign_started,
+            pdf_profile=pdf_profile,
+            poldis_mode=poldis_mode,
+            poldis=final_poldis_summary,
+            extract_status=extract_status,
+            message="Postprocessing finished.",
+        ),
+    )
 
     print(f"Postprocessed campaign tag: {args.tag}")
     print(f"Campaign directory: {campaign_dir}")

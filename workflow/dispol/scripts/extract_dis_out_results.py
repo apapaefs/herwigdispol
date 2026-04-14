@@ -146,7 +146,11 @@ NLO_NAME_RE = re.compile(
     r"^DIS-POL-POWHEG_(?P<hel>PP|PM|MP|MM|00)-(?P<part>POSNLO|NEGNLO)-(?P<ew>ALL|GAMMA|Z|CC)"
     r"(?:-(?P<analysis>RIVETFOFIXED|RIVETFO|RIVET))?(?:-(?P<variant>[^.]+))?\.out$"
 )
-SEEDED_VARIANT_RE = re.compile(r"^S\d+-(?P<tag>.+)$")
+# Support both plain shard variants like
+#   S700560-plain48-z-termdiag-s001
+# and prefixed variants like
+#   TERMDIAG-SP040-S710000-plain49-gamma-termdiag-power-s001
+SEEDED_VARIANT_RE = re.compile(r"(?:^|-)S\d+-(?P<tag>.+)$")
 
 
 @dataclass(frozen=True)
@@ -166,6 +170,11 @@ def has_reference_measurement(refs: Dict[str, Measurement], stage: str) -> bool:
 
 def is_finite_measurement(meas: Optional[Measurement]) -> bool:
     return meas is not None and math.isfinite(meas.value_pb) and math.isfinite(meas.error_pb)
+
+
+def emit_progress(enabled: bool, message: str) -> None:
+    if enabled:
+        print(f"[extract-dis] {message}", file=sys.stderr, flush=True)
 
 
 HELICITY_ORDER = ("PP", "PM", "MP", "MM", "00")
@@ -193,9 +202,9 @@ DELTA_OBSERVABLES = {"avg_minus_00", "sigma0_minus_00"}
 # POLDIS reference cross sections for the current validation cut Q^2 > 49 GeV^2.
 POLDIS_POL_REFS: Dict[str, Dict[str, Measurement]] = {
     "ALL": {
-        "LO": Measurement(50.140518, 0.003077),
-        "NLO": Measurement(48.288623, 0.003227),
-        "NNLO": Measurement(48.158455, 0.003761),
+        "LO": Measurement(50.140712, 0.003077),
+        "NLO": Measurement(48.288810, 0.003227),
+        "NNLO": Measurement(48.158641, 0.003761),
     },
     "GAMMA": {
         "LO": Measurement(45.426932, 0.002804),
@@ -203,9 +212,9 @@ POLDIS_POL_REFS: Dict[str, Dict[str, Measurement]] = {
         "NNLO": Measurement(43.544651, 0.003565),
     },
     "Z": {
-        "LO": Measurement(0.054645, 0.000010),
-        "NLO": Measurement(0.050139, 0.000010),
-        "NNLO": Measurement(0.049705, 0.000010),
+        "LO": Measurement(0.054656, 0.000010),
+        "NLO": Measurement(0.050150, 0.000010),
+        "NNLO": Measurement(0.049715, 0.000010),
     },
     "CC": {
         "LO": Measurement(3.157534, 0.001497),
@@ -216,9 +225,9 @@ POLDIS_POL_REFS: Dict[str, Dict[str, Measurement]] = {
 
 POLDIS_UNPOL_REFS: Dict[str, Dict[str, Measurement]] = {
     "ALL": {
-        "LO": Measurement(2965.618933, 0.200533),
-        "NLO": Measurement(2768.300528, 0.227469),
-        "NNLO": Measurement(2689.311893, 0.299186),
+        "LO": Measurement(2965.620920, 0.200533),
+        "NLO": Measurement(2768.302391, 0.227469),
+        "NNLO": Measurement(2689.313720, 0.299187),
     },
     "GAMMA": {
         "LO": Measurement(2952.498947, 0.200487),
@@ -226,9 +235,9 @@ POLDIS_UNPOL_REFS: Dict[str, Dict[str, Measurement]] = {
         "NNLO": Measurement(2677.170133, 0.299018),
     },
     "Z": {
-        "LO": Measurement(1.210347, 0.000119),
-        "NLO": Measurement(1.153437, 0.000118),
-        "NNLO": Measurement(1.139606, 0.000123),
+        "LO": Measurement(1.210471, 0.000119),
+        "NLO": Measurement(1.153555, 0.000118),
+        "NNLO": Measurement(1.139722, 0.000123),
     },
     "CC": {
         "LO": Measurement(9.431494, 0.003275),
@@ -236,6 +245,88 @@ POLDIS_UNPOL_REFS: Dict[str, Dict[str, Measurement]] = {
         "NNLO": Measurement(8.956922, 0.003349),
     },
 }
+
+
+def clone_reference_map(
+    refs: Dict[str, Dict[str, Measurement]],
+) -> Dict[str, Dict[str, Measurement]]:
+    return {
+        setup: {
+            order: Measurement(meas.value_pb, meas.error_pb)
+            for order, meas in orders.items()
+        }
+        for setup, orders in refs.items()
+    }
+
+
+def merge_reference_maps(
+    default_refs: Dict[str, Dict[str, Measurement]],
+    override_refs: Dict[str, Dict[str, Measurement]],
+) -> Dict[str, Dict[str, Measurement]]:
+    merged = clone_reference_map(default_refs)
+    for setup, orders in override_refs.items():
+        target = merged.setdefault(setup, {})
+        for order, meas in orders.items():
+            target[order] = Measurement(meas.value_pb, meas.error_pb)
+    return merged
+
+
+def parse_reference_measurement(payload: object, context: str) -> Measurement:
+    if not isinstance(payload, dict):
+        raise ValueError(f"Invalid {context}: expected object, got {type(payload).__name__}")
+    try:
+        return Measurement(float(payload["value_pb"]), float(payload["error_pb"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid {context}: expected value_pb/error_pb numbers") from exc
+
+
+def load_poldis_reference_overrides(
+    path: Path,
+) -> Tuple[Dict[str, Dict[str, Measurement]], Dict[str, Dict[str, Measurement]]]:
+    payload = json.loads(path.read_text())
+    raw_setups = payload.get("setups")
+    if not isinstance(raw_setups, dict):
+        raise ValueError(f"Invalid POLDIS reference JSON {path}: missing top-level 'setups' object")
+
+    unpol_refs: Dict[str, Dict[str, Measurement]] = {}
+    pol_refs: Dict[str, Dict[str, Measurement]] = {}
+    for setup, setup_payload in raw_setups.items():
+        if not isinstance(setup, str) or not isinstance(setup_payload, dict):
+            continue
+        raw_unpol = setup_payload.get("unpolarized", {})
+        raw_pol = setup_payload.get("polarized", {})
+        if isinstance(raw_unpol, dict):
+            unpol_orders: Dict[str, Measurement] = {}
+            for order in ("LO", "NLO", "NNLO"):
+                if order in raw_unpol:
+                    unpol_orders[order] = parse_reference_measurement(
+                        raw_unpol[order], f"{path}:{setup}:unpolarized:{order}"
+                    )
+            if unpol_orders:
+                unpol_refs[setup] = unpol_orders
+        if isinstance(raw_pol, dict):
+            pol_orders: Dict[str, Measurement] = {}
+            for order in ("LO", "NLO", "NNLO"):
+                if order in raw_pol:
+                    pol_orders[order] = parse_reference_measurement(
+                        raw_pol[order], f"{path}:{setup}:polarized:{order}"
+                    )
+            if pol_orders:
+                pol_refs[setup] = pol_orders
+    return unpol_refs, pol_refs
+
+
+def resolve_poldis_reference_maps(
+    override_json: Optional[Path],
+) -> Tuple[Dict[str, Dict[str, Measurement]], Dict[str, Dict[str, Measurement]], Optional[str]]:
+    if override_json is None:
+        return clone_reference_map(POLDIS_UNPOL_REFS), clone_reference_map(POLDIS_POL_REFS), None
+    unpol_override, pol_override = load_poldis_reference_overrides(override_json)
+    return (
+        merge_reference_maps(POLDIS_UNPOL_REFS, unpol_override),
+        merge_reference_maps(POLDIS_POL_REFS, pol_override),
+        str(override_json),
+    )
 
 
 @dataclass
@@ -290,6 +381,16 @@ def parse_measurement(text: str) -> Tuple[Optional[Measurement], Optional[str]]:
     raise ValueError(f"Unsupported cross-section unit {unit!r}")
 
 
+def parse_generated_event_count(text: str) -> Optional[int]:
+    matches = list(TOTAL_RE.finditer(text))
+    if not matches:
+        return None
+    try:
+        return int(matches[-1].group(1))
+    except ValueError:
+        return None
+
+
 def apply_analysis_suffix(name: str, analysis_variant: str) -> str:
     if not analysis_variant:
         return name
@@ -324,7 +425,7 @@ def variant_matches_tag(variant: str, preferred_tag: str) -> bool:
 
 
 def normalize_variant_tag(variant: str) -> str:
-    match = SEEDED_VARIANT_RE.match(variant)
+    match = SEEDED_VARIANT_RE.search(variant)
     if match:
         return match.group("tag")
     return variant
@@ -367,7 +468,7 @@ def find_equivalent_runs(base_dir: Path, requested_name: str, preferred_tag: str
         exact_paths = []
         for path in paths:
             try:
-                _, _, _, _, cand_variant = parse_requested_name(path.name)
+                _, _, _, _, _, cand_variant = parse_requested_name(path.name)
             except ValueError:
                 continue
             if normalize_variant_tag(cand_variant) == preferred_tag:
@@ -400,17 +501,39 @@ def resolve_runs(base_dir: Path, requested_name: str, preferred_tag: str, strict
     return find_equivalent_runs(base_dir, requested_name, preferred_tag)
 
 
-def combine_measurements(measurements: Sequence[Measurement]) -> Measurement:
+def shard_mean_weights(generated_events: Optional[Sequence[Optional[int]]], count: int) -> List[float]:
+    if generated_events is None:
+        return [1.0] * count
+    events = list(generated_events)
+    if len(events) != count:
+        return [1.0] * count
+    weights: List[float] = []
+    for raw in events:
+        if raw is None:
+            return [1.0] * count
+        try:
+            weight = float(raw)
+        except (TypeError, ValueError):
+            return [1.0] * count
+        if not math.isfinite(weight) or weight <= 0.0:
+            return [1.0] * count
+        weights.append(weight)
+    return weights
+
+
+def combine_measurements(
+    measurements: Sequence[Measurement],
+    generated_events: Optional[Sequence[Optional[int]]] = None,
+) -> Measurement:
     if not measurements:
         raise ValueError("combine_measurements() requires at least one measurement")
-    positive = [m for m in measurements if m.error_pb > 0.0]
-    if not positive:
-        value = sum(m.value_pb for m in measurements) / len(measurements)
-        return Measurement(value, 0.0)
-    weights = [1.0 / (m.error_pb ** 2) for m in positive]
+
+    # Campaign shards are independent samples of the same run configuration, so
+    # merge them as a mean over shard event counts rather than by inverse-variance.
+    weights = shard_mean_weights(generated_events, len(measurements))
     total_weight = sum(weights)
-    value = sum(w * m.value_pb for w, m in zip(weights, positive)) / total_weight
-    error = math.sqrt(1.0 / total_weight)
+    value = sum(w * m.value_pb for w, m in zip(weights, measurements)) / total_weight
+    error = math.sqrt(sum((w * m.error_pb) ** 2 for w, m in zip(weights, measurements))) / total_weight
     return Measurement(value, error)
 
 
@@ -434,15 +557,17 @@ def load_run(base_dir: Path, requested_name: str, preferred_tag: str, strict_tag
         )
 
     measurements: List[Measurement] = []
+    generated_events: List[Optional[int]] = []
     units: List[str] = []
     for path in paths:
         text = path.read_text()
         measurement, unit = parse_measurement(text)
         if measurement is not None:
             measurements.append(measurement)
+            generated_events.append(parse_generated_event_count(text))
         if unit is not None:
             units.append(unit)
-    measurement = combine_measurements(measurements) if measurements else None
+    measurement = combine_measurements(measurements, generated_events) if measurements else None
     unit = units[0] if units else None
     return RunSpec(
         requested_name=requested_name,
@@ -842,17 +967,21 @@ def selected_stage_observable(
     return selector(setup, stage_payload)
 
 
-def build_interference_comparisons(setups_payload: Dict[str, object]) -> Dict[str, object]:
+def build_interference_comparisons(
+    setups_payload: Dict[str, object],
+    unpol_refs_map: Dict[str, Dict[str, Measurement]],
+    pol_refs_map: Dict[str, Dict[str, Measurement]],
+) -> Dict[str, object]:
     required_setups = ("ALL", "GAMMA", "Z")
     if not all(setup in setups_payload for setup in required_setups):
         return {}
 
     comparisons: Dict[str, object] = {}
     configs = (
-        ("LO_unpol", "LO", select_unpol_observable, POLDIS_UNPOL_REFS, "LO unpolarized interference"),
-        ("NLO_unpol", "NLO", select_unpol_observable, POLDIS_UNPOL_REFS, "NLO unpolarized interference"),
-        ("LO_pol", "LO", select_pol_observable, POLDIS_POL_REFS, "LO polarized interference"),
-        ("NLO_pol", "NLO", select_pol_observable, POLDIS_POL_REFS, "NLO polarized interference"),
+        ("LO_unpol", "LO", select_unpol_observable, unpol_refs_map, "LO unpolarized interference"),
+        ("NLO_unpol", "NLO", select_unpol_observable, unpol_refs_map, "NLO unpolarized interference"),
+        ("LO_pol", "LO", select_pol_observable, pol_refs_map, "LO polarized interference"),
+        ("NLO_pol", "NLO", select_pol_observable, pol_refs_map, "NLO polarized interference"),
     )
 
     for comp_name, stage_name, selector, refs, title in configs:
@@ -873,7 +1002,16 @@ def build_interference_comparisons(setups_payload: Dict[str, object]) -> Dict[st
     return comparisons
 
 
-def build_summary(specs: Sequence[RunSpec]) -> Dict[str, object]:
+def build_summary(
+    specs: Sequence[RunSpec],
+    unpol_refs_map: Optional[Dict[str, Dict[str, Measurement]]] = None,
+    pol_refs_map: Optional[Dict[str, Dict[str, Measurement]]] = None,
+    ref_source: Optional[str] = None,
+) -> Dict[str, object]:
+    if unpol_refs_map is None:
+        unpol_refs_map = clone_reference_map(POLDIS_UNPOL_REFS)
+    if pol_refs_map is None:
+        pol_refs_map = clone_reference_map(POLDIS_POL_REFS)
     grouped = group_runs(specs)
     summary: Dict[str, object] = {
         "missing_files": [spec.requested_name for spec in specs if not spec.exists],
@@ -888,6 +1026,7 @@ def build_summary(specs: Sequence[RunSpec]) -> Dict[str, object]:
         ],
         "setups": {},
         "interference": {"comparisons": {}},
+        "poldis_reference_source": ref_source,
     }
 
     setups_payload: Dict[str, object] = {}
@@ -898,11 +1037,11 @@ def build_summary(specs: Sequence[RunSpec]) -> Dict[str, object]:
             "stages": {},
             "poldis_unpolarized_refs": {
                 order: measurement_to_dict(meas)
-                for order, meas in POLDIS_UNPOL_REFS.get(setup, {}).items()
+                for order, meas in unpol_refs_map.get(setup, {}).items()
             },
             "poldis_polarized_refs": {
                 order: measurement_to_dict(meas)
-                for order, meas in POLDIS_POL_REFS.get(setup, {}).items()
+                for order, meas in pol_refs_map.get(setup, {}).items()
             },
             "comparisons": {},
         }
@@ -927,7 +1066,7 @@ def build_summary(specs: Sequence[RunSpec]) -> Dict[str, object]:
             nlo_runs = {hel: sub(pos_runs[hel], neg_runs[hel]) for hel in common_nlo_hels}
             stage_map["NLO"] = stage_payload(nlo_runs)
 
-        pol_refs = POLDIS_POL_REFS.get(setup)
+        pol_refs = pol_refs_map.get(setup)
         if pol_refs:
             comparisons: Dict[str, object] = setup_payload["comparisons"]  # type: ignore[assignment]
             if "LO" in stage_map and has_reference_measurement(pol_refs, "LO"):
@@ -945,7 +1084,7 @@ def build_summary(specs: Sequence[RunSpec]) -> Dict[str, object]:
                     comp["label"] = nlo_choice[1]
                     comparisons["NLO_pol"] = comp
 
-        unpol_refs = POLDIS_UNPOL_REFS.get(setup)
+        unpol_refs = unpol_refs_map.get(setup)
         if unpol_refs:
             comparisons = setup_payload["comparisons"]  # type: ignore[assignment]
             if "LO" in stage_map and has_reference_measurement(unpol_refs, "LO"):
@@ -963,14 +1102,33 @@ def build_summary(specs: Sequence[RunSpec]) -> Dict[str, object]:
                     comp["label"] = nlo_choice[1]
                     comparisons["NLO_unpol"] = comp
 
-    summary["interference"]["comparisons"] = build_interference_comparisons(setups_payload)
+    summary["interference"]["comparisons"] = build_interference_comparisons(
+        setups_payload,
+        unpol_refs_map,
+        pol_refs_map,
+    )
 
     return summary
 
 
-def build_report(specs: Sequence[RunSpec]) -> str:
-    summary = build_summary(specs)
+def build_report(
+    specs: Sequence[RunSpec],
+    unpol_refs_map: Optional[Dict[str, Dict[str, Measurement]]] = None,
+    pol_refs_map: Optional[Dict[str, Dict[str, Measurement]]] = None,
+    ref_source: Optional[str] = None,
+) -> str:
+    summary = build_summary(
+        specs,
+        unpol_refs_map=unpol_refs_map,
+        pol_refs_map=pol_refs_map,
+        ref_source=ref_source,
+    )
     lines: List[str] = []
+
+    ref_source_text = summary.get("poldis_reference_source")
+    if ref_source_text:
+        lines.append(f"POLDIS reference overrides: {ref_source_text}")
+        lines.append("")
 
     used_rows = []
     for spec in specs:
@@ -1126,8 +1284,19 @@ def build_report(specs: Sequence[RunSpec]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def write_json(path: Path, specs: Sequence[RunSpec]) -> None:
-    payload = build_summary(specs)
+def write_json(
+    path: Path,
+    specs: Sequence[RunSpec],
+    unpol_refs_map: Optional[Dict[str, Dict[str, Measurement]]] = None,
+    pol_refs_map: Optional[Dict[str, Dict[str, Measurement]]] = None,
+    ref_source: Optional[str] = None,
+) -> None:
+    payload = build_summary(
+        specs,
+        unpol_refs_map=unpol_refs_map,
+        pol_refs_map=pol_refs_map,
+        ref_source=ref_source,
+    )
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
@@ -1227,8 +1396,21 @@ def csv_rows_from_summary(summary: Dict[str, object]) -> List[Dict[str, object]]
     return rows
 
 
-def write_csv(path: Path, specs: Sequence[RunSpec]) -> None:
-    rows = csv_rows_from_summary(build_summary(specs))
+def write_csv(
+    path: Path,
+    specs: Sequence[RunSpec],
+    unpol_refs_map: Optional[Dict[str, Dict[str, Measurement]]] = None,
+    pol_refs_map: Optional[Dict[str, Dict[str, Measurement]]] = None,
+    ref_source: Optional[str] = None,
+) -> None:
+    rows = csv_rows_from_summary(
+        build_summary(
+            specs,
+            unpol_refs_map=unpol_refs_map,
+            pol_refs_map=pol_refs_map,
+            ref_source=ref_source,
+        )
+    )
     fieldnames = [
         "row_type",
         "setup",
@@ -1315,10 +1497,28 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Optional path to write a flattened summary table as CSV.",
     )
     parser.add_argument(
+        "--poldis-refs-json",
+        help="Optional JSON file overriding the built-in POLDIS reference totals per setup/order.",
+    )
+    parser.add_argument(
         "--strict-tag",
         action="store_true",
         help="When -t/--tag is used, do not fall back to untagged or differently tagged files.",
     )
+    progress_group = parser.add_mutually_exclusive_group()
+    progress_group.add_argument(
+        "--progress",
+        dest="progress",
+        action="store_true",
+        help="Print progress messages to stderr while resolving and combining runs.",
+    )
+    progress_group.add_argument(
+        "--no-progress",
+        dest="progress",
+        action="store_false",
+        help="Suppress progress messages.",
+    )
+    parser.set_defaults(progress=None)
     return parser.parse_args(argv)
 
 
@@ -1327,10 +1527,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if int(args.rivet) + int(args.rivetfo) + int(args.rivetfofixed) > 1:
         raise SystemExit("Use at most one of --rivet, --rivetfo, and --rivetfofixed.")
     base_dir = Path(args.base_dir).resolve()
+    progress_enabled = sys.stderr.isatty() if args.progress is None else args.progress
     requested_analysis = (
         "RIVETFOFIXED" if args.rivetfofixed else
         ("RIVETFO" if args.rivetfo else ("RIVET" if args.rivet else ""))
     )
+    override_path = Path(args.poldis_refs_json).resolve() if args.poldis_refs_json else None
+    unpol_refs_map, pol_refs_map, ref_source = resolve_poldis_reference_maps(override_path)
     selected_setups = set(normalize_requested_setups(args.setup or ()))
     requested_base_runs = (
         RIVETFOFIXED_DEFAULT_RUNS
@@ -1345,18 +1548,58 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             name for name in requested_runs
             if parse_requested_name(name)[2] in selected_setups
         ]
-    specs = [load_run(base_dir, name, args.tag, strict_tag=args.strict_tag) for name in requested_runs]
-    sys.stdout.write(build_report(specs))
+    emit_progress(progress_enabled, f"Resolving {len(requested_runs)} requested slots under {base_dir}")
+    specs: List[RunSpec] = []
+    for index, name in enumerate(requested_runs, start=1):
+        emit_progress(progress_enabled, f"[{index}/{len(requested_runs)}] Resolving {name}")
+        spec = load_run(base_dir, name, args.tag, strict_tag=args.strict_tag)
+        specs.append(spec)
+        if not spec.exists:
+            emit_progress(progress_enabled, f"[{index}/{len(requested_runs)}] {name}: missing")
+        elif spec.measurement is None:
+            emit_progress(
+                progress_enabled,
+                f"[{index}/{len(requested_runs)}] {name}: resolved {len(spec.paths)} file(s), no cross section parsed",
+            )
+        else:
+            emit_progress(
+                progress_enabled,
+                f"[{index}/{len(requested_runs)}] {name}: resolved {len(spec.paths)} file(s), {fmt_xsec(spec.measurement)}",
+            )
+    emit_progress(progress_enabled, "Building report")
+    sys.stdout.write(
+        build_report(
+            specs,
+            unpol_refs_map=unpol_refs_map,
+            pol_refs_map=pol_refs_map,
+            ref_source=ref_source,
+        )
+    )
     if args.json_out:
         json_path = Path(args.json_out).resolve()
         json_path.parent.mkdir(parents=True, exist_ok=True)
-        write_json(json_path, specs)
+        emit_progress(progress_enabled, f"Writing JSON: {json_path}")
+        write_json(
+            json_path,
+            specs,
+            unpol_refs_map=unpol_refs_map,
+            pol_refs_map=pol_refs_map,
+            ref_source=ref_source,
+        )
         sys.stdout.write(f"Wrote JSON: {json_path}\n")
     if args.csv_out:
         csv_path = Path(args.csv_out).resolve()
         csv_path.parent.mkdir(parents=True, exist_ok=True)
-        write_csv(csv_path, specs)
+        emit_progress(progress_enabled, f"Writing CSV: {csv_path}")
+        write_csv(
+            csv_path,
+            specs,
+            unpol_refs_map=unpol_refs_map,
+            pol_refs_map=pol_refs_map,
+            ref_source=ref_source,
+        )
         sys.stdout.write(f"Wrote CSV: {csv_path}\n")
+    emit_progress(progress_enabled, "Done")
     return 0
 
 

@@ -1,128 +1,168 @@
 # DISPOL Validation Workflow
 
-This note records the repo-native commands for the curated DIS workflow in this
-repository. All examples assume the repository root is the current working
-directory and use:
+This note records the main commands for the integrated DISPOL workflow driven by:
 
-- `workflow/dispol/cards/` for checked-in Herwig input cards and templates
-- `workflow/dispol/scripts/` for the Python and shell workflow drivers
-- `analyses/rivet/dis/` for the custom Rivet analyses
-- `poldis/` for the fixed-order POLDIS source and build wrappers
+- `/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py`
 
-The main entrypoint is:
+## POWHEG emission comparison modes
 
-```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py --help
-```
+The DIS POWHEG emission now has:
 
-## POWHEG comparison modes
+- two scale/source switches:
+  - `UseFixedOrderAlphaSInPOWHEGEmission`
+  - `UseQ2ScaleInPOWHEGEmission`
+- one comparison mode:
+  - `POWHEGEmissionComparisonMode`
+- one retry parameter for the non-default comparison mode:
+  - `POWHEGEmissionComparisonMaxAttempts`
 
-The DIS POWHEG comparison machinery uses:
+Native Herwig POWHEG remains the default:
 
-- `UseFixedOrderAlphaSInPOWHEGEmission`
-- `UseQ2ScaleInPOWHEGEmission`
-- `POWHEGEmissionComparisonMode`
-- `POWHEGEmissionComparisonMaxAttempts`
+- `POWHEGEmissionComparisonMode Default`
 
-Common settings:
+`UseQ2ScaleInPOWHEGEmission` controls both:
+
+- the POWHEG/MEC emission `alpha_s` scale
+- the POWHEG/MEC emission-PDF numerator scale
+
+`UseFixedOrderAlphaSInPOWHEGEmission` means:
+
+- prefer the LHAPDF-set `alpha_s` from the beam PDF when available
+- otherwise fall back to Herwig's fixed-order/model `alpha_s`
+
+`POWHEGEmissionComparisonMode` means:
+
+- `Default`: exact native Herwig POWHEG behavior
+- `RealOnly`: native POWHEG generation, but retry and veto instead of falling back to Born
+
+`POWHEGEmissionComparisonMaxAttempts` defaults to `100` and is only used when `POWHEGEmissionComparisonMode = RealOnly`.
+
+Current/native POWHEG:
 
 ```text
-# native Herwig POWHEG
 set /Herwig/MatrixElements/PowhegMEDISNCPol:UseFixedOrderAlphaSInPOWHEGEmission No
 set /Herwig/MatrixElements/PowhegMEDISNCPol:UseQ2ScaleInPOWHEGEmission No
 set /Herwig/MatrixElements/PowhegMEDISNCPol:POWHEGEmissionComparisonMode Default
+```
 
-# direct POLDIS-comparison mode
+Direct POLDIS-comparison mode:
+
+```text
 set /Herwig/MatrixElements/PowhegMEDISNCPol:UseFixedOrderAlphaSInPOWHEGEmission Yes
 set /Herwig/MatrixElements/PowhegMEDISNCPol:UseQ2ScaleInPOWHEGEmission Yes
 set /Herwig/MatrixElements/PowhegMEDISNCPol:POWHEGEmissionComparisonMode Default
+```
 
-# diagnostic no-Born-fallback mode
+No-Born-fallback native POWHEG diagnostic:
+
+```text
 set /Herwig/MatrixElements/PowhegMEDISNCPol:UseFixedOrderAlphaSInPOWHEGEmission Yes
 set /Herwig/MatrixElements/PowhegMEDISNCPol:UseQ2ScaleInPOWHEGEmission Yes
 set /Herwig/MatrixElements/PowhegMEDISNCPol:POWHEGEmissionComparisonMode RealOnly
 set /Herwig/MatrixElements/PowhegMEDISNCPol:POWHEGEmissionComparisonMaxAttempts 100
 ```
 
-## 1. Launch a validation campaign
+## 1. Run a Herwig validation campaign
 
 Standard campaign:
 
 ```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py campaign \
-  --base-dir workflow/dispol \
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py campaign \
+  --base-dir /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
   -t testing13 \
-  --jobs 32 \
+  --jobs 96 \
   --shards 0 \
   --seed-base 100000 \
-  --lo-events 1000000 \
-  --posnlo-events 1000000 \
-  --negnlo-events 100000
+  --lo-events 1000000000 \
+  --posnlo-events 1000000000 \
+  --negnlo-events 10000000
 ```
 
-Rebuild `.run` files after card edits:
+If you changed any `.in` cards and need the `.run` files rebuilt, add `--force-prepare`:
 
 ```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py campaign \
-  --base-dir workflow/dispol \
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py campaign \
+  --base-dir /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
   -t testing13 \
   --force-prepare \
-  --jobs 32 \
-  --shards 0
+  --jobs 96 \
+  --shards 0 \
+  --seed-base 100000 \
+  --lo-events 1000000000 \
+  --posnlo-events 1000000000 \
+  --negnlo-events 10000000
 ```
 
-Restrict the run to a specific setup:
+To run only the `ALL` setup in the campaign stage:
 
 ```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py campaign \
-  --base-dir workflow/dispol \
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py campaign \
+  --base-dir /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
   -t testing13 \
   --setup ALL \
-  --jobs 32 \
-  --shards 0
+  --jobs 96 \
+  --shards 0 \
+  --seed-base 100000 \
+  --lo-events 1000000000 \
+  --posnlo-events 1000000000 \
+  --negnlo-events 10000000
 ```
 
-Rivet-enabled POWHEG campaign:
+Rivet-enabled campaign:
 
 ```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py campaign \
-  --base-dir workflow/dispol \
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py campaign \
+  --base-dir /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
   -t rivet01 \
   --rivet \
-  --jobs 32 \
-  --shards 0
-```
-
-Direct fixed-order diagnostic family:
-
-```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py campaign \
-  --base-dir workflow/dispol \
-  -t rivetfofixed01 \
-  --rivetfofixed \
-  --jobs 32 \
+  --jobs 96 \
   --shards 0 \
-  --posnlo-events 1000000
+  --seed-base 100000 \
+  --lo-events 1000000000 \
+  --posnlo-events 1000000000 \
+  --negnlo-events 10000000
 ```
 
 Notes:
+- `--shards 0` auto-chooses shard count from `--jobs`
+- shard outputs are merged automatically
+- physical `NLO = POSNLO - NEGNLO` YODAs are built automatically
+- for Rivet campaigns, merged YODAs are rebuilt with the custom `MC_DIS_BREIT`
+  analysis path set in `RIVET_ANALYSIS_PATH`
+- current `RIVETFO` cards use `MC_DIS_BREIT:JETINPUT=TOP2PARTONS`
+- `--rivetfofixed` is available as a parallel fixed-order comparison family
+  using `-RIVETFOFIXED.in` cards and the direct
+  `MENeutralCurrentDISFixedOrder` matrix element with the cascade disabled
+  In the current workflow, this is a POS-only direct-real diagnostic path:
+  it runs only the meaningful `POSNLO` jobs and skips `LO`/`NEGNLO`.
 
-- `--shards 0` auto-chooses the shard count from `--jobs`
-- merged run-level YODAs and physical `NLO = POSNLO - NEGNLO` outputs are built
-  automatically during campaign post-processing
-- `--rivetfo` selects the scale-matched POWHEG fixed-order comparison cards
-- `--rivetfofixed` runs the direct fixed-order event-record diagnostic family
-  and only launches the meaningful `POSNLO` jobs
-
-## 2. Rebuild merged YODAs and summaries
-
-Use this when shard outputs already exist and you want to rebuild merged YODAs,
-analysis products, and summaries:
+Direct fixed-order Rivet campaign:
 
 ```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py postprocess \
-  --base-dir workflow/dispol \
-  -t rivet01 \
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py campaign \
+  --base-dir /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
+  -t rivetfofixed01 \
+  --rivetfofixed \
+  --jobs 96 \
+  --shards 0 \
+  --seed-base 100000 \
+  --posnlo-events 1000000000
+```
+
+## 2. Rebuild merged YODAs and summaries for an existing tag
+
+Use this when the raw shard outputs already exist and you want to:
+- rebuild merged run-level YODAs
+- rebuild physical `NLO = POSNLO - NEGNLO` YODAs
+- rerun the text/CSV/JSON summaries
+- rerun the Herwig DIS YODA analysis
+
+Typical Rivet postprocess command:
+
+```bash
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py postprocess \
+  --base-dir /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
+  -t rivet2 \
   --rivet \
   --yoda-merge-tool auto
 ```
@@ -130,116 +170,161 @@ python3 workflow/dispol/scripts/run_validation_campaign.py postprocess \
 Preview only:
 
 ```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py postprocess \
-  --base-dir workflow/dispol \
-  -t rivet01 \
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py postprocess \
+  --base-dir /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
+  -t rivet2 \
   --rivet \
   --dry-run
 ```
 
-## 3. Build analyzed DIS YODAs
+## 3. Analyze Herwig NLO YODAs into DIS polarized observables
 
-Default setup:
+Default setup is `ALL`:
 
 ```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py analyze-herwig \
-  --base-dir workflow/dispol \
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py analyze-herwig \
+  --base-dir /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
   -t testing13
 ```
 
-Explicit setup selection:
+Explicit setup:
 
 ```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py analyze-herwig \
-  --base-dir workflow/dispol \
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py analyze-herwig \
+  --base-dir /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
   -t testing13 \
   --setup GAMMA \
   --setup Z \
   --setup ALL
 ```
 
-Outputs are written under:
+This writes analyzed YODAs under:
 
-- `workflow/dispol/campaigns/<tag>/analysis/`
+- `/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/<tag>/analysis/`
 
-## 4. Convert POLDIS `.top` references into YODA
+The analyzer accepts:
 
-Default local files:
+- `--rivet` for the standard POWHEG+Rivet cards
+- `--rivetfo` for the scale-matched POWHEG fixed-order-comparison cards
+- `--rivetfofixed` for the direct fixed-order event-record cards
+
+## 4. Convert POLDIS `.top` files into reference YODA
+
+Default local `.top` files:
 
 ```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py poldis-top \
-  --base-dir workflow/dispol \
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py poldis-top \
+  --base-dir /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
   --order NLO
 ```
+
+Accepted POLDIS reference orders:
+- `--order LO`
+- `--order NLO`
+- `--order NNLO`
 
 Explicit files and output:
 
 ```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py poldis-top \
-  --base-dir workflow/dispol \
-  --unpol workflow/dispol/dijets_unpol.top \
-  --pol workflow/dispol/dijets_pol.top \
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py poldis-top \
+  --base-dir /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
+  --unpol /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/dijets_unpol.top \
+  --pol /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/dijets_pol.top \
   --order NLO \
-  --out workflow/dispol/POLDIS_MC_DIS_BREIT_ref.yoda.gz
+  --out /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/POLDIS_MC_DIS_BREIT_ref.yoda.gz
 ```
 
-Accepted reference orders are `LO`, `NLO`, and `NNLO`.
-
-## 5. Produce Rivet comparison plots
-
-Once analyzed Herwig YODAs and a POLDIS reference are available:
+Alternative order selections:
 
 ```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py rivetplot \
-  --base-dir workflow/dispol \
-  -t testing13 \
-  --setup ALL
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py poldis-top \
+  --base-dir /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
+  --order LO
+
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py poldis-top \
+  --base-dir /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
+  --order NNLO
 ```
 
-The helper wrapper in `analyses/rivet/dis/rivet-mkhtml-hw-vs-poldis-example.sh`
-can also be used directly:
+## 5. Run everything in one go
 
 ```bash
-analyses/rivet/dis/rivet-mkhtml-hw-vs-poldis-example.sh \
-  workflow/dispol/campaigns/testing13/analysis/Herwig_MC_DIS_BREIT_ALL_NLO_polarized.yoda.gz \
-  workflow/dispol/campaigns/testing13/refs/POLDIS_MC_DIS_BREIT_ref.yoda.gz \
-  workflow/dispol/campaigns/testing13/plots_mc_vs_poldis
-```
-
-## 6. Run the full chain
-
-```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py full \
-  --base-dir workflow/dispol \
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py full \
+  --base-dir /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
   -t testing13 \
   --rivet \
-  --jobs 32 \
-  --shards 0
+  --jobs 96 \
+  --shards 0 \
+  --seed-base 100000 \
+  --lo-events 1000000000 \
+  --posnlo-events 1000000000 \
+  --negnlo-events 10000000 \
+  --setup ALL \
+  --order NLO
 ```
 
-## Output locations
-
-Generated products are intentionally kept out of version control. The main
-locations are:
-
-- `workflow/dispol/campaigns/<tag>/`
-- `workflow/dispol/campaigns/<tag>/yoda/`
-- `workflow/dispol/campaigns/<tag>/analysis/`
-- `workflow/dispol/campaigns/<tag>/refs/`
-- `workflow/dispol/campaigns/<tag>/plots_mc_vs_poldis_<setup>_<order>/`
-- transient `.run`, `.log`, `.out`, `.yoda`, `.csv`, `.html`, and `.tex` files
-  under `workflow/dispol/`
-
-POLDIS `.top` files are generated inputs to the conversion step and are not
-tracked in this curated repository.
-
-## Help
+Example full Rivet campaign command used for `rivet13`:
 
 ```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py campaign --help
-python3 workflow/dispol/scripts/run_validation_campaign.py postprocess --help
-python3 workflow/dispol/scripts/run_validation_campaign.py analyze-herwig --help
-python3 workflow/dispol/scripts/run_validation_campaign.py poldis-top --help
-python3 workflow/dispol/scripts/run_validation_campaign.py rivetplot --help
-python3 workflow/dispol/scripts/run_validation_campaign.py full --help
+python /home/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py \
+  --base-dir /home/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
+  -t rivet13 \
+  --jobs 200 \
+  --shards 0 \
+  --seed-base 200000 \
+  --lo-events 100000 \
+  --posnlo-events 100000 \
+  --negnlo-events 10000 \
+  --progress-interval 2 \
+  --max-listed 50 \
+  --rivet \
+  --yoda-merge-tool /home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/bin/yodamerge
+```
+
+This populates:
+
+- `/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/<tag>/results.*`
+- `/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/<tag>/diagnostic.*`
+- `/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/<tag>/yoda/`
+- `/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/<tag>/analysis/`
+- `/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/<tag>/refs/`
+- `/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/<tag>/plots_mc_vs_poldis_<setup>_<order>/`
+- `/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/<tag>/manifest.json`
+
+## 6. Build Rivet comparison plots directly
+
+Default `ALL` NLO comparison against the chosen POLDIS order:
+
+```bash
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py rivetplot \
+  --base-dir /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
+  -t testing13 \
+  --setup ALL \
+  --order NLO
+```
+
+This uses the analyzed Herwig YODA from:
+
+- `/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/<tag>/analysis/Herwig_MC_DIS_BREIT_<setup>_NLO_polarized.yoda.gz`
+
+and the POLDIS reference from:
+
+- `/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/<tag>/refs/POLDIS_MC_DIS_BREIT_ref.yoda.gz`
+
+It runs a command of the form:
+
+```bash
+rivet-mkhtml <Herwig analyzed yoda> <POLDIS ref yoda> --reflabel="POLDIS NLO" --ratiolabel "MC/POLDIS" -o <campaign plot dir>
+```
+
+## 7. Useful help commands
+
+```bash
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py --help
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py campaign --help
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py postprocess --help
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py analyze-herwig --help
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py poldis-top --help
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py rivetplot --help
+python3.10 /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py full --help
 ```

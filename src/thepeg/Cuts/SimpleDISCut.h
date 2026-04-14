@@ -37,6 +37,18 @@ public:
 
 public:
 
+  /**
+   * Accessors for the configured DIS window. These are used by
+   * DIS-specific generation-time windowing in Herwig.
+   */
+  Energy2 minQ2() const { return theMinQ2; }
+  Energy2 maxQ2() const { return theMaxQ2; }
+  double minY() const { return theMiny; }
+  double maxY() const { return theMaxy; }
+  Energy2 minW2() const { return theMinW2; }
+  Energy2 maxW2() const { return theMaxW2; }
+  bool isChargedCurrentCut() const { return chargedCurrent; }
+
   /** @name Overridden virtual functions defined in the base class. */
   //@{
   /**

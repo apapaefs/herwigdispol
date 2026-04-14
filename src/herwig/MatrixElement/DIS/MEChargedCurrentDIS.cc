@@ -854,6 +854,17 @@ double MEChargedCurrentDIS::qcdcMappedDenominatorRatio(tcPDPtr, tcPDPtr,
   return mapped / born;
 }
 
+double MEChargedCurrentDIS::realEmissionDenominatorFactor(tcPDPtr, tcPDPtr,
+                                                          tcPDPtr qin, tcPDPtr,
+                                                          Energy2, double,
+                                                          double Pq) const {
+  return ccHadronSpinFactor(qin, Pq);
+}
+
+bool MEChargedCurrentDIS::useMappedPolarizedEmissionKernel() const {
+  return true;
+}
+
 double MEChargedCurrentDIS::ccHadronSpinFactor(tcPDPtr qin, double Pq) const {
   const double etaQ = (qin->id() < 0) ? -1.0 : 1.0;
   return 1.0 - etaQ * Pq;

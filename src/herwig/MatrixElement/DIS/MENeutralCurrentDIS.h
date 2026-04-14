@@ -6,7 +6,6 @@
 //
 
 #include "DISBase.h"
-#include "ThePEG/Helicity/Vertex/AbstractFFVVertex.h"
 #include "ThePEG/Helicity/Vertex/AbstractFFVVertex.fh"
 #include "Herwig/MatrixElement/ProductionMatrixElement.h"
 #include "ThePEG/Helicity/WaveFunction/SpinorWaveFunction.h"
@@ -117,6 +116,11 @@ public:
 protected:
 
   /**
+   * Neutral-current DIS uses the neutral-current SimpleDISCut window.
+   */
+  virtual bool usesChargedCurrentDISWindow() const override { return false; }
+
+  /**
    * Matrix element for \f$\ell q\to \gamma/Z \to \ell q\f$.
    * @param rhoin Rho matrices for incoming particles
    * @param f1 Fermion on lepton line
@@ -140,18 +144,6 @@ protected:
    *  Option for treatment of \f$\gamma/Z\f$ terms
    */
   inline unsigned int gammaZOption() const {return _gammaZ;}
-
-  /**
-   * Access the configured incoming-flavour range.
-   */
-  inline int minFlavour() const { return _minflavour; }
-  inline int maxFlavour() const { return _maxflavour; }
-
-  /**
-   * Access the electroweak mediators used by the NC diagrams.
-   */
-  inline tcPDPtr gammaMediator() const { return _gamma; }
-  inline tcPDPtr zMediator() const { return _z0; }
 
   /**
    *  Calculate the coefficient A for the correlations in the hard
@@ -179,6 +171,11 @@ protected:
                         Energy2 scale, double Pl, double Pq) const override;
 
 protected:
+
+  /**
+   * True when the configured neutral-current mode is pure gamma exchange.
+   */
+  virtual bool pureLOGammaPointAuditChannel() const override;
 
   /**
    * Attach an exact spin-only HardVertex to the realised POWHEG 2->3 state.
@@ -224,18 +221,6 @@ protected:
                                       double PqMapped,
                                       double ell,
                                       BornClosureDiagnostics &out) const override;
-
-  /**
-   * Evaluate the Born DIS matrix element for explicit external momenta and
-   * custom incoming longitudinal polarisations.
-   */
-  double bornMEForMomenta(const Lorentz5Momentum & linMom,
-                          const Lorentz5Momentum & qinMom,
-                          const Lorentz5Momentum & loutMom,
-                          const Lorentz5Momentum & qoutMom,
-                          tcPDPtr lin, tcPDPtr qin,
-                          tcPDPtr lout, tcPDPtr qout,
-                          double Pl, double Pq) const;
 
   /** @name Standard Interfaced functions. */
   //@{
@@ -318,6 +303,14 @@ private:
                                             PPtr qbout, Energy2 q2) const;
 
   /**
+   * Return the ThePEG propagator option for the spacelike Z boson used in
+   * the helicity-amplitude path.
+   */
+  int zHelicityPropagatorOption() const {
+    return _useFiniteWidthSpacelikeZPropagator ? 7 : 1;
+  }
+
+  /**
    * The assignment operator is private and must never be called.
    * In fact, it should not even be implemented.
    */
@@ -378,6 +371,12 @@ private:
    *  Whether to include both \f$Z^0\f$ and \f$\gamma\f$ or only one
    */
   unsigned int _gammaZ;
+
+  /**
+   * Whether to keep a finite width for spacelike Z exchange in the
+   * helicity-amplitude path.
+   */
+  bool _useFiniteWidthSpacelikeZPropagator;
   //@}
 
   /**

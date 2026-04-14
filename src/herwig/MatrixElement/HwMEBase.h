@@ -251,6 +251,47 @@ protected:
 		      const double *r);
 
   /**
+   * Shared 2->2 Born kinematics setup used by the generic HwMEBase phase
+   * space and by DIS-specific generation-time windowing.
+   */
+  struct TwoToTwoKinematicsSetup {
+    TwoToTwoKinematicsSetup()
+      : mjac(0.0), ctmin(-1.0), ctmax(1.0), q(ZERO), e(ZERO),
+        m22(ZERO), m32(ZERO), e0e2(ZERO), e1e2(ZERO),
+        e0e3(ZERO), e1e3(ZERO), pq(ZERO) {}
+
+    vector<Energy> masses;
+    double mjac;
+    double ctmin;
+    double ctmax;
+    Energy q;
+    Energy e;
+    Energy2 m22;
+    Energy2 m32;
+    Energy2 e0e2;
+    Energy2 e1e2;
+    Energy2 e0e3;
+    Energy2 e1e3;
+    Energy2 pq;
+  };
+
+  /**
+   * Populate the common 2->2 Born setup and the legacy angular limits used by
+   * HwMEBase::generateKinematics().
+   */
+  bool setupTwoToTwoKinematics(const double *r,
+                               TwoToTwoKinematicsSetup & setup);
+
+  /**
+   * Finalize a 2->2 Born configuration once cos(theta) has been selected.
+   * If provided, \a cutsRejected is set when the generated point fails the
+   * explicit passCuts() check.
+   */
+  bool finishTwoToTwoKinematics(const TwoToTwoKinematicsSetup & setup,
+                                double cth,
+                                bool * cutsRejected = nullptr);
+
+  /**
    * Used internally by generateKinematics, after calculating the
    * limits on cos(theta).
    */

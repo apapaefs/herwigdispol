@@ -1,0 +1,1 @@
+gfortran poldis.f gbook.f jetalg.f user_dijet_rivetplots_p2b_components.f -o poldis.x -L/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/lib -lLHAPDF

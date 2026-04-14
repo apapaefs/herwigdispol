@@ -1,12 +1,13 @@
 #!/usr/bin/env python3.10
-"""Rebuild a missing DISPOL campaign manifest from shard artifacts and launcher logs.
+"""Rebuild a missing DISPOL campaign manifest from launcher logs and shard artifacts.
 
-This helper is intended for recovery after a campaign crashes before
+This helper is meant for recovery after a campaign crashes before
 `campaigns/<tag>/manifest.json` is written. It reconstructs the expected shard
-layout from the same campaign parameters used by `run_validation_campaign.py`,
-marks shards with `.out` or `.yoda` artifacts as successful, marks launched
-shards with only launcher/log artifacts as failed, and leaves missing shards
-absent so the built-in `--rerun-failed-random-seed` flow can continue cleanly.
+layout from the same campaign parameters used in `run_validation_campaign.py`,
+marks shards with `.out` or `.yoda` artifacts as successful, marks shards with
+launcher logs but no success artifacts as failed, and leaves untouched shards
+absent so the built-in `--rerun-failed-random-seed` mode can pick them up as
+missing work.
 """
 
 from __future__ import annotations
@@ -16,12 +17,9 @@ import json
 import os
 import shlex
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-WORKFLOW_DIR = SCRIPT_DIR.parent
-DEFAULT_BASE_DIR = WORKFLOW_DIR
 GAMMA_HELICITIES = ("00", "PP", "PM")
 FULL_HELICITIES = ("00", "PP", "PM", "MP", "MM")
 SETUP_ORDER = ("GAMMA", "Z", "ALL")
@@ -48,14 +46,13 @@ SCALE_VARIATION_STEM_SUFFIXES = {
 def normalize_campaign_setups(setups: Sequence[str]) -> List[str]:
     if not setups:
         return list(SETUP_ORDER)
-    ordering = {name: index for index, name in enumerate(SUPPORTED_SETUPS)}
     seen = set()
     ordered: List[str] = []
+    ordering = {name: index for index, name in enumerate(SUPPORTED_SETUPS)}
     for setup in sorted((str(item).upper() for item in setups), key=lambda item: ordering.get(item, len(ordering))):
-        if setup in seen:
-            continue
-        ordered.append(setup)
-        seen.add(setup)
+        if setup not in seen:
+            ordered.append(setup)
+            seen.add(setup)
     return ordered
 
 
@@ -247,6 +244,23 @@ def build_shards(
     return shards
 
 
+def collect_artifacts(base_dir: Path, stem: str, tag: str, seed: int) -> Dict[str, List[str]]:
+    prefix = f"{stem}-S{seed}-{tag}"
+    files = sorted(base_dir.glob(f"{prefix}*"))
+    out_files: List[str] = []
+    log_files: List[str] = []
+    yoda_files: List[str] = []
+    for path in files:
+        name = path.name
+        if name.endswith(".out"):
+            out_files.append(str(path))
+        elif name.endswith(".log"):
+            log_files.append(str(path))
+        elif ".yoda" in name:
+            yoda_files.append(str(path))
+    return {"out_files": out_files, "log_files": log_files, "yoda_files": yoda_files}
+
+
 def build_artifact_index(base_dir: Path, expected_prefixes: Iterable[str]) -> Dict[str, Dict[str, List[str]]]:
     expected = set(expected_prefixes)
     index = {
@@ -256,26 +270,30 @@ def build_artifact_index(base_dir: Path, expected_prefixes: Iterable[str]) -> Di
     if not expected:
         return index
 
-    for path in base_dir.iterdir():
-        if not path.is_file():
-            continue
-        name = path.name
-        prefix: Optional[str] = None
-        bucket: Optional[str] = None
-        if name.endswith(".out"):
-            prefix = name[:-4]
-            bucket = "out_files"
-        elif name.endswith(".log"):
-            prefix = name[:-4]
-            bucket = "log_files"
-        else:
-            yoda_pos = name.find(".yoda")
-            if yoda_pos != -1:
-                prefix = name[:yoda_pos]
-                bucket = "yoda_files"
-        if prefix is None or bucket is None or prefix not in index:
-            continue
-        index[prefix][bucket].append(str(path))
+    with os.scandir(base_dir) as entries:
+        for entry in entries:
+            if not entry.is_file():
+                continue
+
+            name = entry.name
+            prefix: Optional[str] = None
+            bucket: Optional[str] = None
+
+            if name.endswith(".out"):
+                prefix = name[:-4]
+                bucket = "out_files"
+            elif name.endswith(".log"):
+                prefix = name[:-4]
+                bucket = "log_files"
+            else:
+                yoda_pos = name.find(".yoda")
+                if yoda_pos != -1:
+                    prefix = name[:yoda_pos]
+                    bucket = "yoda_files"
+
+            if prefix is None or bucket is None or prefix not in index:
+                continue
+            index[prefix][bucket].append(str(Path(base_dir, name)))
 
     for artifact_lists in index.values():
         for values in artifact_lists.values():
@@ -286,7 +304,13 @@ def build_artifact_index(base_dir: Path, expected_prefixes: Iterable[str]) -> Di
 def build_launcher_log_index(launcher_dir: Path) -> set[str]:
     if not launcher_dir.exists():
         return set()
-    return {path.name for path in launcher_dir.iterdir() if path.is_file()}
+    with os.scandir(launcher_dir) as entries:
+        return {entry.name for entry in entries if entry.is_file()}
+
+
+def launcher_log_path(campaign_dir: Path, spec: Dict[str, object]) -> Path:
+    safe = f"{spec['job']['stem']}-{spec['tag']}.launcher.log"
+    return campaign_dir / "launcher-logs" / safe
 
 
 def resolve_analysis_configuration(args: argparse.Namespace) -> tuple[str, bool, bool, Optional[Dict[str, Sequence[str]]]]:
@@ -370,14 +394,24 @@ def build_manifest(args: argparse.Namespace) -> tuple[Dict[str, object], Dict[st
         campaign_tag=args.tag,
         include_lo=include_lo,
     )
-    shards = build_shards(jobs, args.tag, args.shards, max(1, args.jobs), args.seed_base)
+    shards = build_shards(
+        jobs,
+        args.tag,
+        args.shards,
+        max(1, args.jobs),
+        args.seed_base,
+    )
+
     prepared = [
         manifest_prepared_entry(job)
         for job in jobs
         if (base_dir / str(job["run_file"])).exists()
     ]
 
-    expected_prefixes = [f"{spec['job']['stem']}-S{spec['seed']}-{spec['tag']}" for spec in shards]
+    expected_prefixes = [
+        f"{spec['job']['stem']}-S{spec['seed']}-{spec['tag']}"
+        for spec in shards
+    ]
     artifact_index = build_artifact_index(base_dir, expected_prefixes)
     launcher_dir = campaign_dir / "launcher-logs"
     launcher_log_names = build_launcher_log_index(launcher_dir)
@@ -477,10 +511,8 @@ def build_manifest(args: argparse.Namespace) -> tuple[Dict[str, object], Dict[st
 def resume_command(args: argparse.Namespace) -> str:
     cmd = [
         "python3.10",
-        str(SCRIPT_DIR / "run_validation_campaign.py"),
+        str(args.base_dir.resolve() / "run_validation_campaign.py"),
         "full",
-        "--base-dir",
-        str(args.base_dir.resolve()),
         "-t",
         args.tag,
     ]
@@ -508,8 +540,6 @@ def resume_command(args: argparse.Namespace) -> str:
         cmd.append("--diagnostics")
     if args.keep_going:
         cmd.append("--keep-going")
-    if args.force_prepare:
-        cmd.append("--force-prepare")
     cmd.append("--rerun-failed-random-seed")
     if args.yoda_merge_tool:
         cmd.extend(["--yoda-merge-tool", args.yoda_merge_tool])
@@ -518,12 +548,7 @@ def resume_command(args: argparse.Namespace) -> str:
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--base-dir",
-        type=Path,
-        default=DEFAULT_BASE_DIR,
-        help="Directory containing the DIS workflow cards, outputs, and campaigns/.",
-    )
+    parser.add_argument("--base-dir", type=Path, default=Path.cwd(), help="Directory containing DISPOL inputs, outputs, and campaigns/.")
     parser.add_argument("-t", "--tag", required=True, help="Campaign tag to recover.")
     parser.add_argument(
         "--setup",
@@ -544,7 +569,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--include-lo", action="store_true", default=None, help="Campaign used --include-lo.")
     parser.add_argument("--diagnostics", action="store_true", default=None, help="Campaign used --diagnostics.")
     parser.add_argument("--scale-variations", action="store_true", default=None, help="Campaign used --scale-variations.")
-    parser.add_argument("--force-prepare", action="store_true", help="Include --force-prepare in the printed resume command.")
+    parser.add_argument("--force-prepare", action="store_true", help="Campaign used --force-prepare.")
     parser.add_argument("--no-merge-yoda", action="store_true", help="Campaign used --no-merge-yoda.")
     parser.add_argument("--keep-going", action="store_true", help="Include --keep-going in the printed resume command.")
     parser.add_argument("--yoda-merge-tool", default="auto", help="YODA merge tool to record and reuse in the printed resume command.")

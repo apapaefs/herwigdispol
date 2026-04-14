@@ -36,6 +36,8 @@ set /Herwig/Shower/ShowerHandler:Interactions QEDQCD
 
 create ThePEG::LHAPDF /Herwig/Partons/LHAPDF ThePEGLHAPDF.so
 set /Herwig/Partons/LHAPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+set /Herwig/Partons/HardLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+set /Herwig/Partons/ShowerNLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
 set /Herwig/Partons/RemnantDecayer:AllowTop Yes
 set /Herwig/Partons/LHAPDF:RemnantHandler /Herwig/Partons/HadronRemnants
 set /Herwig/Particles/p+:PDF /Herwig/Partons/LHAPDF

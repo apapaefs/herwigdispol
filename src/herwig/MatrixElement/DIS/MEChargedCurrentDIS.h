@@ -119,6 +119,11 @@ public:
 protected:
 
   /**
+   * Charged-current DIS uses the charged-current SimpleDISCut window.
+   */
+  virtual bool usesChargedCurrentDISWindow() const override { return true; }
+
+  /**
    * Matrix element for \f$\ell q\to W^\pm \to \ell q\f$.
    * @param rhoin Rho matrices for incoming particles
    * @param f1 Fermion on lepton line
@@ -173,6 +178,21 @@ protected:
                                             double Pl,
                                             double PqBorn,
                                             double PqMapped) const override;
+
+  /**
+   * Charged-current real-emission kernels use the same mapped chiral
+   * prefactor as the Born and collinear terms.
+   */
+  virtual double realEmissionDenominatorFactor(tcPDPtr lin, tcPDPtr lout,
+                                               tcPDPtr qin, tcPDPtr qout,
+                                               Energy2 scale,
+                                               double Pl,
+                                               double Pq) const override;
+
+  /**
+   * Accepted-emission kernels should follow the mapped x_B/x_p polarization.
+   */
+  virtual bool useMappedPolarizedEmissionKernel() const override;
 
 protected:
 

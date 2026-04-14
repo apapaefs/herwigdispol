@@ -113,54 +113,57 @@ bool HwMEBase::generateMasses(vector<Energy> & masses, double & mjac,
   return true;
 }
 
-bool HwMEBase::generateKinematics(const double * r) {
+bool HwMEBase::setupTwoToTwoKinematics(const double * r,
+                                       TwoToTwoKinematicsSetup & setup) {
   jacobian(1.);
-  vector<Energy> masses;
-  double mjac(0.);
-  if(!generateMasses(masses,mjac,r)) return false;
+  if(!generateMasses(setup.masses, setup.mjac, r)) return false;
   // set up the momenta
   for ( int i = 2, N = meMomenta().size(); i < N; ++i ) {
-    meMomenta()[i] = Lorentz5Momentum(masses[i-2]);
+    meMomenta()[i] = Lorentz5Momentum(setup.masses[i-2]);
   }
-  double ctmin = -1.0, ctmax = 1.0;
-  Energy q = ZERO;
+  setup.ctmin = -1.0;
+  setup.ctmax = 1.0;
   try {
-    q = SimplePhaseSpace::
+    setup.q = SimplePhaseSpace::
       getMagnitude(sHat(), meMomenta()[2].mass(), meMomenta()[3].mass());
   } 
   catch ( ImpossibleKinematics & e) {
     return false;
   }
 
-  Energy e = sqrt(sHat())/2.0;
+  setup.e = sqrt(sHat())/2.0;
      	    
-  Energy2 m22 = meMomenta()[2].mass2();
-  Energy2 m32 = meMomenta()[3].mass2();
-  Energy2 e0e2 = 2.0*e*sqrt(sqr(q) + m22);
-  Energy2 e1e2 = 2.0*e*sqrt(sqr(q) + m22);
-  Energy2 e0e3 = 2.0*e*sqrt(sqr(q) + m32);
-  Energy2 e1e3 = 2.0*e*sqrt(sqr(q) + m32);
-  Energy2 pq = 2.0*e*q;
+  setup.m22 = meMomenta()[2].mass2();
+  setup.m32 = meMomenta()[3].mass2();
+  setup.e0e2 = 2.0*setup.e*sqrt(sqr(setup.q) + setup.m22);
+  setup.e1e2 = 2.0*setup.e*sqrt(sqr(setup.q) + setup.m22);
+  setup.e0e3 = 2.0*setup.e*sqrt(sqr(setup.q) + setup.m32);
+  setup.e1e3 = 2.0*setup.e*sqrt(sqr(setup.q) + setup.m32);
+  setup.pq = 2.0*setup.e*setup.q;
 
   Energy2 thmin = lastCuts().minTij(mePartonData()[0], mePartonData()[2]);
-  if ( thmin > ZERO ) ctmax = min(ctmax, (e0e2 - m22 - thmin)/pq);
+  if ( thmin > ZERO )
+    setup.ctmax = min(setup.ctmax, (setup.e0e2 - setup.m22 - thmin)/setup.pq);
 
   thmin = lastCuts().minTij(mePartonData()[1], mePartonData()[2]);
-  if ( thmin > ZERO ) ctmin = max(ctmin, (thmin + m22 - e1e2)/pq);
+  if ( thmin > ZERO )
+    setup.ctmin = max(setup.ctmin, (thmin + setup.m22 - setup.e1e2)/setup.pq);
 
   thmin = lastCuts().minTij(mePartonData()[1], mePartonData()[3]);
-  if ( thmin > ZERO ) ctmax = min(ctmax, (e1e3 - m32 - thmin)/pq);
+  if ( thmin > ZERO )
+    setup.ctmax = min(setup.ctmax, (setup.e1e3 - setup.m32 - thmin)/setup.pq);
 
   thmin = lastCuts().minTij(mePartonData()[0], mePartonData()[3]);
-  if ( thmin > ZERO ) ctmin = max(ctmin, (thmin + m32 - e0e3)/pq);
+  if ( thmin > ZERO )
+    setup.ctmin = max(setup.ctmin, (thmin + setup.m32 - setup.e0e3)/setup.pq);
 
   Energy ptmin = max(lastCuts().minKT(mePartonData()[2]),
    		     lastCuts().minKT(mePartonData()[3]));
   if ( ptmin > ZERO ) {
-    double ctm = 1.0 - sqr(ptmin/q);
+    double ctm = 1.0 - sqr(ptmin/setup.q);
     if ( ctm <= 0.0 ) return false;
-    ctmin = max(ctmin, -sqrt(ctm));
-    ctmax = min(ctmax, sqrt(ctm));
+    setup.ctmin = max(setup.ctmin, -sqrt(ctm));
+    setup.ctmax = min(setup.ctmax, sqrt(ctm));
   }
 
   double ymin2 = lastCuts().minYStar(mePartonData()[2]);
@@ -169,21 +172,26 @@ bool HwMEBase::generateKinematics(const double * r) {
   double ymax3 = lastCuts().maxYStar(mePartonData()[3]);
   double ytot = lastCuts().Y() + lastCuts().currentYHat();
   if ( ymin2 + ytot > -0.9*Constants::MaxRapidity )
-    ctmin = max(ctmin, sqrt(sqr(q) +  m22)*tanh(ymin2)/q);
+    setup.ctmin = max(setup.ctmin, sqrt(sqr(setup.q) + setup.m22)*tanh(ymin2)/setup.q);
   if ( ymax2 + ytot < 0.9*Constants::MaxRapidity )
-    ctmax = min(ctmax, sqrt(sqr(q) +  m22)*tanh(ymax2)/q);
+    setup.ctmax = min(setup.ctmax, sqrt(sqr(setup.q) + setup.m22)*tanh(ymax2)/setup.q);
   if ( ymin3 + ytot > -0.9*Constants::MaxRapidity )
-    ctmax = min(ctmax, sqrt(sqr(q) +  m32)*tanh(-ymin3)/q);
+    setup.ctmax = min(setup.ctmax, sqrt(sqr(setup.q) + setup.m32)*tanh(-ymin3)/setup.q);
   if ( ymax3 + ytot < 0.9*Constants::MaxRapidity )
-    ctmin = max(ctmin, sqrt(sqr(q) +  m32)*tanh(-ymax3)/q);
+    setup.ctmin = max(setup.ctmin, sqrt(sqr(setup.q) + setup.m32)*tanh(-ymax3)/setup.q);
   
-  if ( ctmin >= ctmax ) return false;
+  return setup.ctmin < setup.ctmax;
+}
+
+bool HwMEBase::finishTwoToTwoKinematics(const TwoToTwoKinematicsSetup & setup,
+                                        double cth,
+                                        bool * cutsRejected) {
+  if ( cutsRejected ) *cutsRejected = false;
     
-  double cth = getCosTheta(ctmin, ctmax, r[0]);
-  Energy pt = q*sqrt(1.0-sqr(cth));
+  Energy pt = setup.q*sqrt(1.0-sqr(cth));
   phi(rnd(2.0*Constants::pi));
-  meMomenta()[2].setVect(Momentum3( pt*sin(phi()),  pt*cos(phi()),  q*cth));
-  meMomenta()[3].setVect(Momentum3(-pt*sin(phi()), -pt*cos(phi()), -q*cth));
+  meMomenta()[2].setVect(Momentum3( pt*sin(phi()),  pt*cos(phi()),  setup.q*cth));
+  meMomenta()[3].setVect(Momentum3(-pt*sin(phi()), -pt*cos(phi()), -setup.q*cth));
 
   meMomenta()[2].rescaleEnergy();
   meMomenta()[3].rescaleEnergy();
@@ -194,14 +202,23 @@ bool HwMEBase::generateKinematics(const double * r) {
   tcPDVector tout(2);
   tout[0] = mePartonData()[2];
   tout[1] = mePartonData()[3];
-  if ( !lastCuts().passCuts(tout, out, mePartonData()[0], mePartonData()[1]) )
+  if ( !lastCuts().passCuts(tout, out, mePartonData()[0], mePartonData()[1]) ) {
+    if ( cutsRejected ) *cutsRejected = true;
     return false;
+  }
 
-  tHat(pq*cth + m22 - e0e2);
-  uHat(m22 + m32 - sHat() - tHat());
-  jacobian((pq/sHat())*Constants::pi*jacobian()*mjac);
+  tHat(setup.pq*cth + setup.m22 - setup.e0e2);
+  uHat(setup.m22 + setup.m32 - sHat() - tHat());
+  jacobian((setup.pq/sHat())*Constants::pi*jacobian()*setup.mjac);
   // compute the rescaled momenta
   return rescaleMomenta(meMomenta(),mePartonData());
+}
+
+bool HwMEBase::generateKinematics(const double * r) {
+  TwoToTwoKinematicsSetup setup;
+  if(!setupTwoToTwoKinematics(r, setup)) return false;
+  return finishTwoToTwoKinematics(setup,
+                                  getCosTheta(setup.ctmin, setup.ctmax, r[0]));
 }
 
 bool HwMEBase::rescaleMomenta(const vector<Lorentz5Momentum> & momenta,
