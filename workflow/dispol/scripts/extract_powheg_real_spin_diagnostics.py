@@ -32,12 +32,12 @@ except ImportError:
 
 RUN_RE = re.compile(
     r"^DIS-POL-(?P<kind>POWHEG|LO)_(?P<hel>PP|PM|MP|MM|00)"
-    r"(?:-(?P<piece>POSNLO|NEGNLO))?-(?P<ew>ALL|GAMMA|Z|SPINVAL|SPINCOMP)"
+    r"(?:-(?P<piece>POSNLO|NEGNLO))?-(?P<ew>ALL|GAMMA|Z|SPINVAL|SPINCOMP|SPINHAD)"
     r"(?:-(?P<analysis>RIVETPS-NOSPIN-UNPOL|RIVETPS-NOSPIN|RIVETPS-SPIN|RIVETFOFIXED|RIVETFO|RIVET))?"
     r"(?:-(?P<variant>.+))?$"
 )
 SEEDED_VARIANT_RE = re.compile(r"^S\d+-(?P<tag>.+)$")
-SETUP_ORDER = {"GAMMA": 0, "Z": 1, "ALL": 2, "SPINVAL": 3, "SPINCOMP": 4}
+SETUP_ORDER = {"GAMMA": 0, "Z": 1, "ALL": 2, "SPINVAL": 3, "SPINCOMP": 4, "SPINHAD": 5}
 HELICITY_ORDER = ("PP", "PM", "MP", "MM", "00")
 
 

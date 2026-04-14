@@ -44,7 +44,7 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_BREIT/pT2
-Title=Dijet-selected subleading-jet transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
+Title=Dijet-selected 2nd-jet transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
 XLabel=$p^{\mathrm{jet2}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$ [pb/GeV]
 LogY=1
@@ -72,7 +72,7 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_BREIT/Q2PreCut
-Title=Inclusive DIS cross section before dijet cuts $\mathrm{d}\sigma/\mathrm{d}Q^2$
+Title=Inclusive DIS cross section $\mathrm{d}\sigma/\mathrm{d}Q^2$
 XLabel=$Q^2$ / GeV$^2$
 YLabel=$\mathrm{d}\sigma/\mathrm{d}Q^2$ [pb/GeV$^2$]
 LogX=1
@@ -80,27 +80,27 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_BREIT/XBjPreCut
-Title=Inclusive Bjorken-$x$ distribution before dijet cuts $\mathrm{d}\sigma/\mathrm{d}x_{Bj}$
+Title=Inclusive Bjorken-$x$ distribution $\mathrm{d}\sigma/\mathrm{d}x_{Bj}$
 XLabel=$x_{Bj}$
 YLabel=$\mathrm{d}\sigma/\mathrm{d}x_{Bj}$ [pb]
 LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_BREIT/YPreCut
-Title=Inclusive inelasticity distribution before dijet cuts $\mathrm{d}\sigma/\mathrm{d}y$
+Title=Inclusive inelasticity distribution $\mathrm{d}\sigma/\mathrm{d}y$
 XLabel=$y$
 YLabel=$\mathrm{d}\sigma/\mathrm{d}y$ [pb]
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_BREIT/pT1PreCut
-Title=Inclusive leading-jet transverse momentum before dijet cuts $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,B}$
+Title=Inclusive leading-jet transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,B}$
 XLabel=$p^{\mathrm{jet1}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,B}$ [pb/GeV]
 LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_BREIT/pT2PreCut
-Title=Inclusive subleading-jet transverse momentum before dijet cuts $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
+Title=Inclusive 2nd-jet transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
 XLabel=$p^{\mathrm{jet2}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$ [pb/GeV]
 LogY=1
@@ -151,7 +151,7 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_BREIT/DpT2
-Title=Dijet-selected polarized subleading-jet transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
+Title=Dijet-selected polarized 2nd-jet transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
 XLabel=$p^{\mathrm{jet2}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$ [pb/GeV]
 LogY=1
@@ -179,7 +179,7 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_BREIT/DQ2PreCut
-Title=Inclusive polarized DIS cross section before dijet cuts $\mathrm{d}\Delta\sigma/\mathrm{d}Q^2$
+Title=Inclusive polarized DIS cross section $\mathrm{d}\Delta\sigma/\mathrm{d}Q^2$
 XLabel=$Q^2$ / GeV$^2$
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}Q^2$ [pb/GeV$^2$]
 LogX=1
@@ -187,27 +187,27 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_BREIT/DXBjPreCut
-Title=Inclusive polarized Bjorken-$x$ distribution before dijet cuts $\mathrm{d}\Delta\sigma/\mathrm{d}x_{Bj}$
+Title=Inclusive polarized Bjorken-$x$ distribution $\mathrm{d}\Delta\sigma/\mathrm{d}x_{Bj}$
 XLabel=$x_{Bj}$
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}x_{Bj}$ [pb]
 LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_BREIT/DYPreCut
-Title=Inclusive polarized inelasticity distribution before dijet cuts $\mathrm{d}\Delta\sigma/\mathrm{d}y$
+Title=Inclusive polarized inelasticity distribution $\mathrm{d}\Delta\sigma/\mathrm{d}y$
 XLabel=$y$
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}y$ [pb]
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_BREIT/DpT1PreCut
-Title=Inclusive polarized leading-jet transverse momentum before dijet cuts $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,B}$
+Title=Inclusive polarized leading-jet transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,B}$
 XLabel=$p^{\mathrm{jet1}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,B}$ [pb/GeV]
 LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_BREIT/DpT2PreCut
-Title=Inclusive polarized subleading-jet transverse momentum before dijet cuts $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
+Title=Inclusive polarized 2nd-jet transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
 XLabel=$p^{\mathrm{jet2}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$ [pb/GeV]
 LogY=1

@@ -35,7 +35,7 @@ C-----------------------------------------------------------------------
 C     CHOOSE INTERMEDIATE BOSON    ONLY PHOTON = 0 / PHOTON+Z = 1
 C                                   ONLY Z = 2     / W = 3
 C-----------------------------------------------------------------------
-      IBOSON=0
+      IBOSON=3
 C-----------------------------------------------------------------------
 C     CHOOSE CHARGE OF INCIDENT LEPTON
 C-----------------------------------------------------------------------
@@ -75,21 +75,21 @@ C     SET ALPHA_QED VALUE
 C    1/137d0
 C-----------------------------------------------------------------------
 C     SET EW CONSTANTS
-      THETA=0.490194163d0 !0.495674D0 
+      THETA= 0.4954124716d0 !0.490194163d0 !0.495674D0
       ZMASS=91.1876d0
       ZGAMMA=2.4952d0
-      WMASS=80.379d0
+      WMASS=80.450d0
       WGAMMA=2.085d0
 
-      CKM2(1,1)=(0.9737d0)**2
-      CKM2(1,2)=(0.2245d0)**2
-      CKM2(1,3)=(0.00382d0)**2
-      CKM2(2,1)=(0.2210d0)**2
-      CKM2(2,2)=(0.987)**2
-      CKM2(2,3)=(0.041d0)**2
-      CKM2(3,1)=(0.008d0)**2
-      CKM2(3,2)=(0.0388d0)**2
-      CKM2(3,3)=(1.013d0)**2
+      CKM2(1,1)=0.94968730d0
+      CKM2(1,2)=0.05029902d0
+      CKM2(1,3)=0.00001369d0
+      CKM2(2,1)=0.05024718d0
+      CKM2(2,2)=0.94804813d0
+      CKM2(2,3)=0.00170470d0
+      CKM2(3,1)=0.00006553d0
+      CKM2(3,2)=0.00165286d0
+      CKM2(3,3)=0.99828161d0
 C-----------------------------------------------------------------------
 C     DEFINE JET ALGORITHM AND PARAMETERS
       ialg = 1
@@ -99,18 +99,39 @@ C     RUN PARAMETETERS
 C-----------------------------------------------------------------------
       INNLO=1
 C-----------------------------------------------------------------------
-      NEV=  20 000 000
+      NEV=  200 000 000
 C#######################################################################
 C     INITIALISE SEED
       CALL RANDOM_SEED()
       R(1)=14217136
       CALL RANGEN(0,R)
 C-----------------------------------------------------------------------
-      IF (IPOL .EQ. 1) THEN
-        TITLE = "dijets_pol.top"
+      IF (IBOSON .EQ. 2) THEN
+        IF (IPOL .EQ. 1) THEN
+          TITLE = "dijets_pol_Z.top"
+        ELSE
+          TITLE = "dijets_unpol_Z.top"
+        ENDIF
+      ELSEIF (IBOSON .EQ. 0) THEN
+        IF (IPOL .EQ. 1) THEN
+          TITLE = "dijets_pol_GAM.top"
+        ELSE
+          TITLE = "dijets_unpol_GAM.top"
+        ENDIF
+      ELSEIF (IBOSON .EQ. 3) THEN
+        IF (IPOL .EQ. 1) THEN
+          TITLE = "dijets_pol_W.top"
+        ELSE
+          TITLE = "dijets_unpol_W.top"
+        ENDIF
       ELSE
-        TITLE = "dijets_unpol.top"
+        IF (IPOL .EQ. 1) THEN
+          TITLE = "dijets_pol.top"
+        ELSE
+          TITLE = "dijets_unpol.top"
+        ENDIF
       ENDIF
+
 C#######################################################################
       CALL DEFINEPLOTS
       CALL POLDIS(NEV,S,NF,USER,CUTS)

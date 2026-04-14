@@ -61,7 +61,12 @@ ANALYSIS_DERIVED_MOMENTS = {
         ("Cos2PhiCurrentHemiVsQ2", "Cos2PhiCurrentHemiNumQ2", "Cos2PhiCurrentHemiDenQ2"),
     ),
 }
-PS_SETUPS = ("SPINVAL", "SPINCOMP")
+ANALYSIS_DERIVED_CUMULATIVE_ALL = {
+    "MC_DIS_PS": (
+        ("ALLBroadeningCumulative", "Broadening"),
+    ),
+}
+PS_SETUPS = ("SPINVAL", "SPINCOMP", "SPINHAD")
 SETUPS = ("ALL", "GAMMA", "Z", "CC", *PS_SETUPS)
 FIVE_HELICITY_SETUPS = ("ALL", "Z", "CC", *PS_SETUPS)
 SCALE_VARIATION_FACTORS = {
@@ -168,6 +173,10 @@ def _analysis_all_labels(analysis: str) -> tuple[str, ...]:
 
 def _analysis_derived_moments(analysis: str) -> tuple[tuple[str, str, str], ...]:
     return ANALYSIS_DERIVED_MOMENTS.get(analysis, ())
+
+
+def _analysis_derived_cumulative_all(analysis: str) -> tuple[tuple[str, str], ...]:
+    return ANALYSIS_DERIVED_CUMULATIVE_ALL.get(analysis, ())
 
 
 def _write_yoda_compat(path: str, objects):
@@ -583,9 +592,7 @@ def build_scale_envelope_plot_yoda(
     return len(envelope_objects), len(dropped), dropped
 
 
-def _single_bin_value(aos: dict, path: str, index: int) -> tuple[float, float]:
-    hist = aos[path]
-    bin_obj = hist.bin(index)
+def _bin_value_error(bin_obj: object) -> tuple[float, float]:
     if hasattr(bin_obj, "val"):
         value = float(bin_obj.val())
         if hasattr(bin_obj, "errAvg"):
@@ -608,6 +615,11 @@ def _single_bin_value(aos: dict, path: str, index: int) -> tuple[float, float]:
         error = float(bin_obj.heightErr()) if hasattr(bin_obj, "heightErr") else 0.0
         return value, error
     raise RuntimeError(f"Unsupported YODA bin type: {type(bin_obj).__name__}")
+
+
+def _single_bin_value(aos: dict, path: str, index: int) -> tuple[float, float]:
+    hist = aos[path]
+    return _bin_value_error(hist.bin(index))
 
 
 def _combine_measurements(values: Sequence[Tuple[float, float]]) -> tuple[float, float]:
@@ -648,6 +660,47 @@ def _ratio_value_error(numerator: float, numerator_error: float,
     error = float(numpy.sqrt((numerator_error / denominator)**2 +
                              (numerator * denominator_error / (denominator**2))**2))
     return value, error
+
+
+def _build_cumulative_ratio_hist(delta_hist: object, sigma_hist: object, path: str) -> object:
+    edges = _x_edges(sigma_hist)
+    cumulative_hist = _new_estimate(edges, path)
+
+    sigma_bins = list(sigma_hist.bins())
+    delta_bins = list(delta_hist.bins())
+    cumulative_bins = list(cumulative_hist.bins())
+    if len(sigma_bins) != len(delta_bins) or len(delta_bins) != len(cumulative_bins):
+        raise RuntimeError(
+            f"Could not build cumulative ratio histogram {path}: mismatched bin counts "
+            f"({len(delta_bins)}, {len(sigma_bins)}, {len(cumulative_bins)})"
+        )
+
+    cumulative_sigma = 0.0
+    cumulative_delta = 0.0
+    cumulative_sigma_err2 = 0.0
+    cumulative_delta_err2 = 0.0
+
+    for sigma_bin, delta_bin, out_bin in zip(
+        reversed(sigma_bins), reversed(delta_bins), reversed(cumulative_bins)
+    ):
+        sigma_value, sigma_error = _bin_value_error(sigma_bin)
+        delta_value, delta_error = _bin_value_error(delta_bin)
+        width = float(sigma_bin.xMax()) - float(sigma_bin.xMin())
+
+        cumulative_sigma += sigma_value * width
+        cumulative_delta += delta_value * width
+        cumulative_sigma_err2 += (sigma_error * width) ** 2
+        cumulative_delta_err2 += (delta_error * width) ** 2
+
+        cumulative_value, cumulative_error = _ratio_value_error(
+            cumulative_delta,
+            float(numpy.sqrt(cumulative_delta_err2)),
+            cumulative_sigma,
+            float(numpy.sqrt(cumulative_sigma_err2)),
+        )
+        set_bin_val_err(out_bin, cumulative_value, cumulative_error)
+
+    return cumulative_hist
 
 
 def _combine_setup_bin(
@@ -722,6 +775,7 @@ def build_dis_polarized_objects(
     labels = _analysis_labels(analysis)
     all_labels = set(_analysis_all_labels(analysis))
     derived_moments = _analysis_derived_moments(analysis)
+    derived_cumulative_all = _analysis_derived_cumulative_all(analysis)
 
     for label in labels:
         pp_sources = _resolve_input_sources(aos_pp, analysis, label)
@@ -829,6 +883,19 @@ def build_dis_polarized_objects(
                 sigma_num, sigma_num_error, sigma_den, sigma_den_error
             )
             set_bin_val_err(moment_hist.bin(index), moment_value, moment_error)
+
+    for cumulative_label, base_label in derived_cumulative_all:
+        sigma_path = f"/{analysis}/{base_label}"
+        delta_path = f"/{analysis}/D{base_label}"
+        sigma_hist = output.get(sigma_path)
+        delta_hist = output.get(delta_path)
+        if sigma_hist is None or delta_hist is None:
+            raise KeyError(
+                f"Could not build cumulative observable {cumulative_label}: "
+                f"missing {sigma_path} or {delta_path}"
+            )
+        cumulative_path = f"/{analysis}/{cumulative_label}"
+        output[cumulative_path] = _build_cumulative_ratio_hist(delta_hist, sigma_hist, cumulative_path)
 
     return output
 

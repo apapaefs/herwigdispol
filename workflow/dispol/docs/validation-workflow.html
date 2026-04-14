@@ -1,0 +1,259 @@
+<h1 id="dispol-validation-workflow">DISPOL Validation Workflow</h1>
+<p>This note records the main commands for the integrated DISPOL
+workflow driven by:</p>
+<ul>
+<li><code>/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py</code></li>
+</ul>
+<h2 id="powheg-emission-comparison-modes">POWHEG emission comparison
+modes</h2>
+<p>The DIS POWHEG emission now has:</p>
+<ul>
+<li>two scale/source switches:
+<ul>
+<li><code>UseFixedOrderAlphaSInPOWHEGEmission</code></li>
+<li><code>UseQ2ScaleInPOWHEGEmission</code></li>
+</ul></li>
+<li>one comparison mode:
+<ul>
+<li><code>POWHEGEmissionComparisonMode</code></li>
+</ul></li>
+<li>one retry parameter for the non-default comparison mode:
+<ul>
+<li><code>POWHEGEmissionComparisonMaxAttempts</code></li>
+</ul></li>
+
+</ul>
+<p>Native Herwig POWHEG remains the default:</p>
+<ul>
+<li><code>POWHEGEmissionComparisonMode Default</code></li>
+
+</ul>
+<p><code>UseQ2ScaleInPOWHEGEmission</code> controls both:</p>
+<ul>
+<li>the POWHEG/MEC emission <code>alpha_s</code> scale</li>
+<li>the POWHEG/MEC emission-PDF numerator scale</li>
+</ul>
+<p><code>UseFixedOrderAlphaSInPOWHEGEmission</code> means:</p>
+<ul>
+<li>prefer the LHAPDF-set <code>alpha_s</code> from the beam PDF when
+available</li>
+<li>otherwise fall back to Herwig’s fixed-order/model
+<code>alpha_s</code></li>
+</ul>
+<p><code>POWHEGEmissionComparisonMode</code> means:</p>
+<ul>
+<li><code>Default</code>: exact native Herwig POWHEG behavior</li>
+<li><code>RealOnly</code>: native POWHEG generation, but retry and veto
+instead of falling back to Born</li>
+
+</ul>
+<p><code>POWHEGEmissionComparisonMaxAttempts</code> defaults to
+<code>100</code> and is only used when
+<code>POWHEGEmissionComparisonMode = RealOnly</code>.</p>
+
+<p>Current/native POWHEG:</p>
+<pre class="text"><code>set /Herwig/MatrixElements/PowhegMEDISNCPol:UseFixedOrderAlphaSInPOWHEGEmission No
+set /Herwig/MatrixElements/PowhegMEDISNCPol:UseQ2ScaleInPOWHEGEmission No
+set /Herwig/MatrixElements/PowhegMEDISNCPol:POWHEGEmissionComparisonMode Default</code></pre>
+<p>Direct POLDIS-comparison mode:</p>
+<pre class="text"><code>set /Herwig/MatrixElements/PowhegMEDISNCPol:UseFixedOrderAlphaSInPOWHEGEmission Yes
+set /Herwig/MatrixElements/PowhegMEDISNCPol:UseQ2ScaleInPOWHEGEmission Yes
+set /Herwig/MatrixElements/PowhegMEDISNCPol:POWHEGEmissionComparisonMode Default</code></pre>
+<p>No-Born-fallback native POWHEG diagnostic:</p>
+<pre class="text"><code>set /Herwig/MatrixElements/PowhegMEDISNCPol:UseFixedOrderAlphaSInPOWHEGEmission Yes
+set /Herwig/MatrixElements/PowhegMEDISNCPol:UseQ2ScaleInPOWHEGEmission Yes
+set /Herwig/MatrixElements/PowhegMEDISNCPol:POWHEGEmissionComparisonMode RealOnly
+set /Herwig/MatrixElements/PowhegMEDISNCPol:POWHEGEmissionComparisonMaxAttempts 100</code></pre>
+
+<h2 id="run-a-herwig-validation-campaign">1. Run a Herwig validation
+campaign</h2>
+<p>Standard campaign:</p>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py campaign <span class="dt">\</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base-dir</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL <span class="dt">\</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">-t</span> testing13 <span class="dt">\</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--jobs</span> 96 <span class="dt">\</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--shards</span> 0 <span class="dt">\</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">--seed-base</span> 100000 <span class="dt">\</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">--lo-events</span> 1000000000 <span class="dt">\</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">--posnlo-events</span> 1000000000 <span class="dt">\</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">--negnlo-events</span> 10000000</span></code></pre></div>
+<p>If you changed any <code>.in</code> cards and need the
+<code>.run</code> files rebuilt, add <code>--force-prepare</code>:</p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py campaign <span class="dt">\</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base-dir</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL <span class="dt">\</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">-t</span> testing13 <span class="dt">\</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--force-prepare</span> <span class="dt">\</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--jobs</span> 96 <span class="dt">\</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">--shards</span> 0 <span class="dt">\</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">--seed-base</span> 100000 <span class="dt">\</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">--lo-events</span> 1000000000 <span class="dt">\</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">--posnlo-events</span> 1000000000 <span class="dt">\</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">--negnlo-events</span> 10000000</span></code></pre></div>
+<p>To run only the <code>ALL</code> setup in the campaign stage:</p>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py campaign <span class="dt">\</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base-dir</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL <span class="dt">\</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">-t</span> testing13 <span class="dt">\</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--setup</span> ALL <span class="dt">\</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--jobs</span> 96 <span class="dt">\</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">--shards</span> 0 <span class="dt">\</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">--seed-base</span> 100000 <span class="dt">\</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">--lo-events</span> 1000000000 <span class="dt">\</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">--posnlo-events</span> 1000000000 <span class="dt">\</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">--negnlo-events</span> 10000000</span></code></pre></div>
+<p>Rivet-enabled campaign:</p>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py campaign <span class="dt">\</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base-dir</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL <span class="dt">\</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">-t</span> rivet01 <span class="dt">\</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--rivet</span> <span class="dt">\</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--jobs</span> 96 <span class="dt">\</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">--shards</span> 0 <span class="dt">\</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">--seed-base</span> 100000 <span class="dt">\</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">--lo-events</span> 1000000000 <span class="dt">\</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">--posnlo-events</span> 1000000000 <span class="dt">\</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">--negnlo-events</span> 10000000</span></code></pre></div>
+<p>Notes: - <code>--shards 0</code> auto-chooses shard count from
+<code>--jobs</code> - shard outputs are merged automatically - physical
+<code>NLO = POSNLO - NEGNLO</code> YODAs are built automatically - for
+Rivet campaigns, merged YODAs are rebuilt with the custom
+<code>MC_DIS_BREIT</code> analysis path set in
+<code>RIVET_ANALYSIS_PATH</code> - current <code>RIVETFO</code> cards
+use <code>MC_DIS_BREIT:JETINPUT=TOP2PARTONS</code></p>
+<h2 id="rebuild-merged-yodas-and-summaries-for-an-existing-tag">2.
+Rebuild merged YODAs and summaries for an existing tag</h2>
+<p>Use this when the raw shard outputs already exist and you want to: -
+rebuild merged run-level YODAs - rebuild physical
+<code>NLO = POSNLO - NEGNLO</code> YODAs - rerun the text/CSV/JSON
+summaries - rerun the Herwig DIS YODA analysis</p>
+<p>Typical Rivet postprocess command:</p>
+<div class="sourceCode" id="cb11"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py postprocess <span class="dt">\</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base-dir</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL <span class="dt">\</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">-t</span> rivet2 <span class="dt">\</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--rivet</span> <span class="dt">\</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--yoda-merge-tool</span> auto</span></code></pre></div>
+<p>Preview only:</p>
+<div class="sourceCode" id="cb12"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py postprocess <span class="dt">\</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base-dir</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL <span class="dt">\</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">-t</span> rivet2 <span class="dt">\</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--rivet</span> <span class="dt">\</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--dry-run</span></span></code></pre></div>
+<h2 id="analyze-herwig-nlo-yodas-into-dis-polarized-observables">3.
+Analyze Herwig NLO YODAs into DIS polarized observables</h2>
+<p>Default setup is <code>ALL</code>:</p>
+<div class="sourceCode" id="cb13"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py analyze-herwig <span class="dt">\</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base-dir</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL <span class="dt">\</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">-t</span> testing13</span></code></pre></div>
+<p>Explicit setup:</p>
+<div class="sourceCode" id="cb14"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py analyze-herwig <span class="dt">\</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base-dir</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL <span class="dt">\</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">-t</span> testing13 <span class="dt">\</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--setup</span> GAMMA <span class="dt">\</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--setup</span> Z <span class="dt">\</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">--setup</span> ALL</span></code></pre></div>
+<p>This writes analyzed YODAs under:</p>
+<ul>
+<li><code>/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/&lt;tag&gt;/analysis/</code></li>
+</ul>
+<h2 id="convert-poldis-.top-files-into-reference-yoda">4. Convert POLDIS
+<code>.top</code> files into reference YODA</h2>
+<p>Default local <code>.top</code> files:</p>
+<div class="sourceCode" id="cb15"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py poldis-top <span class="dt">\</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base-dir</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL <span class="dt">\</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">--order</span> NLO</span></code></pre></div>
+<p>Accepted POLDIS reference orders: - <code>--order LO</code> -
+<code>--order NLO</code> - <code>--order NNLO</code></p>
+<p>Explicit files and output:</p>
+<div class="sourceCode" id="cb16"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py poldis-top <span class="dt">\</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base-dir</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL <span class="dt">\</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">--unpol</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/dijets_unpol.top <span class="dt">\</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--pol</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/dijets_pol.top <span class="dt">\</span></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--order</span> NLO <span class="dt">\</span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">--out</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/POLDIS_MC_DIS_BREIT_ref.yoda.gz</span></code></pre></div>
+<p>Alternative order selections:</p>
+<div class="sourceCode" id="cb17"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py poldis-top <span class="dt">\</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base-dir</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL <span class="dt">\</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">--order</span> LO</span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py poldis-top <span class="dt">\</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base-dir</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL <span class="dt">\</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">--order</span> NNLO</span></code></pre></div>
+<h2 id="run-everything-in-one-go">5. Run everything in one go</h2>
+<div class="sourceCode" id="cb18"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py full <span class="dt">\</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base-dir</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL <span class="dt">\</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">-t</span> testing13 <span class="dt">\</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--rivet</span> <span class="dt">\</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--jobs</span> 96 <span class="dt">\</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">--shards</span> 0 <span class="dt">\</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">--seed-base</span> 100000 <span class="dt">\</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">--lo-events</span> 1000000000 <span class="dt">\</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">--posnlo-events</span> 1000000000 <span class="dt">\</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">--negnlo-events</span> 10000000 <span class="dt">\</span></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">--setup</span> ALL <span class="dt">\</span></span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">--order</span> NLO</span></code></pre></div>
+<p>Example full Rivet campaign command used for
+<code>rivet13</code>:</p>
+<div class="sourceCode" id="cb19"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> /home/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py <span class="dt">\</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base-dir</span> /home/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL <span class="dt">\</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">-t</span> rivet13 <span class="dt">\</span></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--jobs</span> 200 <span class="dt">\</span></span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--shards</span> 0 <span class="dt">\</span></span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">--seed-base</span> 200000 <span class="dt">\</span></span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">--lo-events</span> 100000 <span class="dt">\</span></span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a>  <span class="at">--posnlo-events</span> 100000 <span class="dt">\</span></span>
+<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">--negnlo-events</span> 10000 <span class="dt">\</span></span>
+<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a>  <span class="at">--progress-interval</span> 2 <span class="dt">\</span></span>
+<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">--max-listed</span> 50 <span class="dt">\</span></span>
+<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">--rivet</span> <span class="dt">\</span></span>
+<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">--yoda-merge-tool</span> /home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/bin/yodamerge</span></code></pre></div>
+<p>This populates:</p>
+<ul>
+<li><code>/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/&lt;tag&gt;/results.*</code></li>
+<li><code>/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/&lt;tag&gt;/diagnostic.*</code></li>
+<li><code>/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/&lt;tag&gt;/yoda/</code></li>
+<li><code>/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/&lt;tag&gt;/analysis/</code></li>
+<li><code>/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/&lt;tag&gt;/refs/</code></li>
+<li><code>/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/&lt;tag&gt;/plots_mc_vs_poldis_&lt;setup&gt;_&lt;order&gt;/</code></li>
+<li><code>/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/&lt;tag&gt;/manifest.json</code></li>
+</ul>
+<h2 id="build-rivet-comparison-plots-directly">6. Build Rivet comparison
+plots directly</h2>
+<p>Default <code>ALL</code> NLO comparison against the chosen POLDIS
+order:</p>
+<div class="sourceCode" id="cb20"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py rivetplot <span class="dt">\</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--base-dir</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL <span class="dt">\</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">-t</span> testing13 <span class="dt">\</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--setup</span> ALL <span class="dt">\</span></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">--order</span> NLO</span></code></pre></div>
+<p>This uses the analyzed Herwig YODA from:</p>
+<ul>
+<li><code>/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/&lt;tag&gt;/analysis/Herwig_MC_DIS_BREIT_&lt;setup&gt;_NLO_polarized.yoda.gz</code></li>
+</ul>
+<p>and the POLDIS reference from:</p>
+<ul>
+<li><code>/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/campaigns/&lt;tag&gt;/refs/POLDIS_MC_DIS_BREIT_ref.yoda.gz</code></li>
+</ul>
+<p>It runs a command of the form:</p>
+<div class="sourceCode" id="cb21"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="ex">rivet-mkhtml</span> <span class="op">&lt;</span>Herwig analyzed yoda<span class="op">&gt;</span> <span class="op">&lt;</span>POLDIS ref yoda<span class="op">&gt;</span> --reflabel=<span class="st">&quot;POLDIS NLO&quot;</span> <span class="at">--ratiolabel</span> <span class="st">&quot;MC/POLDIS&quot;</span> <span class="at">-o</span> <span class="op">&lt;</span>campaign plot dir<span class="op">&gt;</span></span></code></pre></div>
+<h2 id="useful-help-commands">7. Useful help commands</h2>
+<div class="sourceCode" id="cb22"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py <span class="at">--help</span></span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py campaign <span class="at">--help</span></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py postprocess <span class="at">--help</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py analyze-herwig <span class="at">--help</span></span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py poldis-top <span class="at">--help</span></span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py rivetplot <span class="at">--help</span></span>
+<span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a><span class="ex">python3.10</span> /Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py full <span class="at">--help</span></span></code></pre></div>

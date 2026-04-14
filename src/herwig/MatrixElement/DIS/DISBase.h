@@ -254,6 +254,61 @@ protected:
                                       BornClosureDiagnostics &out) const;
 
   /**
+   * Ratio of the real-emission parity-even denominator to the Born one.
+   * This is unity in the legacy/photon case and can be overridden by
+   * neutral-current implementations that keep the mapped quark/gluon
+   * channels separate.
+   */
+  virtual double realEmissionDenominatorFactor(tcPDPtr lin, tcPDPtr lout,
+                                               tcPDPtr qin, tcPDPtr qout,
+                                               Energy2 scale,
+                                               double Pl,
+                                               double mappedPartonPol) const;
+
+  /**
+   * Whether the real-emission kernels should use the mapped incoming-parton
+   * polarization rather than the Born one.
+   */
+  virtual bool useMappedPolarizedEmissionKernel() const;
+
+  /**
+   * Event-local neutral-current audit data used by the NLO spin-factor
+   * diagnostics.
+   */
+  struct NeutralCurrentAuditData {
+    std::string channel;
+    double etaL;
+    double etaQ;
+    double D_even;
+    double D_spin;
+    double N_even;
+    double N_spin;
+    double qUnpolarized;
+    double qPolarized;
+    double gUnpolarized;
+    double gPolarized;
+    double qOddResponse;
+    double gOddResponse;
+    double bornFactor;
+    double realDenominatorFactor;
+    double mappedDenominatorRatio;
+  };
+
+  /**
+   * Extract event-local neutral-current response coefficients needed by the
+   * NLO audit diagnostics. Returns false if the diagnostic is not available
+   * for the current process.
+   */
+  virtual bool neutralCurrentAuditData(tcPDPtr lin, tcPDPtr lout,
+                                       tcPDPtr qin, tcPDPtr qout,
+                                       Energy2 scale,
+                                       double Pl,
+                                       double PqBorn,
+                                       double PqMapped,
+                                       double ell,
+                                       NeutralCurrentAuditData &out) const;
+
+  /**
    * Return the alphaS scale used in the POWHEG hardest-emission
    * generation. By default this is the native POWHEG transverse-momentum
    * scale pT^2 = q2*xT^2/4. Optionally it can be forced to Q^2 for direct
@@ -348,10 +403,42 @@ protected:
   bool diagnosticsEnabled() const { return disDiagnostics_; }
 
   /**
+   * Return true when the current channel is the pure LO gamma mode used by
+   * the local point audit. Derived classes override this when they can
+   * identify the channel exactly.
+   */
+  virtual bool pureLOGammaPointAuditChannel() const { return false; }
+
+  /**
+   * True for charged-current DIS matrix elements and false for neutral-current
+   * ones. Used when selecting the applicable SimpleDISCut window.
+   */
+  virtual bool usesChargedCurrentDISWindow() const = 0;
+
+  /**
    * Return true if a POWHEG real-emission spin diagnostic should be
    * emitted for this event and provide the running diagnostic index.
    */
   bool nextPOWHEGRealSpinDiagnosticSlot(unsigned long & index) const;
+
+  /**
+   * Return true if an accepted NLO audit point should be emitted and provide
+   * the running accepted-event diagnostic index.
+   */
+  bool nextNLOAuditDiagnosticSlot(unsigned long & index) const;
+
+  /**
+   * Return true if a sampled local LO gamma point should be emitted and
+   * provide the running diagnostic index.
+   */
+  bool nextLOGammaPointDiagnosticSlot(unsigned long & index) const;
+
+  /**
+   * Emit the structured local LO gamma point audit line.
+   */
+  void dumpLOGammaPointDiagnostic(unsigned long sampleIndex,
+                                  double me2Value,
+                                  CrossSection sigmaHat) const;
 
   /**
    * Whether the exact spin-only POWHEG real-emission vertex is enabled.
@@ -407,6 +494,20 @@ protected:
   double generateBGFPoint(double &xp, double & zp);
 
   /**
+   * Compact azimuthal kernel representation
+   * c0 + c1 cos(phi) + c2 cos^2(phi).
+   */
+  struct AzimuthalKernelCoefficients {
+    double c0;
+    double c1;
+    double c2;
+
+    AzimuthalKernelCoefficients(): c0(0.0), c1(0.0), c2(0.0) {}
+
+    double average() const { return c0 + 0.5 * c2; }
+  };
+
+  /**
    *  Return the coefficients for the matrix element piece for
    *  the QCD compton case. The output is the \f$a_i\f$ coefficients to 
    *  give the function as 
@@ -416,8 +517,8 @@ protected:
    * @param xperp \f$x_\perp\f$
    * @param norm Normalise to the large $l$ value of the ME
    */
-  vector<double> ComptonME(double xp, double x2, double xperp,
-			   bool norm);
+  AzimuthalKernelCoefficients ComptonME(double xp, double x2, double xperp,
+			                bool norm) const;
   
   /**
    *  Return the coefficients for the matrix element piece for
@@ -430,8 +531,8 @@ protected:
    * @param xperp \f$x_\perp\f$
    * @param norm Normalise to the large $l$ value of the ME
    */
-  vector<double> BGFME(double xp, double x2, double x3, double xperp,
-		       bool norm);
+  AzimuthalKernelCoefficients BGFME(double xp, double x2, double x3,
+                                    double xperp, bool norm) const;
   //@}
 
   /**
@@ -534,8 +635,8 @@ protected:
   void dumpPOWHEGRawSummary(unsigned long eventIndex) const;
 
   /**
-   * Return the current beam-level ep invariant mass squared used in the
-   * raw POWHEG diagnostics.
+   * Return the current beam-level ep invariant mass squared used in the raw
+   * POWHEG diagnostics and local LO gamma audit.
    */
   double currentPOWHEGRawBeamS() const;
 
@@ -684,6 +785,68 @@ protected:
 private:
 
   /**
+   * Cached copy of the active SimpleDISCut window for native DIS generation.
+   */
+  struct NativeDISWindowDefinition {
+    NativeDISWindowDefinition()
+      : resolutionAttempted(false), available(false),
+        minQ2(ZERO), maxQ2(ZERO), minY(0.0), maxY(1.0),
+        minW2(ZERO), maxW2(ZERO) {}
+
+    bool resolutionAttempted;
+    bool available;
+    Energy2 minQ2;
+    Energy2 maxQ2;
+    double minY;
+    double maxY;
+    Energy2 minW2;
+    Energy2 maxW2;
+  };
+
+  /**
+   * Resolve and cache the active SimpleDISCut window for the current DIS
+   * process type. Returns false when no unique matching window is available.
+   */
+  bool resolveNativeDISWindow() const;
+
+  /**
+   * Identify the hadron beam and its Bjorken-x for the current Born point.
+   */
+  bool determineBornHadronAndXB(tcBeamPtr & hadron, double & xB) const;
+
+  /**
+   * Tighten the Born cos(theta) interval with the native DIS window.
+   */
+  bool tightenBornCosThetaWithNativeDISWindow(const HwMEBase::TwoToTwoKinematicsSetup & setup,
+                                              double xB,
+                                              double & ctmin,
+                                              double & ctmax) const;
+
+  /**
+   * Emit a diagnostic when the native tightened window accepted a point that
+   * still failed the final passCuts() check.
+   */
+  void logNativeWindowAcceptedButCutRejected(double xB,
+                                             Energy2 q2,
+                                             double cth,
+                                             double legacyCtmin,
+                                             double legacyCtmax,
+                                             double nativeCtmin,
+                                             double nativeCtmax) const;
+
+  /**
+   * Emit a diagnostic for a point that the legacy angular window would have
+   * generated but the native DIS window removes.
+   */
+  void logLegacyOnlyAcceptedPoint(double xB,
+                                  Energy2 q2,
+                                  double cth,
+                                  double legacyCtmin,
+                                  double legacyCtmax,
+                                  double nativeCtmin,
+                                  double nativeCtmax) const;
+
+  /**
    *  The radiative variables
    */
   //@{
@@ -737,9 +900,58 @@ private:
   bool disDiagnostics_;
 
   /**
+   *  Tighten the Born generation to the full DIS window before applying the
+   *  safety-check passCuts() veto.
+   */
+  bool useNativeDISWindowGeneration_;
+
+  /**
+   *  Use the canonical uniform polarized-NLO term assembly for the shared
+   *  DIS NLO representation. This is the validated default Branch A path.
+   */
+  bool useUniformPolarizedNLORepresentation_;
+
+  /**
+   *  Experimental Branch B switch: use raw finite-form polarized deltas in
+   *  the odd NLO kernels while retaining the clamped spin objects elsewhere.
+   */
+  bool useRawFinitePolarizedNLODeltas_;
+
+  /**
    *  Emit the periodic NLO_TERM_* summary diagnostics.
    */
   bool dumpNLOTermDiagnostics_;
+
+  /**
+   *  Emit sampled NLO point-audit diagnostics.
+   */
+  bool dumpNLOAuditDiagnostics_;
+
+  /**
+   *  Emit sampled local LO gamma point diagnostics.
+   */
+  bool dumpLOGammaPointDiagnostics_;
+
+  /**
+   *  Number of accepted NLO events to dump before periodic sampling starts.
+   */
+  unsigned long nloAuditInitialSamples_;
+
+  /**
+   *  Periodic sampling interval for accepted NLO audit diagnostics.
+   */
+  unsigned long nloAuditSamplePeriod_;
+
+  /**
+   *  Periodic sampling interval for the cumulative NLO summary diagnostics.
+   */
+  unsigned long nloTermDiagnosticPeriod_;
+
+  /**
+   *  Maximum number of local LO gamma point diagnostics to emit.
+   *  A value of zero means no limit.
+   */
+  unsigned long loGammaPointDiagnosticMax_;
 
   /**
    *  Comparison-only ladder for bringing the POWHEG hardest-emission path
@@ -759,11 +971,6 @@ private:
   bool usePOWHEGRealSpinVertex_;
 
   /**
-   *  Emit a dedicated diagnostic for the realised POWHEG 2->3 spin state.
-   */
-  bool diagnosePOWHEGRealSpinVertex_;
-
-  /**
    *  Dump the winning raw POWHEG hadronic pair before qtilde reconstruction.
    */
   bool dumpPOWHEGRawMomenta_;
@@ -775,16 +982,31 @@ private:
   unsigned long powhegRawMomentaDumpMax_;
 
   /**
+   *  Lepton longitudinal polarization for the current real-emission state.
+   */
+  double leptonPolarization_;
+
+  /**
    *  Channel-local POWHEG raw variables for the currently selected winner.
    *  These are transient diagnostics and are rebuilt for each event.
    */
   double comptonRawXP_, comptonRawZP_, bgfRawXP_, bgfRawZP_;
 
   /**
+   *  Sampling diagnostics for the mapped xp variable.
+   */
+  double xpSamplingRandom_, xpSamplingRho_, xpSamplingRhomin_;
+
+  /**
    *  Event-local native POWHEG competition diagnostics. These are transient
    *  and are rebuilt for each attempted raw POWHEG event.
    */
   POWHEGRawEventDiagnostics powhegRawDiagnostics_;
+
+  /**
+   *  Emit a dedicated diagnostic for the realised POWHEG 2->3 spin state.
+   */
+  bool diagnosePOWHEGRealSpinVertex_;
 
   /**
    *  Maximum number of POWHEG real-emission spin diagnostics to emit.
@@ -798,9 +1020,35 @@ private:
   mutable unsigned long powhegRealSpinDiagCount_;
 
   /**
+   *  Counter for accepted NLO audit diagnostics.
+   */
+  mutable unsigned long nloAuditAcceptedCount_;
+
+  /**
    *  Counter for emitted raw POWHEG momentum diagnostics.
    */
   mutable unsigned long powhegRawMomentaDumpCount_;
+
+  /**
+   *  Counter for emitted local LO gamma point diagnostics.
+   */
+  mutable unsigned long loGammaPointDiagnosticCount_;
+
+  /**
+   *  Counter for native-window points that still fail passCuts().
+   */
+  mutable unsigned long nativeWindowAcceptedButCutRejectedCount_;
+
+  /**
+   *  Counter for points that the legacy angular window would have generated
+   *  but the native DIS window removes.
+   */
+  mutable unsigned long legacyOnlyAcceptedCount_;
+
+  /**
+   *  Cached copy of the active DIS window used by native generation.
+   */
+  mutable NativeDISWindowDefinition nativeDISWindow_;
 
   /**
    *  Power for sampling \f$x_p\f$

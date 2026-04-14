@@ -40,6 +40,8 @@ set /Herwig/Shower/ShowerHandler:Interactions QEDQCD
 
 create ThePEG::LHAPDF /Herwig/Partons/LHAPDF ThePEGLHAPDF.so
 set /Herwig/Partons/LHAPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+set /Herwig/Partons/HardLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+set /Herwig/Partons/ShowerNLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
 set /Herwig/Partons/RemnantDecayer:AllowTop Yes
 set /Herwig/Partons/LHAPDF:RemnantHandler /Herwig/Partons/HadronRemnants
 set /Herwig/Particles/p+:PDF /Herwig/Partons/LHAPDF
@@ -137,7 +139,6 @@ set /Herwig/Model:QCD/AlphaS 0.118
 set /Herwig/Model:EW/Scheme alphaMZScheme
 set /Herwig/Model:EW/AlphaEMMZ 0.00729927
 set /Herwig/Model:EW/AlphaEM   0.00729927
-set /Herwig/Model:EW/Sin2ThetaW 0.2260
 set /Herwig/Vertices/FFPVertex:Coupling FixedSM
 set /Herwig/Vertices/FFZVertex:Coupling FixedSM
 
@@ -168,7 +169,6 @@ cd /Herwig/Generators
 get /Herwig/Model:EW/Scheme
 get /Herwig/Model:EW/AlphaEMMZ
 get /Herwig/Vertices/FFPVertex:Coupling
-get /Herwig/Model:EW/Sin2ThetaW
 get /Herwig/Particles/Z0:NominalMass
 get /Herwig/Particles/W+:NominalMass
 saverun DIS-POL-POWHEG_00-NEGNLO EventGenerator

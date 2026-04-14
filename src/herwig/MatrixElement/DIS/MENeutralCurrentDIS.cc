@@ -263,6 +263,7 @@ MatrixDiagnostics inspectMatrix(const RhoDMatrix & rho) {
 
 MENeutralCurrentDIS::MENeutralCurrentDIS() 
   : _minflavour(1), _maxflavour(5), _gammaZ(0),
+    _useFiniteWidthSpacelikeZPropagator(false),
     _sinW(0.), _cosW(0.), _mz2(ZERO) {
   vector<unsigned int> mopt(2,0);
   mopt[0] = 1;
@@ -346,19 +347,22 @@ MENeutralCurrentDIS::colourGeometries(tcDiagPtr diag) const {
 void MENeutralCurrentDIS::persistentOutput(PersistentOStream & os) const {
   os << _minflavour << _maxflavour << _gammaZ << _theFFZVertex << _theFFPVertex
      << _theFFGVertex
-     << _gamma << _z0 << _sinW << _cosW << ounit(_mz2,GeV2);
+     << _gamma << _z0 << _sinW << _cosW << ounit(_mz2,GeV2)
+     << _useFiniteWidthSpacelikeZPropagator;
 }
 
-void MENeutralCurrentDIS::persistentInput(PersistentIStream & is, int) {
+void MENeutralCurrentDIS::persistentInput(PersistentIStream & is, int version) {
   is >> _minflavour >> _maxflavour >> _gammaZ >> _theFFZVertex >> _theFFPVertex
      >> _theFFGVertex
      >> _gamma >> _z0 >> _sinW >> _cosW >> iunit(_mz2,GeV2) ;
+  if(version == 0) _useFiniteWidthSpacelikeZPropagator = false;
+  else is >> _useFiniteWidthSpacelikeZPropagator;
 }
 
 // The following static variable is needed for the type
 // description system in ThePEG.
 DescribeClass<MENeutralCurrentDIS,DISBase>
-describeHerwigMENeutralCurrentDIS("Herwig::MENeutralCurrentDIS", "HwMEDIS.so");
+describeHerwigMENeutralCurrentDIS("Herwig::MENeutralCurrentDIS", "HwMEDIS.so", 1);
 
 void MENeutralCurrentDIS::Init() {
 
@@ -397,6 +401,27 @@ void MENeutralCurrentDIS::Init() {
      "Z",
      "Only include the Z",
      2);
+
+  static Switch<MENeutralCurrentDIS,bool>
+    interfaceUseFiniteWidthSpacelikeZPropagator
+    ("UseFiniteWidthSpacelikeZPropagator",
+     "Whether to keep a finite width for spacelike Z exchange in the "
+     "helicity-amplitude path. This affects the Born and real-emission DIS "
+     "neutral-current amplitude construction only. The default No preserves "
+     "the legacy zero-width spacelike Z behavior, while Yes uses the finite-"
+     "width ThePEG propagator option iopt=7.",
+     &MENeutralCurrentDIS::_useFiniteWidthSpacelikeZPropagator,
+     false, false, false);
+  static SwitchOption interfaceUseFiniteWidthSpacelikeZPropagatorYes
+    (interfaceUseFiniteWidthSpacelikeZPropagator,
+     "Yes",
+     "Use the finite-width spacelike Z propagator in the helicity-amplitude path.",
+     true);
+  static SwitchOption interfaceUseFiniteWidthSpacelikeZPropagatorNo
+    (interfaceUseFiniteWidthSpacelikeZPropagator,
+     "No",
+     "Use the legacy zero-width spacelike Z propagator in the helicity-amplitude path.",
+     false);
 }
 
 Selector<MEBase::DiagramIndex>
@@ -439,7 +464,8 @@ double MENeutralCurrentDIS::helicityME(const pair<RhoDMatrix,RhoDMatrix> & rhoin
       // intermediate for photon
       if(gam) inter[0]=_theFFPVertex->evaluate(mb2,1,_gamma,f1[lhel1],a1[lhel2]);
       // intermediate for Z
-      if(Z0)    inter[1]=_theFFZVertex->evaluate(mb2,1,_z0   ,f1[lhel1],a1[lhel2]);
+      if(Z0)    inter[1]=_theFFZVertex->evaluate(mb2,zHelicityPropagatorOption(),
+                                                 _z0,f1[lhel1],a1[lhel2]);
       for(qhel1=0;qhel1<2;++qhel1) {
 	for(qhel2=0;qhel2<2;++qhel2) {
 	  hel[0] = lhel1;
@@ -536,66 +562,6 @@ double MENeutralCurrentDIS::me2ForPolarizations(double Pl, double Pq) const {
   return helicityME(rhoin,f1,f2,a1,a2,lorder,qorder,false);
 }
 
-double MENeutralCurrentDIS::bornMEForMomenta(const Lorentz5Momentum & linMom,
-                                             const Lorentz5Momentum & qinMom,
-                                             const Lorentz5Momentum & loutMom,
-                                             const Lorentz5Momentum & qoutMom,
-                                             tcPDPtr lin, tcPDPtr qin,
-                                             tcPDPtr lout, tcPDPtr qout,
-                                             double Pl, double Pq) const {
-  vector<SpinorWaveFunction> f1, f2;
-  vector<SpinorBarWaveFunction> a1, a2;
-  bool lorder = true, qorder = true;
-  SpinorWaveFunction l1, q1;
-  SpinorBarWaveFunction l2, q2;
-
-  if (lin->id() > 0) {
-    lorder = true;
-    l1 = SpinorWaveFunction(linMom, lin, incoming);
-    l2 = SpinorBarWaveFunction(loutMom, lout, outgoing);
-  }
-  else {
-    lorder = false;
-    l1 = SpinorWaveFunction(loutMom, lout, outgoing);
-    l2 = SpinorBarWaveFunction(linMom, lin, incoming);
-  }
-
-  if (qin->id() > 0) {
-    qorder = true;
-    q1 = SpinorWaveFunction(qinMom, qin, incoming);
-    q2 = SpinorBarWaveFunction(qoutMom, qout, outgoing);
-  }
-  else {
-    qorder = false;
-    q1 = SpinorWaveFunction(qoutMom, qout, outgoing);
-    q2 = SpinorBarWaveFunction(qinMom, qin, incoming);
-  }
-
-  for (unsigned int ix = 0; ix < 2; ++ix) {
-    l1.reset(ix); f1.push_back(l1);
-    l2.reset(ix); a1.push_back(l2);
-    q1.reset(ix); f2.push_back(q1);
-    q2.reset(ix); a2.push_back(q2);
-  }
-
-  pair<RhoDMatrix,RhoDMatrix> rhoin;
-  rhoin.first = RhoDMatrix(lin->iSpin());
-  const unsigned int lmax = rhoin.first.iSpin() - 1;
-  rhoin.first(0,0) = 0.5 * (1.0 - Pl);
-  rhoin.first(lmax,lmax) = 0.5 * (1.0 + Pl);
-  rhoin.first(0,lmax) = 0.0;
-  rhoin.first(lmax,0) = 0.0;
-
-  rhoin.second = RhoDMatrix(qin->iSpin());
-  const unsigned int qmax = rhoin.second.iSpin() - 1;
-  rhoin.second(0,0) = 0.5 * (1.0 - Pq);
-  rhoin.second(qmax,qmax) = 0.5 * (1.0 + Pq);
-  rhoin.second(0,qmax) = 0.0;
-  rhoin.second(qmax,0) = 0.0;
-
-  return helicityME(rhoin, f1, f2, a1, a2, lorder, qorder, false);
-}
-
 double MENeutralCurrentDIS::me2ForPartonPolarization(double Pq) const {
   const std::pair<RhoDMatrix,RhoDMatrix> rhoin = correctedLongitudinalRhoMatrices();
   return me2ForPolarizations(longPol(rhoin.first), Pq);
@@ -604,6 +570,10 @@ double MENeutralCurrentDIS::me2ForPartonPolarization(double Pq) const {
 double MENeutralCurrentDIS::me2() const {
   const std::pair<RhoDMatrix,RhoDMatrix> rhoin = correctedLongitudinalRhoMatrices();
   return me2ForPolarizations(longPol(rhoin.first), longPol(rhoin.second));
+}
+
+bool MENeutralCurrentDIS::pureLOGammaPointAuditChannel() const {
+  return gammaZOption() == 1;
 }
 
 void MENeutralCurrentDIS::constructVertex(tSubProPtr sub) {
@@ -838,7 +808,7 @@ ProductionMatrixElement MENeutralCurrentDIS::qcdcRealEmissionME(PPtr lin, PPtr q
             }
             if (_gammaZ == 0 || _gammaZ == 2) {
               VectorWaveFunction inter =
-                _theFFZVertex->evaluate(q2, 1, _z0,
+                _theFFZVertex->evaluate(q2, zHelicityPropagatorOption(), _z0,
                                         leptonLine.fermion[lhelF],
                                         leptonLine.antifermion[lhelA]);
               SpinorWaveFunction off1 =
@@ -917,7 +887,7 @@ ProductionMatrixElement MENeutralCurrentDIS::bgfRealEmissionME(PPtr lin, PPtr gi
             }
             if (_gammaZ == 0 || _gammaZ == 2) {
               VectorWaveFunction inter =
-                _theFFZVertex->evaluate(q2, 1, _z0,
+                _theFFZVertex->evaluate(q2, zHelicityPropagatorOption(), _z0,
                                         leptonLine.fermion[lhelF],
                                         leptonLine.antifermion[lhelA]);
               SpinorWaveFunction off1 =

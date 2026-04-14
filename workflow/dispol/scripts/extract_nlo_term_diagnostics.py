@@ -4,8 +4,10 @@ Extract component-level NLO diagnostics from DIS POWHEG log files.
 
 The script looks for the diagnostic lines emitted by DISBase::NLOWeight():
 
+  NLO_TERM_SIGN
   NLO_TERM_CUM
   NLO_TERM_REAL
+  NLO_TERM_ZSPIN
   NLO_TERM_APOL
   NLO_TERM_BORN
   NLO_TERM_COEFF
@@ -28,6 +30,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,7 +48,11 @@ RUN_RE = re.compile(
     r"(?:-(?P<analysis>RIVETFOFIXED|RIVETFO|RIVET))?"
     r"(?:-(?P<variant>.+))?$"
 )
-SEEDED_VARIANT_RE = re.compile(r"^S\d+-(?P<tag>.+)$")
+# Support both plain shard variants like
+#   S700560-plain48-z-termdiag-s001
+# and prefixed variants like
+#   TERMDIAG-SP040-S710000-plain49-gamma-termdiag-power-s001
+SEEDED_VARIANT_RE = re.compile(r"(?:^|-)S\d+-(?P<tag>.+)$")
 TOTAL_RE = re.compile(
     r"Total\s+\(from generated events\):\s+(\S+)\s+(\S+)\s+([0-9.]+)\((\d+)\)e([+-]?\d+)"
 )
@@ -70,6 +77,34 @@ REAL_SPLIT_COMPONENTS = (
     "F_rq_chk",
     "F_rg_chk",
 )
+RAW_PROBE_COMPONENTS = (
+    "F_cq_odd_raw_probe",
+    "F_cq_odd_raw_shift",
+    "F_rq_odd_raw_probe",
+    "F_rq_odd_raw_shift",
+)
+Z_SHADOW_COMPONENTS = (
+    "cq_odd_raw_probe_pb",
+    "cq_odd_raw_shift_pb",
+    "rq_odd_raw_probe_pb",
+    "rq_odd_raw_shift_pb",
+    "q_odd_raw_shift_pb",
+)
+Z_SPIN_COMPONENTS = (
+    "virt_pb",
+    "cq_even_pb",
+    "cq_odd_pb",
+    "cg_even_pb",
+    "cg_odd_pb",
+    "rq_even_pb",
+    "rq_odd_pb",
+    "rg_even_pb",
+    "rg_odd_pb",
+    "q_even_pb",
+    "q_odd_pb",
+    "g_even_pb",
+    "g_odd_pb",
+)
 HELICITY_ORDER = ("PP", "PM", "MP", "MM", "00")
 T = TypeVar("T")
 
@@ -89,6 +124,7 @@ class OutRun:
     helicity: str
     analysis: str
     variant: str
+    generated_events: Optional[int]
     measurement: Measurement
 
 
@@ -132,6 +168,16 @@ def parse_measurement(text: str) -> Optional[Measurement]:
     return Measurement(nb_to_pb(value_raw), nb_to_pb(error_raw))
 
 
+def parse_generated_event_count(text: str) -> Optional[int]:
+    matches = list(TOTAL_RE.finditer(text))
+    if not matches:
+        return None
+    try:
+        return int(matches[-1].group(1))
+    except ValueError:
+        return None
+
+
 def parse_run_name(run_name: str) -> Optional[Tuple[str, str, str, str, str]]:
     match = RUN_RE.match(run_name)
     if not match:
@@ -156,10 +202,81 @@ def variant_matches_tag(variant: str, preferred_tag: str) -> bool:
 
 
 def normalize_variant_tag(variant: str) -> str:
-    match = SEEDED_VARIANT_RE.match(variant)
+    match = SEEDED_VARIANT_RE.search(variant)
     if match:
         return match.group("tag")
     return variant
+
+
+def parse_filter_values(values: Optional[Sequence[str]], uppercase: bool = False) -> Optional[set[str]]:
+    if not values:
+        return None
+    out: set[str] = set()
+    for value in values:
+        for item in value.split(","):
+            token = item.strip()
+            if not token:
+                continue
+            out.add(token.upper() if uppercase else token)
+    return out or None
+
+
+def name_matches_filter(path: Path, run_name: str, needle: Optional[str]) -> bool:
+    if not needle:
+        return True
+    needle_lower = needle.lower()
+    haystacks = (
+        path.name.lower(),
+        path.stem.lower(),
+        run_name.lower(),
+    )
+    return any(needle_lower in haystack for haystack in haystacks)
+
+
+def entry_matches_filters(
+    entry: object,
+    setup_filter: Optional[set[str]],
+    piece_filter: Optional[set[str]],
+    helicity_filter: Optional[set[str]],
+    name_filter: Optional[str],
+) -> bool:
+    setup = getattr(entry, "setup")
+    piece = getattr(entry, "piece")
+    helicity = getattr(entry, "helicity")
+    path = getattr(entry, "path")
+    run_name = getattr(entry, "run_name", path.stem)
+    if setup_filter is not None and setup not in setup_filter:
+        return False
+    if piece_filter is not None and piece not in piece_filter:
+        return False
+    if helicity_filter is not None and helicity not in helicity_filter:
+        return False
+    return name_matches_filter(path, run_name, name_filter)
+
+
+def path_matches_prefilters(
+    path: Path,
+    requested_analysis: str,
+    setup_filter: Optional[set[str]],
+    piece_filter: Optional[set[str]],
+    helicity_filter: Optional[set[str]],
+    name_filter: Optional[str],
+) -> bool:
+    if name_filter and not name_matches_filter(path, path.stem, name_filter):
+        return False
+    parsed = parse_run_name(path.stem)
+    if parsed is None:
+        return False
+    setup, piece, helicity, analysis, _variant = parsed
+    if analysis != requested_analysis:
+        return False
+    if setup_filter is not None and setup not in setup_filter:
+        return False
+    if piece_filter is not None and piece not in piece_filter:
+        return False
+    if helicity_filter is not None and helicity not in helicity_filter:
+        return False
+    return True
 
 
 def parse_key_value_fields(payload: str) -> Dict[str, str]:
@@ -173,16 +290,22 @@ def parse_key_value_fields(payload: str) -> Dict[str, str]:
 
 
 def parse_diagnostic_log(path: Path) -> Optional[DiagnosticRun]:
+    last_sign: Optional[Dict[str, str]] = None
     last_cum: Optional[Dict[str, str]] = None
     last_real: Optional[Dict[str, str]] = None
+    last_zspin: Optional[Dict[str, str]] = None
     last_apol: Optional[Dict[str, str]] = None
     last_born: Optional[Dict[str, str]] = None
     last_coeff: Optional[Dict[str, str]] = None
     for line in path.read_text().splitlines():
-        if line.startswith("NLO_TERM_CUM"):
+        if line.startswith("NLO_TERM_SIGN"):
+            last_sign = parse_key_value_fields(line[len("NLO_TERM_SIGN"):])
+        elif line.startswith("NLO_TERM_CUM"):
             last_cum = parse_key_value_fields(line[len("NLO_TERM_CUM"):])
         elif line.startswith("NLO_TERM_REAL"):
             last_real = parse_key_value_fields(line[len("NLO_TERM_REAL"):])
+        elif line.startswith("NLO_TERM_ZSPIN"):
+            last_zspin = parse_key_value_fields(line[len("NLO_TERM_ZSPIN"):])
         elif line.startswith("NLO_TERM_APOL"):
             last_apol = parse_key_value_fields(line[len("NLO_TERM_APOL"):])
         elif line.startswith("NLO_TERM_BORN"):
@@ -190,10 +313,18 @@ def parse_diagnostic_log(path: Path) -> Optional[DiagnosticRun]:
         elif line.startswith("NLO_TERM_COEFF"):
             last_coeff = parse_key_value_fields(line[len("NLO_TERM_COEFF"):])
 
-    if last_cum is None and last_real is None and last_apol is None and last_born is None and last_coeff is None:
+    if (
+        last_sign is None
+        and last_cum is None
+        and last_real is None
+        and last_zspin is None
+        and last_apol is None
+        and last_born is None
+        and last_coeff is None
+    ):
         return None
 
-    source = last_cum or last_real or last_apol or last_born or last_coeff
+    source = last_sign or last_cum or last_real or last_zspin or last_apol or last_born or last_coeff
     assert source is not None
     run_name = source.get("run", path.stem)
     parsed = parse_run_name(run_name)
@@ -203,7 +334,7 @@ def parse_diagnostic_log(path: Path) -> Optional[DiagnosticRun]:
 
     values: Dict[str, float] = {}
     n_events: Optional[int] = None
-    for payload in (last_cum, last_real, last_apol, last_born, last_coeff):
+    for payload in (last_sign, last_cum, last_real, last_zspin, last_apol, last_born, last_coeff):
         if payload is None:
             continue
         if "n" in payload:
@@ -240,7 +371,8 @@ def parse_out(path: Path) -> Optional[OutRun]:
     if parsed is None:
         return None
     setup, piece, helicity, analysis, variant = parsed
-    measurement = parse_measurement(path.read_text())
+    text = path.read_text()
+    measurement = parse_measurement(text)
     if measurement is None:
         return None
     return OutRun(
@@ -251,6 +383,7 @@ def parse_out(path: Path) -> Optional[OutRun]:
         helicity=helicity,
         analysis=analysis,
         variant=variant,
+        generated_events=parse_generated_event_count(text),
         measurement=measurement,
     )
 
@@ -263,18 +396,46 @@ def run_preference(variant: str, path: Path, preferred_tag: str) -> Tuple[int, i
     return (preferred_penalty, default_penalty, -path.stat().st_mtime, path.name)
 
 
-def combine_measurements(measurements: Sequence[Measurement]) -> Measurement:
+def shard_mean_weights(generated_events: Optional[Sequence[Optional[int]]], count: int) -> List[float]:
+    if generated_events is None:
+        return [1.0] * count
+    events = list(generated_events)
+    if len(events) != count:
+        return [1.0] * count
+    weights: List[float] = []
+    for raw in events:
+        if raw is None:
+            return [1.0] * count
+        try:
+            weight = float(raw)
+        except (TypeError, ValueError):
+            return [1.0] * count
+        if weight <= 0.0:
+            return [1.0] * count
+        weights.append(weight)
+    return weights
+
+
+def combine_measurements(
+    measurements: Sequence[Measurement],
+    generated_events: Optional[Sequence[Optional[int]]] = None,
+) -> Measurement:
     if not measurements:
         raise ValueError("combine_measurements() requires at least one measurement")
-    positive = [m for m in measurements if m.error_pb > 0.0]
-    if not positive:
-        value = sum(m.value_pb for m in measurements) / len(measurements)
-        return Measurement(value, 0.0)
-    weights = [1.0 / (m.error_pb ** 2) for m in positive]
+
+    weights = shard_mean_weights(generated_events, len(measurements))
     total_weight = sum(weights)
-    value = sum(w * m.value_pb for w, m in zip(weights, positive)) / total_weight
-    error = (1.0 / total_weight) ** 0.5
+    value = sum(w * m.value_pb for w, m in zip(weights, measurements)) / total_weight
+    error = math.sqrt(sum((w * m.error_pb) ** 2 for w, m in zip(weights, measurements))) / total_weight
     return Measurement(value, error)
+
+
+def diagnostic_shard_weight(item: DiagnosticRun, out: Optional[OutRun]) -> float:
+    if item.n_events is not None and item.n_events > 0:
+        return float(item.n_events)
+    if out is not None and out.generated_events is not None and out.generated_events > 0:
+        return float(out.generated_events)
+    return 1.0
 
 
 def select_candidates_by_tag(
@@ -312,7 +473,10 @@ def aggregate_out_group(candidates: Sequence[OutRun], preferred_tag: str) -> Opt
     else:
         chosen = sorted(chosen, key=lambda item: run_preference(item.variant, item.path, preferred_tag))[:1]
 
-    measurement = combine_measurements([item.measurement for item in chosen])
+    measurement = combine_measurements(
+        [item.measurement for item in chosen],
+        [item.generated_events for item in chosen],
+    )
     paths = sorted((item.path for item in chosen), key=lambda item: item.name)
     return OutRun(
         path=paths[0],
@@ -320,7 +484,9 @@ def aggregate_out_group(candidates: Sequence[OutRun], preferred_tag: str) -> Opt
         setup=chosen[0].setup,
         piece=chosen[0].piece,
         helicity=chosen[0].helicity,
+        analysis=chosen[0].analysis,
         variant=preferred_tag or chosen[0].variant,
+        generated_events=sum(item.generated_events or 0 for item in chosen) or None,
         measurement=measurement,
     )
 
@@ -341,13 +507,8 @@ def aggregate_diag_group(
     weighted_entries: List[Tuple[float, DiagnosticRun]] = []
     for item in chosen:
         out = out_by_variant.get(item.variant)
-        if out is not None and out.measurement.error_pb > 0.0:
-            weight = 1.0 / (out.measurement.error_pb ** 2)
-        else:
-            weight = 1.0
+        weight = diagnostic_shard_weight(item, out)
         weighted_entries.append((weight, item))
-
-    total_weight = sum(weight for weight, _ in weighted_entries)
     values: Dict[str, float] = {}
     all_keys = sorted({key for _, item in weighted_entries for key in item.values})
     for key in all_keys:
@@ -371,6 +532,7 @@ def aggregate_diag_group(
         setup=chosen[0].setup,
         piece=chosen[0].piece,
         helicity=chosen[0].helicity,
+        analysis=chosen[0].analysis,
         variant=preferred_tag or chosen[0].variant,
         n_events=n_events,
         values=values,
@@ -536,6 +698,12 @@ def subtract_estimates(
     return result
 
 
+def sum_optional(*values: Optional[float]) -> Optional[float]:
+    if any(value is None for value in values):
+        return None
+    return sum(value for value in values if value is not None)
+
+
 def compute_all_estimates(
     selected_diag: Dict[Tuple[str, str, str], DiagnosticRun],
     selected_out: Dict[Tuple[str, str, str], OutRun],
@@ -548,6 +716,178 @@ def compute_all_estimates(
         nlo = subtract_estimates(pos, neg, components)
         estimates[setup] = {"POSNLO": pos, "NEGNLO": neg, "NLO": nlo}
     return estimates
+
+
+def z_spin_component_estimates(
+    primary_estimates: Dict[str, Dict[str, Dict[str, Dict[str, Optional[float]]]]],
+    split_estimates: Dict[str, Dict[str, Dict[str, Dict[str, Optional[float]]]]],
+) -> Dict[str, Dict[str, Optional[float]]]:
+    if "Z" not in primary_estimates or "Z" not in split_estimates:
+        return {}
+
+    component_map: Dict[str, Dict[str, Optional[float]]] = {}
+    for piece in ("POSNLO", "NEGNLO", "NLO"):
+        primary_piece = primary_estimates["Z"][piece]
+        split_piece = split_estimates["Z"][piece]
+        piece_out: Dict[str, Optional[float]] = {
+            "virt_pb": primary_piece["F_virt"].get("pol_pb"),
+            "cq_even_pb": primary_piece["F_cq_even"].get("pol_pb"),
+            "cq_odd_pb": primary_piece["F_cq_odd"].get("pol_pb"),
+            "cg_even_pb": primary_piece["F_cg_even"].get("pol_pb"),
+            "cg_odd_pb": primary_piece["F_cg_odd"].get("pol_pb"),
+            "rq_even_pb": split_piece["F_rq_even"].get("pol_pb"),
+            "rq_odd_pb": split_piece["F_rq_odd"].get("pol_pb"),
+            "rg_even_pb": split_piece["F_rg_even"].get("pol_pb"),
+            "rg_odd_pb": split_piece["F_rg_odd"].get("pol_pb"),
+        }
+        piece_out["q_even_pb"] = sum_optional(piece_out["cq_even_pb"], piece_out["rq_even_pb"])
+        piece_out["q_odd_pb"] = sum_optional(piece_out["cq_odd_pb"], piece_out["rq_odd_pb"])
+        piece_out["g_even_pb"] = sum_optional(piece_out["cg_even_pb"], piece_out["rg_even_pb"])
+        piece_out["g_odd_pb"] = sum_optional(piece_out["cg_odd_pb"], piece_out["rg_odd_pb"])
+        component_map[piece] = piece_out
+    return component_map
+
+
+def z_shadow_component_estimates(
+    raw_probe_estimates: Dict[str, Dict[str, Dict[str, Dict[str, Optional[float]]]]],
+) -> Dict[str, Dict[str, Optional[float]]]:
+    if "Z" not in raw_probe_estimates:
+        return {}
+
+    component_map: Dict[str, Dict[str, Optional[float]]] = {}
+    for piece in ("POSNLO", "NEGNLO", "NLO"):
+        split_piece = raw_probe_estimates["Z"][piece]
+        piece_out: Dict[str, Optional[float]] = {
+            "cq_odd_raw_probe_pb": split_piece["F_cq_odd_raw_probe"].get("pol_pb"),
+            "cq_odd_raw_shift_pb": split_piece["F_cq_odd_raw_shift"].get("pol_pb"),
+            "rq_odd_raw_probe_pb": split_piece["F_rq_odd_raw_probe"].get("pol_pb"),
+            "rq_odd_raw_shift_pb": split_piece["F_rq_odd_raw_shift"].get("pol_pb"),
+        }
+        piece_out["q_odd_raw_shift_pb"] = sum_optional(
+            piece_out["cq_odd_raw_shift_pb"], piece_out["rq_odd_raw_shift_pb"]
+        )
+        component_map[piece] = piece_out
+    return component_map
+
+
+def dominant_clamp_sector(clip_q_absw_frac: float, clip_qm_absw_frac: float, clip_gm_absw_frac: float) -> str:
+    sector_values = {
+        "q_born": clip_q_absw_frac,
+        "q_mapped": clip_qm_absw_frac,
+        "g_mapped": clip_gm_absw_frac,
+    }
+    ordered = sorted(sector_values.items(), key=lambda item: item[1], reverse=True)
+    top_name, top_value = ordered[0]
+    second_value = ordered[1][1]
+    if top_value <= 1e-12:
+        return "none"
+    if second_value > 1e-12 and abs(top_value - second_value) <= 0.05 * top_value:
+        return "mixed"
+    return top_name
+
+
+def aggregate_z_clamp_summary(
+    selected_diag: Dict[Tuple[str, str, str], DiagnosticRun],
+) -> Dict[str, Dict[str, object]]:
+    summaries: Dict[str, Dict[str, object]] = {}
+    for piece in ("POSNLO", "NEGNLO"):
+        n_eval_total = 0.0
+        w_abs_total = 0.0
+        clip_q_event_num = 0.0
+        clip_q_absw_num = 0.0
+        clip_qm_event_num = 0.0
+        clip_qm_absw_num = 0.0
+        clip_gm_event_num = 0.0
+        clip_gm_absw_num = 0.0
+        pq_raw_sum = pq_sum = pq_clip_sum = 0.0
+        pqm_raw_sum = pqm_sum = pqm_clip_sum = 0.0
+        pgm_raw_sum = pgm_sum = pgm_clip_sum = 0.0
+        aq_raw_sum = aq_sum = aq_shift_sum = 0.0
+        max_abs_pq_raw = max_abs_pq_clip = 0.0
+        max_abs_pqm_raw = max_abs_pqm_clip = 0.0
+        max_abs_pgm_raw = max_abs_pgm_clip = 0.0
+        max_abs_aq_shift = 0.0
+
+        for helicity in ("PP", "PM", "MP", "MM"):
+            entry = selected_diag.get(("Z", piece, helicity))
+            if entry is None or "w_abs" not in entry.values or "n_eval" not in entry.values:
+                continue
+            weight = entry.values["w_abs"]
+            n_eval = entry.values["n_eval"]
+            w_abs_total += weight
+            n_eval_total += n_eval
+
+            clip_q_event_num += entry.values.get("clipQ_event_frac", 0.0) * n_eval
+            clip_q_absw_num += entry.values.get("clipQ_absw_frac", 0.0) * weight
+            clip_qm_event_num += entry.values.get("clipQm_event_frac", 0.0) * n_eval
+            clip_qm_absw_num += entry.values.get("clipQm_absw_frac", 0.0) * weight
+            clip_gm_event_num += entry.values.get("clipGm_event_frac", 0.0) * n_eval
+            clip_gm_absw_num += entry.values.get("clipGm_absw_frac", 0.0) * weight
+
+            pq_raw_sum += entry.values.get("Pq_raw_absw_mean", 0.0) * weight
+            pq_sum += entry.values.get("Pq_absw_mean", 0.0) * weight
+            pq_clip_sum += entry.values.get("Pq_clip_absw_mean", 0.0) * weight
+            pqm_raw_sum += entry.values.get("Pq_m_raw_absw_mean", 0.0) * weight
+            pqm_sum += entry.values.get("Pq_m_absw_mean", 0.0) * weight
+            pqm_clip_sum += entry.values.get("Pq_m_clip_absw_mean", 0.0) * weight
+            pgm_raw_sum += entry.values.get("Pg_m_raw_absw_mean", 0.0) * weight
+            pgm_sum += entry.values.get("Pg_m_absw_mean", 0.0) * weight
+            pgm_clip_sum += entry.values.get("Pg_m_clip_absw_mean", 0.0) * weight
+            aq_raw_sum += entry.values.get("A_qmap_raw_absw_mean", 0.0) * weight
+            aq_sum += entry.values.get("A_qmap_absw_mean", 0.0) * weight
+            aq_shift_sum += entry.values.get("A_qmap_shift_absw_mean", 0.0) * weight
+
+            max_abs_pq_raw = max(max_abs_pq_raw, entry.values.get("maxAbsPq_raw", 0.0))
+            max_abs_pq_clip = max(max_abs_pq_clip, entry.values.get("maxAbsPq_clip", 0.0))
+            max_abs_pqm_raw = max(max_abs_pqm_raw, entry.values.get("maxAbsPq_m_raw", 0.0))
+            max_abs_pqm_clip = max(max_abs_pqm_clip, entry.values.get("maxAbsPq_m_clip", 0.0))
+            max_abs_pgm_raw = max(max_abs_pgm_raw, entry.values.get("maxAbsPg_m_raw", 0.0))
+            max_abs_pgm_clip = max(max_abs_pgm_clip, entry.values.get("maxAbsPg_m_clip", 0.0))
+            max_abs_aq_shift = max(max_abs_aq_shift, entry.values.get("maxAbsA_qmap_raw_shift", 0.0))
+
+        if n_eval_total <= 0.0 or w_abs_total <= 0.0:
+            continue
+
+        clip_q_event_frac = clip_q_event_num / n_eval_total
+        clip_q_absw_frac = clip_q_absw_num / w_abs_total
+        clip_qm_event_frac = clip_qm_event_num / n_eval_total
+        clip_qm_absw_frac = clip_qm_absw_num / w_abs_total
+        clip_gm_event_frac = clip_gm_event_num / n_eval_total
+        clip_gm_absw_frac = clip_gm_absw_num / w_abs_total
+
+        summaries[piece] = {
+            "n_eval": n_eval_total,
+            "w_abs": w_abs_total,
+            "clipQ_event_frac": clip_q_event_frac,
+            "clipQ_absw_frac": clip_q_absw_frac,
+            "clipQm_event_frac": clip_qm_event_frac,
+            "clipQm_absw_frac": clip_qm_absw_frac,
+            "clipGm_event_frac": clip_gm_event_frac,
+            "clipGm_absw_frac": clip_gm_absw_frac,
+            "Pq_raw_absw_mean": pq_raw_sum / w_abs_total,
+            "Pq_absw_mean": pq_sum / w_abs_total,
+            "Pq_clip_absw_mean": pq_clip_sum / w_abs_total,
+            "Pq_m_raw_absw_mean": pqm_raw_sum / w_abs_total,
+            "Pq_m_absw_mean": pqm_sum / w_abs_total,
+            "Pq_m_clip_absw_mean": pqm_clip_sum / w_abs_total,
+            "Pg_m_raw_absw_mean": pgm_raw_sum / w_abs_total,
+            "Pg_m_absw_mean": pgm_sum / w_abs_total,
+            "Pg_m_clip_absw_mean": pgm_clip_sum / w_abs_total,
+            "A_qmap_raw_absw_mean": aq_raw_sum / w_abs_total,
+            "A_qmap_absw_mean": aq_sum / w_abs_total,
+            "A_qmap_shift_absw_mean": aq_shift_sum / w_abs_total,
+            "maxAbsPq_raw": max_abs_pq_raw,
+            "maxAbsPq_clip": max_abs_pq_clip,
+            "maxAbsPq_m_raw": max_abs_pqm_raw,
+            "maxAbsPq_m_clip": max_abs_pqm_clip,
+            "maxAbsPg_m_raw": max_abs_pgm_raw,
+            "maxAbsPg_m_clip": max_abs_pgm_clip,
+            "maxAbsA_qmap_raw_shift": max_abs_aq_shift,
+            "dominant_clamp_sector": dominant_clamp_sector(
+                clip_q_absw_frac, clip_qm_absw_frac, clip_gm_absw_frac
+            ),
+        }
+    return summaries
 
 
 def interference_estimates(
@@ -578,6 +918,7 @@ def build_report(
     out_duplicates: Dict[Tuple[str, str, str], List[Path]],
     preferred_tag: str,
     strict_tag: bool,
+    z_spin_report: bool,
 ) -> str:
     lines: List[str] = []
     if not selected_diag:
@@ -750,6 +1091,171 @@ def build_report(
 
     primary_estimates = compute_all_estimates(selected_diag, selected_out, PRIMARY_COMPONENTS)
     split_estimates = compute_all_estimates(selected_diag, selected_out, REAL_SPLIT_COMPONENTS)
+    raw_probe_estimates = compute_all_estimates(selected_diag, selected_out, RAW_PROBE_COMPONENTS)
+    z_spin_estimates = z_spin_component_estimates(primary_estimates, split_estimates)
+    z_shadow_estimates = z_shadow_component_estimates(raw_probe_estimates)
+    z_clamp_summary = aggregate_z_clamp_summary(selected_diag)
+
+    if z_spin_report and z_spin_estimates:
+        lines.append("=" * 92)
+        lines.append("Z sigma_LL component summary")
+        lines.append("=" * 92)
+        rows = []
+        for component in Z_SPIN_COMPONENTS:
+            rows.append(
+                [
+                    component,
+                    fmt_pb(z_spin_estimates.get("POSNLO", {}).get(component)),
+                    fmt_pb(z_spin_estimates.get("NEGNLO", {}).get(component)),
+                    fmt_pb(z_spin_estimates.get("NLO", {}).get(component)),
+                ]
+            )
+        lines.extend(
+            render_table(
+                ["Component", "POSNLO sigma_LL", "NEGNLO sigma_LL", "NLO sigma_LL"],
+                rows,
+                aligns=("l", "r", "r", "r"),
+            )
+        )
+        lines.append("")
+
+    if z_spin_report and z_shadow_estimates:
+        lines.append("=" * 92)
+        lines.append("Z raw-vs-clamped odd-sector shadow summary")
+        lines.append("=" * 92)
+        rows = []
+        for component in Z_SHADOW_COMPONENTS:
+            rows.append(
+                [
+                    component,
+                    fmt_pb(z_shadow_estimates.get("POSNLO", {}).get(component)),
+                    fmt_pb(z_shadow_estimates.get("NEGNLO", {}).get(component)),
+                    fmt_pb(z_shadow_estimates.get("NLO", {}).get(component)),
+                ]
+            )
+        lines.extend(
+            render_table(
+                ["Component", "POSNLO sigma_LL", "NEGNLO sigma_LL", "NLO sigma_LL"],
+                rows,
+                aligns=("l", "r", "r", "r"),
+            )
+        )
+        lines.append("")
+
+    if z_spin_report and z_clamp_summary:
+        lines.append("=" * 92)
+        lines.append("Z clamp summary")
+        lines.append("=" * 92)
+        frac_rows = []
+        mean_rows = []
+        max_rows = []
+        for piece in ("POSNLO", "NEGNLO"):
+            summary = z_clamp_summary.get(piece)
+            if summary is None:
+                continue
+            frac_rows.append(
+                [
+                    piece,
+                    f"{summary['n_eval']:.0f}",
+                    f"{summary['w_abs']:.6e}",
+                    fmt_unitless(summary["clipQ_event_frac"]),
+                    fmt_unitless(summary["clipQ_absw_frac"]),
+                    fmt_unitless(summary["clipQm_event_frac"]),
+                    fmt_unitless(summary["clipQm_absw_frac"]),
+                    fmt_unitless(summary["clipGm_event_frac"]),
+                    fmt_unitless(summary["clipGm_absw_frac"]),
+                    str(summary["dominant_clamp_sector"]),
+                ]
+            )
+            mean_rows.append(
+                [
+                    piece,
+                    fmt_unitless(summary["Pq_raw_absw_mean"]),
+                    fmt_unitless(summary["Pq_absw_mean"]),
+                    fmt_unitless(summary["Pq_clip_absw_mean"]),
+                    fmt_unitless(summary["Pq_m_raw_absw_mean"]),
+                    fmt_unitless(summary["Pq_m_absw_mean"]),
+                    fmt_unitless(summary["Pq_m_clip_absw_mean"]),
+                    fmt_unitless(summary["Pg_m_raw_absw_mean"]),
+                    fmt_unitless(summary["Pg_m_absw_mean"]),
+                    fmt_unitless(summary["Pg_m_clip_absw_mean"]),
+                    fmt_unitless(summary.get("A_qmap_raw_absw_mean")),
+                    fmt_unitless(summary.get("A_qmap_absw_mean")),
+                    fmt_unitless(summary.get("A_qmap_shift_absw_mean")),
+                ]
+            )
+            max_rows.append(
+                [
+                    piece,
+                    fmt_unitless(summary["maxAbsPq_raw"]),
+                    fmt_unitless(summary["maxAbsPq_clip"]),
+                    fmt_unitless(summary["maxAbsPq_m_raw"]),
+                    fmt_unitless(summary["maxAbsPq_m_clip"]),
+                    fmt_unitless(summary["maxAbsPg_m_raw"]),
+                    fmt_unitless(summary["maxAbsPg_m_clip"]),
+                    fmt_unitless(summary.get("maxAbsA_qmap_raw_shift")),
+                ]
+            )
+        lines.append("Clamp activity:")
+        lines.extend(
+            render_table(
+                [
+                    "Piece",
+                    "n_eval",
+                    "w_abs",
+                    "clipQ_evt",
+                    "clipQ_absw",
+                    "clipQm_evt",
+                    "clipQm_absw",
+                    "clipGm_evt",
+                    "clipGm_absw",
+                    "dominant",
+                ],
+                frac_rows,
+                aligns=("l", "r", "r", "r", "r", "r", "r", "r", "r", "l"),
+            )
+        )
+        lines.append("Raw/clamped abs-weighted means:")
+        lines.extend(
+            render_table(
+                [
+                    "Piece",
+                    "Pq_raw",
+                    "Pq",
+                    "clipQ",
+                    "Pq_m_raw",
+                    "Pq_m",
+                    "clipQm",
+                    "Pg_m_raw",
+                    "Pg_m",
+                    "clipGm",
+                    "A_q_raw",
+                    "A_q",
+                    "A_q_shift",
+                ],
+                mean_rows,
+                aligns=("l", "r", "r", "r", "r", "r", "r", "r", "r", "r", "r", "r", "r"),
+            )
+        )
+        lines.append("Max absolute raw/clip values:")
+        lines.extend(
+            render_table(
+                [
+                    "Piece",
+                    "max|Pq_raw|",
+                    "max|clipQ|",
+                    "max|Pq_m_raw|",
+                    "max|clipQm|",
+                    "max|Pg_m_raw|",
+                    "max|clipGm|",
+                    "max|dA_q|",
+                ],
+                max_rows,
+                aligns=("l", "r", "r", "r", "r", "r", "r", "r"),
+            )
+        )
+        lines.append("")
+
     for setup in sorted(primary_estimates, key=lambda s: (SETUP_ORDER.get(s, 99), s)):
         lines.append("=" * 92)
         lines.append(f"Setup: {setup}")
@@ -800,6 +1306,10 @@ def json_payload(
 ) -> Dict[str, object]:
     primary_estimates = compute_all_estimates(selected_diag, selected_out, PRIMARY_COMPONENTS)
     split_estimates = compute_all_estimates(selected_diag, selected_out, REAL_SPLIT_COMPONENTS)
+    raw_probe_estimates = compute_all_estimates(selected_diag, selected_out, RAW_PROBE_COMPONENTS)
+    z_spin_estimates = z_spin_component_estimates(primary_estimates, split_estimates)
+    z_shadow_estimates = z_shadow_component_estimates(raw_probe_estimates)
+    z_clamp_summary = aggregate_z_clamp_summary(selected_diag)
     return {
         "selected_runs": [
             {
@@ -835,8 +1345,12 @@ def json_payload(
         },
         "primary_estimates": primary_estimates,
         "real_split_estimates": split_estimates,
+        "raw_probe_estimates": raw_probe_estimates,
         "primary_interference_nlo": interference_estimates(primary_estimates, PRIMARY_COMPONENTS),
         "real_split_interference_nlo": interference_estimates(split_estimates, REAL_SPLIT_COMPONENTS),
+        "z_spin_components": z_spin_estimates,
+        "z_shadow_components": z_shadow_estimates,
+        "z_clamp_summary": z_clamp_summary,
     }
 
 
@@ -847,6 +1361,10 @@ def csv_rows(
     rows: List[Dict[str, object]] = []
     primary_estimates = compute_all_estimates(selected_diag, selected_out, PRIMARY_COMPONENTS)
     split_estimates = compute_all_estimates(selected_diag, selected_out, REAL_SPLIT_COMPONENTS)
+    raw_probe_estimates = compute_all_estimates(selected_diag, selected_out, RAW_PROBE_COMPONENTS)
+    z_spin_estimates = z_spin_component_estimates(primary_estimates, split_estimates)
+    z_shadow_estimates = z_shadow_component_estimates(raw_probe_estimates)
+    z_clamp_summary = aggregate_z_clamp_summary(selected_diag)
 
     for _, entry in sorted(selected_diag.items(), key=lambda item: (SETUP_ORDER.get(item[0][0], 99), item[0][0], item[0][1], item[0][2])):
         row = {
@@ -883,7 +1401,11 @@ def csv_rows(
             }
         )
 
-    for name, estimate_map in (("primary_estimate", primary_estimates), ("real_split_estimate", split_estimates)):
+    for name, estimate_map in (
+        ("primary_estimate", primary_estimates),
+        ("real_split_estimate", split_estimates),
+        ("raw_probe_estimate", raw_probe_estimates),
+    ):
         for setup, piece_map in estimate_map.items():
             for piece, comp_map in piece_map.items():
                 for component, values in comp_map.items():
@@ -926,6 +1448,59 @@ def csv_rows(
                     }
                 )
 
+    for piece, component_map in z_spin_estimates.items():
+        for component, value in component_map.items():
+            rows.append(
+                {
+                    "row_type": "z_spin_component",
+                    "setup": "Z",
+                    "piece": piece,
+                    "helicity": "SIGMA_LL",
+                    "component": component,
+                    "observable": "pol_pb",
+                    "value_pb": value,
+                    "run_name": "",
+                    "variant": "",
+                    "n_events": "",
+                    "path": "",
+                }
+            )
+
+    for piece, component_map in z_shadow_estimates.items():
+        for component, value in component_map.items():
+            rows.append(
+                {
+                    "row_type": "z_shadow_component",
+                    "setup": "Z",
+                    "piece": piece,
+                    "helicity": "SIGMA_LL",
+                    "component": component,
+                    "observable": "pol_pb",
+                    "value_pb": value,
+                    "run_name": "",
+                    "variant": "",
+                    "n_events": "",
+                    "path": "",
+                }
+            )
+
+    for piece, summary in z_clamp_summary.items():
+        row = {
+            "row_type": "z_clamp_summary",
+            "setup": "Z",
+            "piece": piece,
+            "helicity": "",
+            "component": "",
+            "observable": "",
+            "value_pb": "",
+            "run_name": "",
+            "variant": "",
+            "n_events": summary.get("n_eval"),
+            "path": "",
+        }
+        row.update(summary)
+        rows.append(row)
+
     return rows
 
 
@@ -962,6 +1537,30 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Resolve and report only -RIVETFOFIXED logs/outputs.",
     )
+    parser.add_argument(
+        "--z-spin-report",
+        action="store_true",
+        help="Append a focused Z-only sigma_LL component and clamp summary.",
+    )
+    parser.add_argument(
+        "--setup",
+        action="append",
+        help="Restrict to one or more setups (for example: Z or GAMMA,Z).",
+    )
+    parser.add_argument(
+        "--piece",
+        action="append",
+        help="Restrict to one or more pieces (for example: POSNLO,NEGNLO).",
+    )
+    parser.add_argument(
+        "--helicity",
+        action="append",
+        help="Restrict to one or more helicities (for example: PP,PM,MP,MM or 00).",
+    )
+    parser.add_argument(
+        "--name-filter",
+        help="Keep only runs whose file name or run name contains this substring.",
+    )
     parser.add_argument("--json-out", help="Optional path to write a structured JSON summary.")
     parser.add_argument("--csv-out", help="Optional path to write a flattened CSV summary.")
     return parser.parse_args(argv)
@@ -973,19 +1572,52 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         raise SystemExit("Use at most one of --rivet, --rivetfo, and --rivetfofixed.")
     base_dir = Path(args.base_dir).resolve()
 
-    diag_entries = [entry for path in sorted(base_dir.rglob("DIS-POL-POWHEG*.log")) if (entry := parse_diagnostic_log(path)) is not None]
-    out_entries = [entry for path in sorted(base_dir.rglob("DIS-POL-*.out")) if (entry := parse_out(path)) is not None]
     requested_analysis = (
         "RIVETFOFIXED" if args.rivetfofixed else
         ("RIVETFO" if args.rivetfo else ("RIVET" if args.rivet else ""))
     )
-    diag_entries = [entry for entry in diag_entries if entry.analysis == requested_analysis]
-    out_entries = [entry for entry in out_entries if entry.analysis == requested_analysis]
+    setup_filter = parse_filter_values(args.setup, uppercase=True)
+    piece_filter = parse_filter_values(args.piece, uppercase=True)
+    helicity_filter = parse_filter_values(args.helicity, uppercase=True)
+    diag_entries = [
+        entry
+        for path in sorted(base_dir.rglob("DIS-POL-POWHEG*.log"))
+        if path_matches_prefilters(
+            path,
+            requested_analysis,
+            setup_filter,
+            piece_filter,
+            helicity_filter,
+            args.name_filter,
+        )
+        if (entry := parse_diagnostic_log(path)) is not None
+    ]
+    out_entries = [
+        entry
+        for path in sorted(base_dir.rglob("DIS-POL-*.out"))
+        if path_matches_prefilters(
+            path,
+            requested_analysis,
+            setup_filter,
+            piece_filter,
+            helicity_filter,
+            args.name_filter,
+        )
+        if (entry := parse_out(path)) is not None
+    ]
 
     selected_out, out_duplicates = select_best_lo(out_entries, args.tag, args.strict_tag)
     selected_diag, diag_duplicates = select_best_runs(diag_entries, out_entries, args.tag, args.strict_tag)
 
-    report = build_report(selected_diag, diag_duplicates, selected_out, out_duplicates, args.tag, args.strict_tag)
+    report = build_report(
+        selected_diag,
+        diag_duplicates,
+        selected_out,
+        out_duplicates,
+        args.tag,
+        args.strict_tag,
+        args.z_spin_report,
+    )
     print(report, end="")
 
     if args.json_out:

@@ -66,4 +66,3 @@ void TwoCutBase::Init() {
      "particles in a hard sub-process.");
 
 }
-

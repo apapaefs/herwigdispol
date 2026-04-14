@@ -7,17 +7,17 @@ leaving the validated subtraction, hardest-emission generation, and NLO weights
 unchanged.
 
 The implementation point is after
-[`DISBase::generateHardest()`](../../../src/herwig/MatrixElement/DIS/DISBase.cc#L865)
+[`DISBase::generateHardest()`](/Users/apapaefs/Projects/HerwigPol/HerwigSource/Herwig-7.3.0/MatrixElement/DIS/DISBase.cc#L865)
 has already selected the emission and created the fresh `2->3` particles. At
 that point a `HardVertex` built from an exact `2->3`
-[`ProductionMatrixElement`](../../../src/herwig/MatrixElement/ProductionMatrixElement.h)
+[`ProductionMatrixElement`](/Users/apapaefs/Projects/HerwigPol/HerwigSource/Herwig-7.3.0/MatrixElement/ProductionMatrixElement.h)
 can be attached purely for spin propagation. No subtraction term, no POWHEG
 acceptance kernel, and no NLO normalization formula needs to be modified.
 
 ## Implementation changes
 
 ### 1. Git bootstrap
-- initialize the curated repository in this clone
+- initialize a git repository at `/Users/apapaefs/Projects/HerwigPol`
 - add a repository-level `.gitignore` covering generated objects, LaTeX build
   files, Herwig run artifacts, shard outputs, and campaign summaries
 - make an initial baseline commit before any spin-only changes

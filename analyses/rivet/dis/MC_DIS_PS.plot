@@ -44,7 +44,7 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/pT2
-Title=Dijet-selected subleading-jet transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
+Title=Dijet-selected 2nd-jet transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
 XLabel=$p^{\mathrm{jet2}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$ [pb/GeV]
 LogY=1
@@ -72,7 +72,7 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/Q2PreCut
-Title=Inclusive DIS cross section before dijet cuts $\mathrm{d}\sigma/\mathrm{d}Q^2$
+Title=Inclusive DIS cross section $\mathrm{d}\sigma/\mathrm{d}Q^2$
 XLabel=$Q^2$ / GeV$^2$
 YLabel=$\mathrm{d}\sigma/\mathrm{d}Q^2$ [pb/GeV$^2$]
 LogX=1
@@ -80,27 +80,27 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/XBjPreCut
-Title=Inclusive Bjorken-$x$ distribution before dijet cuts $\mathrm{d}\sigma/\mathrm{d}x_{Bj}$
+Title=Inclusive Bjorken-$x$ distribution $\mathrm{d}\sigma/\mathrm{d}x_{Bj}$
 XLabel=$x_{Bj}$
 YLabel=$\mathrm{d}\sigma/\mathrm{d}x_{Bj}$ [pb]
 LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/YPreCut
-Title=Inclusive inelasticity distribution before dijet cuts $\mathrm{d}\sigma/\mathrm{d}y$
+Title=Inclusive inelasticity distribution $\mathrm{d}\sigma/\mathrm{d}y$
 XLabel=$y$
 YLabel=$\mathrm{d}\sigma/\mathrm{d}y$ [pb]
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/pT1PreCut
-Title=Inclusive leading-jet transverse momentum before dijet cuts $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,B}$
+Title=Inclusive leading-jet transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,B}$
 XLabel=$p^{\mathrm{jet1}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,B}$ [pb/GeV]
 LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/pT2PreCut
-Title=Inclusive subleading-jet transverse momentum before dijet cuts $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
+Title=Inclusive 2nd-jet transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
 XLabel=$p^{\mathrm{jet2}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$ [pb/GeV]
 LogY=1
@@ -114,14 +114,14 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/pT3
-Title=Accepted third-jet transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet3}}_{T,B}$
+Title=Accepted 3rd-jet transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet3}}_{T,B}$
 XLabel=$p^{\mathrm{jet3}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet3}}_{T,B}$ [pb/GeV]
 LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/pT3OverpT1
-Title=Accepted third-to-leading jet transverse-momentum ratio $\mathrm{d}\sigma/\mathrm{d}(p^{\mathrm{jet3}}_{T,B}/p^{\mathrm{jet1}}_{T,B})$
+Title=Accepted 3rd-to-leading jet transverse-momentum ratio $\mathrm{d}\sigma/\mathrm{d}(p^{\mathrm{jet3}}_{T,B}/p^{\mathrm{jet1}}_{T,B})$
 XLabel=$p^{\mathrm{jet3}}_{T,B} / p^{\mathrm{jet1}}_{T,B}$
 YLabel=$\mathrm{d}\sigma/\mathrm{d}(p^{\mathrm{jet3}}_{T,B}/p^{\mathrm{jet1}}_{T,B})$ [pb]
 LogY=1
@@ -135,7 +135,7 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/Phi3
-Title=Accepted third-jet azimuth relative to the lepton plane $\mathrm{d}\sigma/\mathrm{d}\phi_3$
+Title=Accepted 3rd-jet azimuth relative to the lepton plane $\mathrm{d}\sigma/\mathrm{d}\phi_3$
 XLabel=$\phi_3$
 YLabel=$\mathrm{d}\sigma/\mathrm{d}\phi_3$ [pb]
 # END PLOT
@@ -205,7 +205,7 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/DpT2
-Title=Dijet-selected polarized subleading-jet transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
+Title=Dijet-selected polarized 2nd-jet transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
 XLabel=$p^{\mathrm{jet2}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$ [pb/GeV]
 LogY=1
@@ -233,7 +233,7 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/DQ2PreCut
-Title=Inclusive polarized DIS cross section before dijet cuts $\mathrm{d}\Delta\sigma/\mathrm{d}Q^2$
+Title=Inclusive polarized DIS cross section $\mathrm{d}\Delta\sigma/\mathrm{d}Q^2$
 XLabel=$Q^2$ / GeV$^2$
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}Q^2$ [pb/GeV$^2$]
 LogX=1
@@ -241,27 +241,27 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/DXBjPreCut
-Title=Inclusive polarized Bjorken-$x$ distribution before dijet cuts $\mathrm{d}\Delta\sigma/\mathrm{d}x_{Bj}$
+Title=Inclusive polarized Bjorken-$x$ distribution $\mathrm{d}\Delta\sigma/\mathrm{d}x_{Bj}$
 XLabel=$x_{Bj}$
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}x_{Bj}$ [pb]
 LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/DYPreCut
-Title=Inclusive polarized inelasticity distribution before dijet cuts $\mathrm{d}\Delta\sigma/\mathrm{d}y$
+Title=Inclusive polarized inelasticity distribution $\mathrm{d}\Delta\sigma/\mathrm{d}y$
 XLabel=$y$
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}y$ [pb]
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/DpT1PreCut
-Title=Inclusive polarized leading-jet transverse momentum before dijet cuts $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,B}$
+Title=Inclusive polarized leading-jet transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,B}$
 XLabel=$p^{\mathrm{jet1}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,B}$ [pb/GeV]
 LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/DpT2PreCut
-Title=Inclusive polarized subleading-jet transverse momentum before dijet cuts $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
+Title=Inclusive polarized 2nd-jet transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
 XLabel=$p^{\mathrm{jet2}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$ [pb/GeV]
 LogY=1
@@ -275,14 +275,14 @@ LogY=0
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/DpT3
-Title=Accepted polarized third-jet transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet3}}_{T,B}$
+Title=Accepted polarized 3rd-jet transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet3}}_{T,B}$
 XLabel=$p^{\mathrm{jet3}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet3}}_{T,B}$ [pb/GeV]
 LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/DpT3OverpT1
-Title=Accepted polarized third-to-leading jet transverse-momentum ratio $\mathrm{d}\Delta\sigma/\mathrm{d}(p^{\mathrm{jet3}}_{T,B}/p^{\mathrm{jet1}}_{T,B})$
+Title=Accepted polarized 3rd-to-leading jet transverse-momentum ratio $\mathrm{d}\Delta\sigma/\mathrm{d}(p^{\mathrm{jet3}}_{T,B}/p^{\mathrm{jet1}}_{T,B})$
 XLabel=$p^{\mathrm{jet3}}_{T,B} / p^{\mathrm{jet1}}_{T,B}$
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}(p^{\mathrm{jet3}}_{T,B}/p^{\mathrm{jet1}}_{T,B})$ [pb]
 LogY=1
@@ -296,7 +296,7 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/DPhi3
-Title=Accepted polarized third-jet azimuth relative to the lepton plane $\mathrm{d}\Delta\sigma/\mathrm{d}\phi_3$
+Title=Accepted polarized 3rd-jet azimuth relative to the lepton plane $\mathrm{d}\Delta\sigma/\mathrm{d}\phi_3$
 XLabel=$\phi_3$
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}\phi_3$ [pb]
 # END PLOT
@@ -354,4 +354,11 @@ YLabel=$A_{LL}$
 Title=Double-spin asymmetry $A_{LL}(B_C)$
 XLabel=$B_C$
 YLabel=$A_{LL}$
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/ALLBroadeningCumulative
+Title=Cumulative broadening double-spin asymmetry $A_{LL}(B_C > B_C^{\mathrm{cut}})$
+XLabel=$B_C^{\mathrm{cut}}$
+YLabel=$A_{LL}(B_C > B_C^{\mathrm{cut}})$
+LogY=0
 # END PLOT

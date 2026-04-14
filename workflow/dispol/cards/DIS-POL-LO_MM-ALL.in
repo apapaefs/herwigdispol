@@ -34,17 +34,19 @@ cd /Herwig/Generators
 # no pdfs for leptons
 set /Herwig/Shower/ShowerHandler:PDFB /Herwig/Partons/ShowerLOPDF
 set /Herwig/Partons/MPIExtractor:SecondPDF  /Herwig/Partons/MPIPDF
-#set /Herwig/Partons/EPPolarizedExtractor:SecondPDF  /Herwig/Partons/HardNLOPDF
+#set /Herwig/Partons/EPPolarizedExtractor:SecondPDF  /Herwig/Partons/HardLOPDF
 set /Herwig/Shower/ShowerHandler:Interactions QEDQCD
 
 
 create ThePEG::LHAPDF /Herwig/Partons/LHAPDF ThePEGLHAPDF.so
 set /Herwig/Partons/LHAPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+set /Herwig/Partons/HardNLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+set /Herwig/Partons/ShowerNLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
 set /Herwig/Partons/RemnantDecayer:AllowTop Yes
 set /Herwig/Partons/LHAPDF:RemnantHandler /Herwig/Partons/HadronRemnants
-set /Herwig/Particles/p+:PDF /Herwig/Partons/LHAPDF
-set /Herwig/Partons/EPPolarizedExtractor:SecondPDF  /Herwig/Partons/LHAPDF
-set /Herwig/Partons/HardNLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+set /Herwig/Particles/p+:PDF /Herwig/Partons/HardLOPDF
+set /Herwig/Partons/EPPolarizedExtractor:SecondPDF  /Herwig/Partons/HardLOPDF
+set /Herwig/Partons/HardLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
 set /Herwig/Partons/ShowerLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
 
 
@@ -67,6 +69,32 @@ set /Herwig/Cuts/Cuts:MHatMin 0.
 # set the electron/positron hard process mass to zero
 set /Herwig/Particles/e-:HardProcessMass 0
 set /Herwig/Particles/e+:HardProcessMass 0
+
+# set the quark hard process masses to zero for massless DIS comparisons
+set /Herwig/Particles/u:HardProcessMass 0*GeV
+set /Herwig/Particles/ubar:HardProcessMass 0*GeV
+set /Herwig/Particles/d:HardProcessMass 0*GeV
+set /Herwig/Particles/dbar:HardProcessMass 0*GeV
+set /Herwig/Particles/s:HardProcessMass 0*GeV
+set /Herwig/Particles/sbar:HardProcessMass 0*GeV
+set /Herwig/Particles/c:HardProcessMass 0*GeV
+set /Herwig/Particles/cbar:HardProcessMass 0*GeV
+set /Herwig/Particles/b:HardProcessMass 0*GeV
+set /Herwig/Particles/bbar:HardProcessMass 0*GeV
+
+# align nominal masses with the hard-process masses for consistent massless plain-run tests
+do /Herwig/Particles/e-:AdjustNominalMass
+do /Herwig/Particles/e+:AdjustNominalMass
+do /Herwig/Particles/u:AdjustNominalMass
+do /Herwig/Particles/ubar:AdjustNominalMass
+do /Herwig/Particles/d:AdjustNominalMass
+do /Herwig/Particles/dbar:AdjustNominalMass
+do /Herwig/Particles/s:AdjustNominalMass
+do /Herwig/Particles/sbar:AdjustNominalMass
+do /Herwig/Particles/c:AdjustNominalMass
+do /Herwig/Particles/cbar:AdjustNominalMass
+do /Herwig/Particles/b:AdjustNominalMass
+do /Herwig/Particles/bbar:AdjustNominalMass
 
 
 set /Herwig/Particles/W+:NominalMass 80.450
@@ -91,6 +119,36 @@ set /Herwig/EventHandlers/EventHandler:DecayHandler NULL
 ##################################################
 cd /Herwig/MatrixElements/
 
+get MEDISNC:UseNativeDISWindowGeneration
+set MEDISNC:UseNativeDISWindowGeneration Yes
+get MEDISNC:UseNativeDISWindowGeneration
+get MEDISNCPol:UseNativeDISWindowGeneration
+set MEDISNCPol:UseNativeDISWindowGeneration Yes
+get MEDISNCPol:UseNativeDISWindowGeneration
+get PowhegMEDISNC:UseNativeDISWindowGeneration
+set PowhegMEDISNC:UseNativeDISWindowGeneration Yes
+get PowhegMEDISNC:UseNativeDISWindowGeneration
+get PowhegMEDISNCPol:UseNativeDISWindowGeneration
+set PowhegMEDISNCPol:UseNativeDISWindowGeneration Yes
+get PowhegMEDISNCPol:UseNativeDISWindowGeneration
+get MEDISNC:UseFiniteWidthSpacelikeZPropagator
+set MEDISNC:UseFiniteWidthSpacelikeZPropagator Yes
+get MEDISNC:UseFiniteWidthSpacelikeZPropagator
+get MEDISNCPol:UseFiniteWidthSpacelikeZPropagator
+set MEDISNCPol:UseFiniteWidthSpacelikeZPropagator Yes
+get MEDISNCPol:UseFiniteWidthSpacelikeZPropagator
+get PowhegMEDISNC:UseFiniteWidthSpacelikeZPropagator
+set PowhegMEDISNC:UseFiniteWidthSpacelikeZPropagator Yes
+get PowhegMEDISNC:UseFiniteWidthSpacelikeZPropagator
+get PowhegMEDISNCPol:UseFiniteWidthSpacelikeZPropagator
+set PowhegMEDISNCPol:UseFiniteWidthSpacelikeZPropagator Yes
+get PowhegMEDISNCPol:UseFiniteWidthSpacelikeZPropagator
+
+# set MEDISNC:SamplingPower 0.2
+# set MEDISNCPol:SamplingPower 0.2
+# set PowhegMEDISNC:SamplingPower 0.2
+# set PowhegMEDISNCPol:SamplingPower 0.2
+
 # Neutral current DIS
 insert SubProcess:MatrixElements[0] MEDISNC
 set MEDISNC:GammaZ All
@@ -102,7 +160,6 @@ set /Herwig/Model:QCD/AlphaS 0.118
 set /Herwig/Model:EW/Scheme alphaMZScheme
 set /Herwig/Model:EW/AlphaEMMZ 0.00729927
 set /Herwig/Model:EW/AlphaEM   0.00729927
-set /Herwig/Model:EW/Sin2ThetaW 0.2260
 set /Herwig/Vertices/FFPVertex:Coupling FixedSM
 set /Herwig/Vertices/FFZVertex:Coupling FixedSM
 
@@ -120,9 +177,9 @@ set /Herwig/Vertices/FFZVertex:Coupling FixedSM
 ###################################################
 ##  Need to use an NLO PDF
 ###################################################
-# set /Herwig/Particles/p+:PDF    /Herwig/Partons/HardNLOPDF
-# set /Herwig/Particles/pbar-:PDF /Herwig/Partons/HardNLOPDF
-# set /Herwig/Partons/EPExtractor:SecondPDF  /Herwig/Partons/HardNLOPDF
+# set /Herwig/Particles/p+:PDF    /Herwig/Partons/HardLOPDF
+# set /Herwig/Particles/pbar-:PDF /Herwig/Partons/HardLOPDF
+# set /Herwig/Partons/EPExtractor:SecondPDF  /Herwig/Partons/HardLOPDF
 #
 ###################################################
 ##  Setup the POWHEG shower
@@ -167,7 +224,6 @@ cd /Herwig/Generators
 get /Herwig/Model:EW/Scheme
 get /Herwig/Model:EW/AlphaEMMZ
 get /Herwig/Vertices/FFPVertex:Coupling
-get /Herwig/Model:EW/Sin2ThetaW
 get /Herwig/Particles/Z0:NominalMass
 get /Herwig/Particles/W+:NominalMass
 saverun DIS-POL-LO_MM-ALL EventGenerator
