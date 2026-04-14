@@ -282,6 +282,19 @@ The paper associated with this repository is titled:
 
 - `Polarized Deep-Inelastic Scattering with Spin Correlations in Herwig 7`
 
+## License
+
+The modified Herwig 7 and ThePEG 2.3.0 source snapshots bundled in this
+repository are distributed under the terms of the GNU General Public License,
+version 3 (GPLv3). A top-level copy of the GPLv3 text is provided in
+`COPYING`, and the corresponding component-level license files are retained in:
+
+- `src/herwig/COPYING`
+- `src/thepeg/COPYING`
+
+Additional component-specific notices and exceptions remain in the relevant
+subdirectories, where applicable.
+
 ## Acknowledgments
 
 We would like to thank Daniel de Florian for useful discussions and for
