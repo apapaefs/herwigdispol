@@ -78,17 +78,19 @@ struct HepMCTraits<HepMC::GenEvent>
     EventT * e = new EventT(HepMC::Units::GEV, HepMC::Units::MM);
     e->set_event_number(evno);
     e->set_event_number(evno);
-    //std::vector<std::string> wnames;
+    std::vector<std::string> wnames;
     std::vector<double> wvalues;
     
-    //wnames.push_back("Default");
+    wnames.push_back("Default");
     wvalues.push_back(weight);
     for ( map<string,double>::const_iterator w = optionalWeights.begin();
 	  w != optionalWeights.end(); ++w ) {
-    //wnames.push_back(w->first);
-    wvalues.push_back(w->second);
+      wnames.push_back(w->first);
+      wvalues.push_back(w->second);
     }
-    //e->run_info()->set_weight_names(wnames);
+    if ( !e->run_info() )
+      e->set_run_info(std::make_shared<HepMC::GenRunInfo>());
+    e->run_info()->set_weight_names(wnames);
     e->weights()=wvalues;    
   return e;
   }

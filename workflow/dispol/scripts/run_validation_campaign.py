@@ -10,6 +10,7 @@ neutral-current DIS comparison:
   - helicities:
       * GAMMA: 00, PP, PM
       * Z/ALL: 00, PP, PM, MP, MM
+      * CC (default e- beam): 00, MP, MM
 
 After the runs finish, it invokes the existing extraction scripts to produce
 the validation summaries, merges shard YODA files back into one logical-run
@@ -40,6 +41,9 @@ import yoda
 
 from analyze_DIS_polarized import (
     SCALE_VARIATION_FACTORS,
+    _bin_value_error,
+    _new_estimate,
+    _x_edges,
     build_dis_polarized_objects,
     build_plot_scatter_objects,
     build_scale_envelope_plot_yoda,
@@ -50,7 +54,7 @@ from analyze_DIS_polarized import (
     write_yoda_gz as write_analysis_yoda_gz,
 )
 from extract_dis_out_results import parse_measurement
-from poldis_top_to_yoda import convert_topdrawer_to_yoda
+from poldis_top_to_yoda import convert_topdrawer_to_yoda, set_bin_val_err
 from rivet_scale_plot_postprocess import (
     rewrite_no_scale_ratio_plot_scripts,
     rewrite_scale_envelope_plot_scripts,
@@ -65,6 +69,7 @@ except ImportError:
 DEFAULT_BASE_DIR = Path(__file__).resolve().parent
 GAMMA_HELICITIES = ("00", "PP", "PM")
 FULL_HELICITIES = ("00", "PP", "PM", "MP", "MM")
+CC_ELECTRON_HELICITIES = ("00", "MP", "MM")
 SETUP_ORDER = ("GAMMA", "Z", "ALL")
 PS_SETUP_ORDER = ("SPINVAL", "SPINCOMP", "SPINHAD")
 SUPPORTED_SETUPS = SETUP_ORDER + ("CC",) + PS_SETUP_ORDER
@@ -79,9 +84,13 @@ PDF_PROFILES = {
         "polarized_diff": "NNPDFpol20_nlo_as_01180",
     },
 }
-DEFAULT_PDF_PROFILE = "hybrid"
+DEFAULT_PDF_PROFILE = "nnpdf_paired"
 DEFAULT_POLDIS_MODE = "auto"
 POLDIS_MODE_CHOICES = ("auto", "run", "skip")
+DEFAULT_POLDIS_ERROR_MODE = "stat"
+POLDIS_ERROR_MODE_CHOICES = ("stat", "scale", "stat+scale")
+DEFAULT_POLDIS_EVENTS = 1_600_000_000
+DEFAULT_POLDIS_SHARDS = 96
 POLDIS_WINDOW_LABEL = "broad"
 POLDIS_RUNNABLE_SETUPS = ("GAMMA", "Z", "ALL", "CC")
 PROGRESS_MARKER_RE = re.compile(r"event>\s+(?P<current>init|\d+)(?:\s+(?P<total>\d+)|/(?P<total_alt>\d+))")
@@ -370,9 +379,12 @@ def render_table(
 def analysis_variant_from_args(args: argparse.Namespace) -> str:
     rivet = bool(getattr(args, "rivet", False))
     rivetfo = bool(getattr(args, "rivetfo", False))
-    selected = int(rivet) + int(rivetfo)
+    rivetweights = bool(getattr(args, "rivetweights", False))
+    selected = int(rivet) + int(rivetfo) + int(rivetweights)
     if selected > 1:
-        raise ValueError("Use at most one of --rivet and --rivetfo.")
+        raise ValueError("Use at most one of --rivet, --rivetfo, and --rivetweights.")
+    if rivetweights:
+        return "RIVETWEIGHTS"
     if rivetfo:
         return "RIVETFO"
     if rivet:
@@ -385,6 +397,8 @@ def analysis_variant_args(analysis_variant: str) -> List[str]:
         return ["--rivet"]
     if analysis_variant == "RIVETFO":
         return ["--rivetfo"]
+    if analysis_variant == "RIVETWEIGHTS":
+        return ["--rivetweights"]
     return []
 
 
@@ -396,11 +410,11 @@ def resolved_analysis_variant_from_args(args: argparse.Namespace) -> str:
 
 
 def use_rivet_runtime(analysis_variant: str) -> bool:
-    return analysis_variant in {"RIVET", "RIVETFO", "RIVETPS"} or analysis_variant.startswith("RIVETPS-")
+    return analysis_variant in {"RIVET", "RIVETFO", "RIVETWEIGHTS", "RIVETPS"} or analysis_variant.startswith("RIVETPS-")
 
 
 def use_lo_runtime(analysis_variant: str) -> bool:
-    return analysis_variant not in {"RIVETFO", "RIVETPS"} and not analysis_variant.startswith("RIVETPS-")
+    return analysis_variant not in {"RIVETFO", "RIVETWEIGHTS", "RIVETPS"} and not analysis_variant.startswith("RIVETPS-")
 
 
 def use_raw_powheg_runtime(analysis_variant: str, enabled: bool) -> bool:
@@ -545,6 +559,14 @@ def raw_powheg_rivetplot_title() -> str:
 RAW_POWHEG_CHANNELS = ("Compton", "BGF")
 
 
+def poldis_scale_variation_title(variation_name: str) -> str:
+    if variation_name == "ScaleFactorDown":
+        return "POLDIS_scale_down"
+    if variation_name == "ScaleFactorUp":
+        return "POLDIS_scale_up"
+    return f"POLDIS_{variation_name}"
+
+
 def raw_powheg_channel_rivetplot_title(channel: str) -> str:
     return f"Raw_POWHEG_{channel}"
 
@@ -603,12 +625,42 @@ def resolve_poldis_mode_requested(
     return DEFAULT_POLDIS_MODE
 
 
+def resolve_poldis_error_mode_requested(
+    requested: Optional[str],
+    manifest: Optional[Dict[str, object]] = None,
+) -> str:
+    if requested is not None:
+        return requested
+    if manifest is not None:
+        manifest_value = manifest.get("poldis_error_mode")
+        if isinstance(manifest_value, str) and manifest_value in POLDIS_ERROR_MODE_CHOICES:
+            return manifest_value
+    return DEFAULT_POLDIS_ERROR_MODE
+
+
 def should_build_dynamic_poldis_refs(poldis_mode: str, pdf_profile: str) -> bool:
     if poldis_mode == "run":
         return True
     if poldis_mode == "skip":
         return False
     return pdf_profile != "hybrid"
+
+
+def external_poldis_reference_campaign(args: argparse.Namespace) -> Optional[str]:
+    value = getattr(args, "poldis_refs_campaign", None)
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def should_build_dynamic_poldis_refs_for_args(
+    args: argparse.Namespace,
+    poldis_mode: str,
+    pdf_profile: str,
+) -> bool:
+    if external_poldis_reference_campaign(args):
+        return False
+    return should_build_dynamic_poldis_refs(poldis_mode, pdf_profile)
 
 
 def profile_generated_input_root_rel(tag: str, profile: str) -> Path:
@@ -698,6 +750,103 @@ def materialize_pdf_profile_inputs(base_dir: Path, tag: str, profile: str, dry_r
             continue
         target_path.write_text(rendered)
     return str(root.resolve())
+
+
+def rewrite_rivetweights_card_text(source_text: str, target_stem: str) -> str:
+    text = source_text
+    anchor = None
+    anchor_patterns = (
+        r"^set /Herwig/MatrixElements/PowhegMEDISNCPol:UseQ2ScaleInPOWHEGEmission \S+\s*$",
+        r"^set PowhegMEDISNCPol:UseQ2ScaleInPOWHEGEmission \S+\s*$",
+        r"^set /Herwig/MatrixElements/PowhegMEDISNCPol:Contribution \S+\s*$",
+        r"^set PowhegMEDISNCPol:Contribution \S+\s*$",
+    )
+    for pattern in anchor_patterns:
+        match = re.search(pattern, text, flags=re.MULTILINE)
+        if match:
+            anchor = match.group(0)
+            break
+    if anchor is None:
+        raise RuntimeError("Could not locate PowhegMEDISNCPol settings in RIVETFO source card")
+
+    rivetweights_setting = "set /Herwig/MatrixElements/PowhegMEDISNCPol:GenerateRivetWeights Yes"
+    text, setting_count = re.subn(
+        r"^set\s+(?:/Herwig/MatrixElements/)?PowhegMEDISNCPol:GenerateRivetWeights\s+\S+\s*$",
+        rivetweights_setting,
+        text,
+        flags=re.MULTILINE,
+    )
+    if setting_count == 0:
+        text, _ = set_or_insert_card_setting(
+            text,
+            "/Herwig/MatrixElements/PowhegMEDISNCPol:GenerateRivetWeights",
+            "Yes",
+            anchor,
+        )
+
+    analysis_line = (
+        "insert /Herwig/Analysis/Rivet:Analyses 0 "
+        "MC_DIS_BREIT:JETINPUT=MEPARTONS:RIVETWEIGHTS=YES"
+    )
+    text, analysis_count = re.subn(
+        r"^\s*insert\s+/Herwig/Analysis/Rivet:Analyses\s+0\s+MC_DIS_BREIT(?::\S+)?\s*$",
+        analysis_line,
+        text,
+        flags=re.MULTILINE,
+    )
+    if analysis_count == 0:
+        text, analysis_count = re.subn(
+            r"^(?P<indent>\s*saverun\s+)",
+            analysis_line + "\n" + r"\g<indent>",
+            text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+    if analysis_count == 0:
+        raise RuntimeError("Could not insert MC_DIS_BREIT RIVETWEIGHTS analysis line")
+
+    text, saverun_count = re.subn(
+        r"^(?P<indent>\s*saverun\s+)\S+(?P<suffix>\s+EventGenerator(?:\s*#.*)?)$",
+        rf"\g<indent>{target_stem}\g<suffix>",
+        text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if saverun_count == 0:
+        raise RuntimeError("Could not rewrite saverun line for RIVETWEIGHTS card")
+    return text
+
+
+def materialize_rivetweights_inputs(
+    base_dir: Path,
+    tag: str,
+    profile: str,
+    setups: Sequence[str],
+    dry_run: bool = False,
+) -> None:
+    selected_setups = normalize_campaign_setups(setups)
+    root = profile_generated_input_root_path(base_dir, tag, profile) if profile != "hybrid" else base_dir
+    source_root = root if profile != "hybrid" else base_dir
+    for setup in selected_setups:
+        if setup not in SETUP_ORDER:
+            raise ValueError("RIVETWEIGHTS is implemented for NC setups only: GAMMA, Z, and ALL.")
+        for order in ("POSNLO", "NEGNLO"):
+            source_stem = build_logical_run_stem(setup, order, "00", "RIVETFO", "nominal")
+            target_stem = build_logical_run_stem(setup, order, "00", "RIVETWEIGHTS", "nominal")
+            source_path = source_root / f"{source_stem}.in"
+            if not source_path.exists() and profile != "hybrid":
+                source_path = base_dir / f"{source_stem}.in"
+            target_path = root / f"{target_stem}.in"
+            if dry_run:
+                print(f"[dry-run] generate-rivetweights-card {source_path} -> {target_path}")
+                continue
+            if not source_path.exists():
+                raise FileNotFoundError(f"Missing RIVETFO source card for RIVETWEIGHTS: {source_path}")
+            rendered = rewrite_rivetweights_card_text(source_path.read_text(), target_stem)
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            if target_path.exists() and target_path.read_text() == rendered:
+                continue
+            target_path.write_text(rendered)
 
 
 def apply_legend_annotation(objects: Dict[str, object], legend: str) -> None:
@@ -792,7 +941,7 @@ def build_logical_run_stem(
     return f"{base}{analysis_suffix}{scale_variation_stem_suffix(scale_variation)}"
 
 
-def generated_scale_variation_in_file(tag: str, stem: str, pdf_profile: str = "hybrid") -> str:
+def generated_scale_variation_in_file(tag: str, stem: str, pdf_profile: str = DEFAULT_PDF_PROFILE) -> str:
     if pdf_profile != "hybrid":
         return profile_generated_in_file(tag, pdf_profile, f"{stem}.in")
     return str(Path("campaigns") / tag / "generated-inputs" / f"{stem}.in")
@@ -808,12 +957,12 @@ def build_jobs(
     scale_variations: bool = False,
     campaign_tag: str = "",
     include_lo: Optional[bool] = None,
-    pdf_profile: str = "hybrid",
+    pdf_profile: str = DEFAULT_PDF_PROFILE,
 ) -> List[JobSpec]:
     jobs: List[JobSpec] = []
     include_lo = resolve_include_lo_requested(include_lo, analysis_variant=analysis_variant)
     for setup in normalize_campaign_setups(setups):
-        helicities = GAMMA_HELICITIES if setup == "GAMMA" else FULL_HELICITIES
+        default_helicities = required_helicities_for_setup(setup)
         variants = (
             tuple(analysis_variants_by_setup.get(setup, (analysis_variant,)))
             if analysis_variants_by_setup is not None
@@ -821,6 +970,7 @@ def build_jobs(
         )
         if include_lo:
             for variant in variants:
+                helicities = ("00",) if variant == "RIVETWEIGHTS" else default_helicities
                 for hel in helicities:
                     nominal_stem = build_logical_run_stem(setup, "LO", hel, variant, "nominal")
                     nominal_input = (
@@ -852,6 +1002,7 @@ def build_jobs(
         pieces = (("POSNLO", posnlo_events), ("NEGNLO", negnlo_events))
         for piece, events in pieces:
             for variant in variants:
+                helicities = ("00",) if variant == "RIVETWEIGHTS" else default_helicities
                 for hel in helicities:
                     nominal_stem = build_logical_run_stem(setup, piece, hel, variant, "nominal")
                     nominal_input = (
@@ -937,6 +1088,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run extract_nlo_term_diagnostics.py after the main results extraction. Disabled by default.",
     )
 
+    poldis_error_mode_parent = argparse.ArgumentParser(add_help=False)
+    poldis_error_mode_parent.add_argument(
+        "--poldis-error-mode",
+        choices=POLDIS_ERROR_MODE_CHOICES,
+        default=None,
+        help=(
+            "Which uncertainty to encode in the nominal dynamic POLDIS reference error bars: "
+            "stat, scale, or stat+scale."
+        ),
+    )
+
     campaign_parent = argparse.ArgumentParser(add_help=False)
     campaign_parent.add_argument("--jobs", type=int, default=os.cpu_count() or 1, help="Maximum number of concurrent Herwig processes.")
     campaign_parent.add_argument("--shards", type=int, default=0, help="Number of shards per logical run (0 = choose automatically from --jobs).")
@@ -976,7 +1138,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--pdf-profile",
         choices=tuple(PDF_PROFILES),
         default=None,
-        help="PDF profile for generated campaign-local input cards (default: hybrid; reruns/postprocess reuse the manifest setting).",
+        help="PDF profile for generated campaign-local input cards (default: nnpdf_paired; reruns/postprocess reuse the manifest setting).",
     )
     campaign_parent.add_argument(
         "--poldis",
@@ -985,10 +1147,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Dynamic POLDIS reference mode: auto, run, or skip (default: auto; reruns/postprocess reuse the manifest setting).",
     )
     campaign_parent.add_argument("--poldis-jobs", type=int, default=4, help="Maximum number of concurrent POLDIS reference helper runs.")
-    campaign_parent.add_argument("--poldis-variant-jobs", type=int, default=1, help="Maximum concurrent unpolarized/polarized jobs inside each POLDIS helper.")
-    campaign_parent.add_argument("--poldis-events", type=int, default=200_000_000, help="Events per POLDIS unpolarized/polarized run.")
+    campaign_parent.add_argument("--poldis-variant-jobs", type=int, default=1, help="Maximum concurrent POLDIS shard jobs inside each POLDIS helper.")
+    campaign_parent.add_argument("--poldis-events", type=int, default=DEFAULT_POLDIS_EVENTS, help="Total events per POLDIS unpolarized/polarized reference.")
+    campaign_parent.add_argument("--poldis-shards", type=int, default=DEFAULT_POLDIS_SHARDS, help="Split each POLDIS unpolarized/polarized reference into this many seeded shards.")
+    campaign_parent.add_argument("--poldis-seed-base", type=int, default=14_217_136, help="Base random seed used for dynamic POLDIS shard seeds.")
+    campaign_parent.add_argument(
+        "--poldis-refs-campaign",
+        help="Reuse POLDIS references from campaigns/<tag> for extractor totals and Rivet plotting instead of rebuilding local references.",
+    )
+    campaign_parent.add_argument(
+        "--poldis-refs-results-csv",
+        type=Path,
+        help="Explicit results.csv file with poldis_reference rows for extractor comparisons.",
+    )
     campaign_parent.add_argument("--rivet", action="store_true", help="Use the -RIVET input/run cards and extract Rivet-mode outputs.")
     campaign_parent.add_argument("--rivetfo", action="store_true", help="Use the -RIVETFO input/run cards and extract Rivet-mode outputs.")
+    campaign_parent.add_argument("--rivetweights", action="store_true", help="Use 00-only correlated helicity optional weights in Rivet.")
     postprocess_parent = argparse.ArgumentParser(add_help=False)
     postprocess_parent.add_argument("--dry-run", action="store_true", help="Print the planned commands without executing them.")
     postprocess_parent.add_argument("--no-merge-yoda", action="store_true", help="Do not rebuild merged YODA files.")
@@ -997,7 +1171,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--pdf-profile",
         choices=tuple(PDF_PROFILES),
         default=None,
-        help="PDF profile used by the campaign (default: hybrid; postprocess reuses the manifest setting when available).",
+        help="PDF profile used by the campaign (default: nnpdf_paired; postprocess reuses the manifest setting when available).",
     )
     postprocess_parent.add_argument(
         "--poldis",
@@ -1006,10 +1180,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Dynamic POLDIS reference mode: auto, run, or skip (default: auto; postprocess reuses the manifest setting when available).",
     )
     postprocess_parent.add_argument("--poldis-jobs", type=int, default=4, help="Maximum number of concurrent POLDIS reference helper runs.")
-    postprocess_parent.add_argument("--poldis-variant-jobs", type=int, default=1, help="Maximum concurrent unpolarized/polarized jobs inside each POLDIS helper.")
-    postprocess_parent.add_argument("--poldis-events", type=int, default=200_000_000, help="Events per POLDIS unpolarized/polarized run.")
+    postprocess_parent.add_argument("--poldis-variant-jobs", type=int, default=1, help="Maximum concurrent POLDIS shard jobs inside each POLDIS helper.")
+    postprocess_parent.add_argument("--poldis-events", type=int, default=DEFAULT_POLDIS_EVENTS, help="Total events per POLDIS unpolarized/polarized reference.")
+    postprocess_parent.add_argument("--poldis-shards", type=int, default=DEFAULT_POLDIS_SHARDS, help="Split each POLDIS unpolarized/polarized reference into this many seeded shards.")
+    postprocess_parent.add_argument("--poldis-seed-base", type=int, default=14_217_136, help="Base random seed used for dynamic POLDIS shard seeds.")
+    postprocess_parent.add_argument(
+        "--poldis-refs-campaign",
+        help="Reuse POLDIS references from campaigns/<tag> for extractor totals and Rivet plotting instead of rebuilding local references.",
+    )
+    postprocess_parent.add_argument(
+        "--poldis-refs-results-csv",
+        type=Path,
+        help="Explicit results.csv file with poldis_reference rows for extractor comparisons.",
+    )
+    postprocess_parent.add_argument("--progress-interval", type=float, default=5.0, help="Seconds between POLDIS progress refreshes during postprocess.")
     postprocess_parent.add_argument("--rivet", action="store_true", help="Use the -RIVET file naming convention.")
     postprocess_parent.add_argument("--rivetfo", action="store_true", help="Use the -RIVETFO file naming convention.")
+    postprocess_parent.add_argument("--rivetweights", action="store_true", help="Use the -RIVETWEIGHTS file naming convention.")
 
     analyze_parent = argparse.ArgumentParser(add_help=False)
     postrun_jobs_parent = argparse.ArgumentParser(add_help=False)
@@ -1017,6 +1204,7 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_io_parent = argparse.ArgumentParser(add_help=False)
     analyze_io_parent.add_argument("--rivet", action="store_true", help="Use the -RIVET file naming convention and raw-shard fallback.")
     analyze_io_parent.add_argument("--rivetfo", action="store_true", help="Use the -RIVETFO file naming convention and raw-shard fallback.")
+    analyze_io_parent.add_argument("--rivetweights", action="store_true", help="Use the -RIVETWEIGHTS file naming convention and raw-shard fallback.")
     analyze_io_parent.add_argument("--yoda-merge-tool", default="auto", help="Merge tool to use for shard fallback: auto, rivet-merge, or yodamerge.")
 
     poldis_parent = argparse.ArgumentParser(add_help=False)
@@ -1031,12 +1219,16 @@ def build_parser() -> argparse.ArgumentParser:
     plot_parent.add_argument("--reflabel-prefix", default="POLDIS", help="Reference label prefix.")
     plot_parent.add_argument("--plot-dir", type=Path, help="Optional output plot directory (single-setup only).")
 
-    subparsers.add_parser("campaign", parents=[base_parent, tag_parent, setup_parent, raw_powheg_parent, scale_variations_parent, include_lo_parent, diagnostics_parent, campaign_parent], help="Run the full validation campaign.")
-    subparsers.add_parser("postprocess", parents=[base_parent, tag_parent, analysis_name_parent, setup_parent, raw_powheg_parent, scale_variations_parent, include_lo_parent, diagnostics_parent, postrun_jobs_parent, analyze_parent, postprocess_parent], help="Rebuild merged YODAs and summaries for an existing campaign tag without rerunning Herwig.")
+    subparsers.add_parser("campaign", parents=[base_parent, tag_parent, setup_parent, raw_powheg_parent, scale_variations_parent, include_lo_parent, diagnostics_parent, poldis_error_mode_parent, campaign_parent], help="Run the full validation campaign.")
+    subparsers.add_parser("postprocess", parents=[base_parent, tag_parent, analysis_name_parent, setup_parent, raw_powheg_parent, scale_variations_parent, include_lo_parent, diagnostics_parent, poldis_error_mode_parent, postrun_jobs_parent, analyze_parent, postprocess_parent], help="Rebuild merged YODAs and summaries for an existing campaign tag without rerunning Herwig.")
     subparsers.add_parser("analyze-herwig", parents=[base_parent, tag_parent, analysis_name_parent, setup_parent, raw_powheg_parent, scale_variations_parent, include_lo_parent, postrun_jobs_parent, analyze_parent, analyze_io_parent], help="Build Herwig DIS polarized YODAs from campaign NLO outputs.")
     subparsers.add_parser("poldis-top", parents=[base_parent, analysis_name_parent, setup_parent, poldis_parent, analyze_io_parent], help="Convert POLDIS .top files into reference YODA.")
-    subparsers.add_parser("rivetplot", parents=[base_parent, tag_parent, analysis_name_parent, setup_parent, raw_powheg_parent, scale_variations_parent, include_lo_parent, postrun_jobs_parent, analyze_parent, analyze_io_parent, poldis_parent, plot_parent], help="Run rivet-mkhtml comparing analyzed Herwig YODAs to the POLDIS reference.")
-    full_parser = subparsers.add_parser("full", parents=[base_parent, tag_parent, analysis_name_parent, setup_parent, raw_powheg_parent, scale_variations_parent, include_lo_parent, diagnostics_parent, campaign_parent, analyze_parent, poldis_parent, plot_parent], help="Run campaign, analyze Herwig outputs, build POLDIS references, and make Rivet comparison plots.")
+    rivetplot_parser = subparsers.add_parser("rivetplot", parents=[base_parent, tag_parent, analysis_name_parent, setup_parent, raw_powheg_parent, scale_variations_parent, include_lo_parent, poldis_error_mode_parent, postrun_jobs_parent, analyze_parent, analyze_io_parent, poldis_parent, plot_parent], help="Run rivet-mkhtml comparing analyzed Herwig YODAs to the POLDIS reference.")
+    rivetplot_parser.add_argument(
+        "--poldis-refs-campaign",
+        help="Reuse POLDIS references from campaigns/<tag> for Rivet plotting instead of rebuilding local references.",
+    )
+    full_parser = subparsers.add_parser("full", parents=[base_parent, tag_parent, analysis_name_parent, setup_parent, raw_powheg_parent, scale_variations_parent, include_lo_parent, diagnostics_parent, poldis_error_mode_parent, campaign_parent, analyze_parent, poldis_parent, plot_parent], help="Run campaign, analyze Herwig outputs, build POLDIS references, and make Rivet comparison plots.")
     full_parser.set_defaults(command="full")
     return parser
 
@@ -1177,36 +1369,62 @@ def patch_raw_powheg_card(in_path: Path, analysis_variant: str, enable_raw_powhe
         return False
 
     text = in_path.read_text()
-    anchor = "set /Herwig/MatrixElements/PowhegMEDISNCPol:UseQ2ScaleInPOWHEGEmission Yes"
-    if anchor not in text:
+    matrix_elements: List[str] = []
+    for candidate in ("PowhegMEDISNCPol", "PowhegMEDISCC"):
+        if (re.search(rf"^set /Herwig/MatrixElements/{re.escape(candidate)}:\S+ .*?$", text, flags=re.MULTILINE) or
+                re.search(rf"^set {re.escape(candidate)}:\S+ .*?$", text, flags=re.MULTILINE)):
+            matrix_elements.append(candidate)
+
+    if not matrix_elements:
         return False
 
-    settings = [
-        (
-            "/Herwig/MatrixElements/PowhegMEDISNCPol:DISDiagnostics",
-            "On" if enable_raw_powheg else "Off",
-        ),
-        (
-            "/Herwig/MatrixElements/PowhegMEDISNCPol:DumpNLOTermDiagnostics",
-            "No",
-        ),
-        (
-            "/Herwig/MatrixElements/PowhegMEDISNCPol:DumpPOWHEGRawMomenta",
-            "Yes" if enable_raw_powheg else "No",
-        ),
-    ]
-
     modified = False
-    for setting, value in settings:
-        replacement = f"set {setting} {value}"
-        pattern = rf"^set {re.escape(setting)} \S+\s*$"
-        if re.search(pattern, text, flags=re.MULTILINE):
-            new_text = re.sub(pattern, replacement, text, flags=re.MULTILINE)
-        else:
-            new_text = text.replace(anchor, anchor + "\n" + replacement, 1)
-        if new_text != text:
-            modified = True
-            text = new_text
+    for matrix_element in matrix_elements:
+        anchor = None
+        anchor_patterns = (
+            rf"^set /Herwig/MatrixElements/{re.escape(matrix_element)}:UseQ2ScaleInPOWHEGEmission \S+\s*$",
+            rf"^set {re.escape(matrix_element)}:UseQ2ScaleInPOWHEGEmission \S+\s*$",
+            rf"^set /Herwig/MatrixElements/{re.escape(matrix_element)}:Contribution \S+\s*$",
+            rf"^set {re.escape(matrix_element)}:Contribution \S+\s*$",
+        )
+        for pattern in anchor_patterns:
+            match = re.search(pattern, text, flags=re.MULTILINE)
+            if match:
+                anchor = match.group(0)
+                break
+        if anchor is None:
+            continue
+
+        settings = [
+            (
+                f"/Herwig/MatrixElements/{matrix_element}:DISDiagnostics",
+                "On" if enable_raw_powheg else "Off",
+            ),
+            (
+                f"/Herwig/MatrixElements/{matrix_element}:DumpNLOTermDiagnostics",
+                "No",
+            ),
+            (
+                f"/Herwig/MatrixElements/{matrix_element}:DumpPOWHEGRawMomenta",
+                "Yes" if enable_raw_powheg else "No",
+            ),
+        ]
+
+        for setting, value in settings:
+            new_text, changed = set_or_insert_card_setting(text, setting, value, anchor)
+            if changed:
+                modified = True
+                text = new_text
+                continue
+
+            # Some cards use the short repository path rather than the absolute one.
+            short_setting = setting.replace("/Herwig/MatrixElements/", "")
+            if short_setting != setting:
+                new_text, changed = set_or_insert_card_setting(text, short_setting, value, anchor)
+                if changed:
+                    modified = True
+                    text = new_text
+                    continue
 
     if not modified:
         return False
@@ -1260,6 +1478,17 @@ def patch_ps_spin_card(in_path: Path, spec: JobSpec) -> bool:
     if not modified:
         return False
     in_path.write_text(text)
+    return True
+
+
+def patch_rivetweights_card(in_path: Path, spec: JobSpec) -> bool:
+    if spec.analysis_variant != "RIVETWEIGHTS" or not in_path.exists():
+        return False
+    text = in_path.read_text()
+    rendered = rewrite_rivetweights_card_text(text, spec.stem)
+    if rendered == text:
+        return False
+    in_path.write_text(rendered)
     return True
 
 
@@ -1360,14 +1589,14 @@ def materialize_scale_variation_card(base_dir: Path, spec: JobSpec, dry_run: boo
 
     source_path = base_dir / spec.source_in_file
     target_path = base_dir / spec.in_file
-    if not source_path.exists():
-        raise FileNotFoundError(f"Missing source input file {source_path}")
-
     scale_factor_text = format_scale_factor(spec.scale_factor)
-    rendered = rewrite_scale_variation_card(source_path.read_text(), base_dir, spec)
     if dry_run:
         print(f"[dry-run] generate-scale-card {source_path} -> {target_path} (ScaleFactor={scale_factor_text})")
         return
+    if not source_path.exists():
+        raise FileNotFoundError(f"Missing source input file {source_path}")
+
+    rendered = rewrite_scale_variation_card(source_path.read_text(), base_dir, spec)
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
     if target_path.exists() and target_path.read_text() == rendered:
@@ -1392,6 +1621,8 @@ def ensure_run_file(
     if patch_raw_powheg_card(in_path, effective_analysis_variant, enable_raw_powheg):
         card_patched = True
     if patch_ps_spin_card(in_path, spec):
+        card_patched = True
+    if patch_rivetweights_card(in_path, spec):
         card_patched = True
     if run_path.exists() and not force_prepare:
         if in_path.exists() and run_path.stat().st_mtime < in_path.stat().st_mtime:
@@ -1528,12 +1759,18 @@ def render_campaign_monitor_text(payload: Mapping[str, object]) -> str:
 
     poldis = payload.get("poldis")
     if isinstance(poldis, dict):
+        poldis_job_bits = [
+            f"running {poldis.get('running_jobs', 0)}",
+            f"compiling {poldis.get('compiling_jobs', 0)}",
+            f"pending {poldis.get('pending_jobs', 0)}",
+        ]
         lines.extend(
             [
                 "",
                 "POLDIS",
                 "------",
                 f"References ready: {poldis.get('completed', 0)}/{poldis.get('total', 0)}",
+                "Shard jobs: " + " | ".join(poldis_job_bits),
             ]
         )
         rows = poldis.get("rows")
@@ -1966,7 +2203,11 @@ def dynamic_poldis_command(
     setup: str,
     *,
     events: int,
+    shards: int,
+    seed_base: int,
     variant_jobs: int,
+    scale_variations: bool,
+    error_mode: str,
     dry_run: bool,
 ) -> List[str]:
     cmd = [
@@ -1984,9 +2225,17 @@ def dynamic_poldis_command(
         pdf_profile,
         "--events",
         str(events),
+        "--shards",
+        str(max(1, shards)),
+        "--seed-base",
+        str(int(seed_base)),
         "--jobs",
         str(max(1, variant_jobs)),
+        "--error-mode",
+        error_mode,
     ]
+    if scale_variations:
+        cmd.append("--scale-variations")
     if dry_run:
         cmd.append("--dry-run")
     return cmd
@@ -1994,6 +2243,48 @@ def dynamic_poldis_command(
 
 def dynamic_poldis_run_log_path(campaign_dir: Path, setup: str) -> Path:
     return campaign_refs_dir(campaign_dir) / "poldis" / f"{setup.lower()}.log"
+
+
+def summarize_dynamic_poldis_job_counts(status_payload: object, *, ref_ready: bool) -> Dict[str, int]:
+    def _to_nonnegative_int(value: object, default: int = 0) -> int:
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return default
+
+    if isinstance(status_payload, dict):
+        raw_jobs = status_payload.get("jobs")
+        if isinstance(raw_jobs, dict):
+            running = _to_nonnegative_int(raw_jobs.get("running"), default=0)
+            compiling = _to_nonnegative_int(raw_jobs.get("compiling"), default=0)
+            pending = _to_nonnegative_int(raw_jobs.get("pending"), default=0)
+            completed = _to_nonnegative_int(raw_jobs.get("completed"), default=0)
+            total = _to_nonnegative_int(raw_jobs.get("total"), default=running + compiling + pending + completed)
+            accounted = running + compiling + pending + completed
+            if total < accounted:
+                total = accounted
+            elif total > accounted:
+                pending += total - accounted
+            return {
+                "running": running,
+                "compiling": compiling,
+                "pending": pending,
+                "completed": completed,
+                "total": total,
+            }
+        phase = str(status_payload.get("phase", "pending")).lower()
+    else:
+        phase = "complete" if ref_ready else "pending"
+
+    if ref_ready or phase == "complete" or phase.startswith("completed-"):
+        return {"running": 0, "compiling": 0, "pending": 0, "completed": 1, "total": 1}
+    if phase == "running-parallel":
+        return {"running": 0, "compiling": 0, "pending": 0, "completed": 0, "total": 0}
+    if phase.startswith("running-") or phase == "collecting":
+        return {"running": 1, "compiling": 0, "pending": 0, "completed": 0, "total": 1}
+    if phase.startswith("compiling-"):
+        return {"running": 0, "compiling": 1, "pending": 0, "completed": 0, "total": 1}
+    return {"running": 0, "compiling": 0, "pending": 1, "completed": 0, "total": 1}
 
 
 def summarize_dynamic_poldis_status(
@@ -2004,12 +2295,24 @@ def summarize_dynamic_poldis_status(
 ) -> Dict[str, object]:
     rows: List[List[str]] = []
     completed = 0
+    running_jobs = 0
+    compiling_jobs = 0
+    pending_jobs = 0
+    completed_jobs = 0
+    total_jobs = 0
     for setup in setups:
         ref_json = dynamic_poldis_reference_json_path(base_dir, campaign_tag, pdf_profile, setup)
         status_json = dynamic_poldis_monitor_json_path(base_dir, campaign_tag, pdf_profile, setup)
         status_payload = load_json_if_exists(status_json)
-        if ref_json.exists():
+        ref_ready = ref_json.exists()
+        if ref_ready:
             completed += 1
+        job_counts = summarize_dynamic_poldis_job_counts(status_payload, ref_ready=ref_ready)
+        running_jobs += job_counts["running"]
+        compiling_jobs += job_counts["compiling"]
+        pending_jobs += job_counts["pending"]
+        completed_jobs += job_counts["completed"]
+        total_jobs += job_counts["total"]
         if isinstance(status_payload, dict):
             phase = str(status_payload.get("phase", "pending"))
             variant = str(status_payload.get("variant", "-"))
@@ -2017,21 +2320,73 @@ def summarize_dynamic_poldis_status(
             progress = (
                 f"{float(progress_value):.1f}%"
                 if isinstance(progress_value, (int, float))
-                else ("100.0%" if ref_json.exists() else "-")
+                else ("100.0%" if ref_ready else "-")
             )
             log_value = status_payload.get("log") or (
-                str(ref_json) if ref_json.exists() else str(status_json)
+                str(ref_json) if ref_ready else str(status_json)
             )
-            status = "ready" if ref_json.exists() else phase
+            status = "ready" if ref_ready else phase
         else:
-            progress = "100.0%" if ref_json.exists() else "-"
-            variant = "all" if ref_json.exists() else "-"
+            progress = "100.0%" if ref_ready else "-"
+            variant = "all" if ref_ready else "-"
             log_value = str(
-                ref_json if ref_json.exists() else dynamic_poldis_monitor_txt_path(base_dir, campaign_tag, pdf_profile, setup)
+                ref_json if ref_ready else dynamic_poldis_monitor_txt_path(base_dir, campaign_tag, pdf_profile, setup)
             )
-            status = "ready" if ref_json.exists() else "pending"
+            status = "ready" if ref_ready else "pending"
         rows.append([setup, status, progress, variant, log_value])
-    return {"completed": completed, "total": len(setups), "rows": rows}
+    return {
+        "completed": completed,
+        "total": len(setups),
+        "rows": rows,
+        "running_jobs": running_jobs,
+        "compiling_jobs": compiling_jobs,
+        "pending_jobs": pending_jobs,
+        "completed_jobs": completed_jobs,
+        "total_jobs": total_jobs,
+    }
+
+
+def extract_dynamic_poldis_reference_maps(
+    payload: object,
+) -> tuple[Dict[str, str], Dict[str, Dict[str, str]], Dict[str, Dict[str, str]], Dict[str, str]]:
+    nominal_by_setup: Dict[str, str] = {}
+    variations_by_setup: Dict[str, Dict[str, str]] = {}
+    error_modes_by_setup: Dict[str, Dict[str, str]] = {}
+    selected_error_mode_by_setup: Dict[str, str] = {}
+    if not isinstance(payload, dict):
+        return nominal_by_setup, variations_by_setup, error_modes_by_setup, selected_error_mode_by_setup
+    setups_payload = payload.get("setups", {})
+    if not isinstance(setups_payload, dict):
+        return nominal_by_setup, variations_by_setup, error_modes_by_setup, selected_error_mode_by_setup
+    for setup, setup_payload in setups_payload.items():
+        if not isinstance(setup_payload, dict):
+            continue
+        reference_yoda = setup_payload.get("reference_yoda")
+        if isinstance(reference_yoda, str) and reference_yoda:
+            nominal_by_setup[str(setup)] = reference_yoda
+        selected_error_mode = setup_payload.get("reference_yoda_error_mode")
+        if isinstance(selected_error_mode, str) and selected_error_mode in POLDIS_ERROR_MODE_CHOICES:
+            selected_error_mode_by_setup[str(setup)] = selected_error_mode
+        error_mode_payload = setup_payload.get("reference_yoda_error_modes", {})
+        if isinstance(error_mode_payload, dict):
+            normalized_error_modes = {
+                str(name): str(path)
+                for name, path in error_mode_payload.items()
+                if isinstance(name, str) and isinstance(path, str) and path
+            }
+            if normalized_error_modes:
+                error_modes_by_setup[str(setup)] = normalized_error_modes
+        variation_payload = setup_payload.get("reference_yoda_variations", {})
+        if not isinstance(variation_payload, dict):
+            continue
+        normalized_variations = {
+            str(name): str(path)
+            for name, path in variation_payload.items()
+            if isinstance(name, str) and isinstance(path, str) and path and name != "nominal"
+        }
+        if normalized_variations:
+            variations_by_setup[str(setup)] = normalized_variations
+    return nominal_by_setup, variations_by_setup, error_modes_by_setup, selected_error_mode_by_setup
 
 
 def write_dynamic_poldis_totals_json(
@@ -2055,6 +2410,11 @@ def write_dynamic_poldis_totals_json(
         payload["setups"][setup] = {
             "reference_json": str(ref_json),
             "reference_txt": str(dynamic_poldis_reference_txt_path(base_dir, campaign_tag, pdf_profile, setup)),
+            "reference_yoda": ref_payload.get("reference_yoda"),
+            "reference_yoda_error_mode": ref_payload.get("reference_yoda_error_mode", DEFAULT_POLDIS_ERROR_MODE),
+            "reference_yoda_error_modes": ref_payload.get("reference_yoda_error_modes", {}),
+            "reference_yoda_variations": ref_payload.get("reference_yoda_variations", {}),
+            "scale_variations": ref_payload.get("scale_variations", ["nominal"]),
             "pdf_profile": ref_payload.get("pdf_profile", pdf_profile),
             "pdfs": ref_payload.get("pdfs", dict(PDF_PROFILES[pdf_profile])),
             "unpolarized": ref_payload["unpolarized"],
@@ -2077,6 +2437,10 @@ def ensure_dynamic_poldis_references(
     jobs: int,
     variant_jobs: int,
     events: int,
+    shards: int,
+    seed_base: int,
+    scale_variations: bool,
+    error_mode: str,
     dry_run: bool,
     progress_interval: float,
     monitor_callback: Optional[Callable[[Dict[str, object]], None]] = None,
@@ -2100,7 +2464,11 @@ def ensure_dynamic_poldis_references(
                     pdf_profile,
                     setup,
                     events=events,
+                    shards=shards,
+                    seed_base=seed_base,
                     variant_jobs=variant_jobs,
+                    scale_variations=scale_variations,
+                    error_mode=error_mode,
                     dry_run=True,
                 ),
                 cwd=base_dir,
@@ -2136,9 +2504,13 @@ def ensure_dynamic_poldis_references(
                         base_dir,
                         campaign_tag,
                         pdf_profile,
-                        setup,
+                    setup,
                         events=events,
+                        shards=shards,
+                        seed_base=seed_base,
                         variant_jobs=variant_jobs,
+                        scale_variations=scale_variations,
+                        error_mode=error_mode,
                         dry_run=False,
                     ),
                     base_dir,
@@ -2192,9 +2564,49 @@ def ensure_dynamic_poldis_references(
     return totals_json
 
 
-def maybe_extend_results_with_poldis_refs(cmd: List[str], poldis_refs_json: Optional[str]) -> None:
+def maybe_extend_results_with_poldis_refs(
+    cmd: List[str],
+    *,
+    poldis_refs_json: Optional[str],
+    poldis_refs_campaign: Optional[str],
+    poldis_refs_results_csv: Optional[Path],
+) -> None:
+    if poldis_refs_campaign:
+        cmd.extend(["--poldis-refs-campaign", poldis_refs_campaign])
+    if poldis_refs_results_csv:
+        cmd.extend(["--poldis-refs-results-csv", str(poldis_refs_results_csv.resolve())])
     if poldis_refs_json:
         cmd.extend(["--poldis-refs-json", poldis_refs_json])
+
+
+def resolve_extractor_poldis_reference_source(args: argparse.Namespace, manifest: Dict[str, object]) -> None:
+    if not getattr(args, "poldis_refs_campaign", None):
+        stored_campaign = manifest.get("poldis_refs_campaign")
+        if isinstance(stored_campaign, str) and stored_campaign:
+            args.poldis_refs_campaign = stored_campaign
+    if getattr(args, "poldis_refs_results_csv", None):
+        args.poldis_refs_results_csv = Path(args.poldis_refs_results_csv)
+        return
+    stored_results_csv = manifest.get("poldis_refs_results_csv")
+    if isinstance(stored_results_csv, str) and stored_results_csv:
+        args.poldis_refs_results_csv = Path(stored_results_csv)
+
+
+def resolve_plot_poldis_reference_manifest(
+    base_dir: Path,
+    campaign_dir: Path,
+    manifest: Mapping[str, object],
+    reference_campaign_tag: Optional[str],
+) -> tuple[Path, Mapping[str, object]]:
+    if not reference_campaign_tag or reference_campaign_tag == campaign_dir.name:
+        return campaign_dir, manifest
+    reference_campaign_dir = resolve_campaign_dir(base_dir, reference_campaign_tag)
+    reference_manifest = load_manifest(reference_campaign_dir)
+    if not reference_manifest:
+        raise FileNotFoundError(
+            f"Missing POLDIS reference manifest at {reference_campaign_dir / 'manifest.json'}"
+        )
+    return reference_campaign_dir, reference_manifest
 
 
 def apply_profile_and_poldis_manifest_config(manifest: Dict[str, object], args: argparse.Namespace) -> None:
@@ -2208,10 +2620,21 @@ def apply_profile_and_poldis_manifest_config(manifest: Dict[str, object], args: 
     poldis_mode = getattr(args, "poldis", None)
     if isinstance(poldis_mode, str):
         manifest["poldis_mode"] = poldis_mode
+    poldis_error_mode = getattr(args, "poldis_error_mode", None)
+    if isinstance(poldis_error_mode, str):
+        manifest["poldis_error_mode"] = poldis_error_mode
+    poldis_refs_campaign = getattr(args, "poldis_refs_campaign", None)
+    if isinstance(poldis_refs_campaign, str) and poldis_refs_campaign:
+        manifest["poldis_refs_campaign"] = poldis_refs_campaign
+    poldis_refs_results_csv = getattr(args, "poldis_refs_results_csv", None)
+    if poldis_refs_results_csv:
+        manifest["poldis_refs_results_csv"] = str(Path(poldis_refs_results_csv).resolve())
     for attr, key in (
         ("poldis_jobs", "poldis_jobs"),
         ("poldis_variant_jobs", "poldis_variant_jobs"),
         ("poldis_events", "poldis_events"),
+        ("poldis_shards", "poldis_shards"),
+        ("poldis_seed_base", "poldis_seed_base"),
     ):
         value = getattr(args, attr, None)
         if value is not None:
@@ -2221,6 +2644,15 @@ def apply_profile_and_poldis_manifest_config(manifest: Dict[str, object], args: 
         manifest["dynamic_poldis_refs_json"] = str(dynamic_refs_json)
         manifest["dynamic_poldis_reference_tag"] = dynamic_poldis_reference_campaign_tag(args.tag, str(pdf_profile))
         manifest["dynamic_poldis_window"] = POLDIS_WINDOW_LABEL
+        try:
+            dynamic_payload = json.loads(Path(dynamic_refs_json).read_text())
+        except (OSError, json.JSONDecodeError):
+            dynamic_payload = None
+        nominal_by_setup, variations_by_setup, error_modes_by_setup, selected_error_mode_by_setup = extract_dynamic_poldis_reference_maps(dynamic_payload)
+        manifest["dynamic_poldis_reference_yoda_by_setup"] = nominal_by_setup
+        manifest["dynamic_poldis_reference_yoda_variations_by_setup"] = variations_by_setup
+        manifest["dynamic_poldis_reference_yoda_error_modes_by_setup"] = error_modes_by_setup
+        manifest["dynamic_poldis_reference_error_mode_by_setup"] = selected_error_mode_by_setup
 
 
 def choose_yoda_merge_tool(preference: str, purpose: str = "generic") -> Optional[str]:
@@ -2401,6 +2833,17 @@ def build_nlo_yoda_files(
                 returncode=1,
                 skipped=True,
                 message=f"Missing {'POSNLO' if pos_file is None else 'NEGNLO'} merged YODA",
+            )
+        if "-RIVETWEIGHTS" in nlo_run:
+            return YODANLOResult(
+                logical_run=nlo_run,
+                pos_file=pos_file,
+                neg_file=neg_file,
+                output_file=None,
+                command=[],
+                returncode=0,
+                skipped=True,
+                message="RIVETWEIGHTS POSNLO/NEGNLO files are combined later from normalized estimate objects.",
             )
         if merge_tool is None:
             return YODANLOResult(
@@ -2825,8 +3268,68 @@ def normalize_poldis_setups(setups: Sequence[str]) -> List[str]:
     return [setup for setup in selected if setup in POLDIS_RUNNABLE_SETUPS]
 
 
-def poldis_variant_slot_cost(variant_jobs: int) -> int:
-    return max(1, min(2, int(variant_jobs)))
+def resolve_dynamic_poldis_reference_maps(
+    manifest: Mapping[str, object],
+) -> tuple[Dict[str, str], Dict[str, Dict[str, str]], Dict[str, Dict[str, str]], Dict[str, str]]:
+    nominal_by_setup = manifest.get("dynamic_poldis_reference_yoda_by_setup", {})
+    variations_by_setup = manifest.get("dynamic_poldis_reference_yoda_variations_by_setup", {})
+    error_modes_by_setup = manifest.get("dynamic_poldis_reference_yoda_error_modes_by_setup", {})
+    selected_error_mode_by_setup = manifest.get("dynamic_poldis_reference_error_mode_by_setup", {})
+    if (
+        isinstance(nominal_by_setup, dict)
+        and isinstance(variations_by_setup, dict)
+        and isinstance(error_modes_by_setup, dict)
+        and isinstance(selected_error_mode_by_setup, dict)
+    ):
+        normalized_nominal = {
+            str(setup): str(path)
+            for setup, path in nominal_by_setup.items()
+            if isinstance(setup, str) and isinstance(path, str) and path
+        }
+        normalized_variations: Dict[str, Dict[str, str]] = {}
+        for setup, setup_payload in variations_by_setup.items():
+            if not isinstance(setup, str) or not isinstance(setup_payload, dict):
+                continue
+            filtered = {
+                str(name): str(path)
+                for name, path in setup_payload.items()
+                if isinstance(name, str) and isinstance(path, str) and path
+            }
+            if filtered:
+                normalized_variations[setup] = filtered
+        normalized_error_modes: Dict[str, Dict[str, str]] = {}
+        for setup, setup_payload in error_modes_by_setup.items():
+            if not isinstance(setup, str) or not isinstance(setup_payload, dict):
+                continue
+            filtered = {
+                str(name): str(path)
+                for name, path in setup_payload.items()
+                if isinstance(name, str) and isinstance(path, str) and path
+            }
+            if filtered:
+                normalized_error_modes[setup] = filtered
+        normalized_selected_modes = {
+            str(setup): str(mode)
+            for setup, mode in selected_error_mode_by_setup.items()
+            if isinstance(setup, str) and isinstance(mode, str) and mode in POLDIS_ERROR_MODE_CHOICES
+        }
+        if normalized_nominal or normalized_variations or normalized_error_modes or normalized_selected_modes:
+            return normalized_nominal, normalized_variations, normalized_error_modes, normalized_selected_modes
+
+    refs_json = manifest.get("dynamic_poldis_refs_json")
+    if isinstance(refs_json, str) and refs_json:
+        try:
+            payload = json.loads(Path(refs_json).read_text())
+        except (OSError, json.JSONDecodeError):
+            payload = None
+        return extract_dynamic_poldis_reference_maps(payload)
+    return {}, {}, {}, {}
+
+
+def poldis_variant_slot_cost(variant_jobs: int, shards: int, scale_variations: bool) -> int:
+    scale_count = 3 if scale_variations else 1
+    total_work_units = max(1, 2 * scale_count * max(1, int(shards)))
+    return max(1, min(int(variant_jobs), total_work_units))
 
 
 def resolve_concurrent_campaign_slots(
@@ -2834,9 +3337,11 @@ def resolve_concurrent_campaign_slots(
     requested_poldis_jobs: int,
     requested_poldis_variant_jobs: int,
     poldis_setup_count: int,
+    poldis_shards: int,
+    scale_variations: bool,
 ) -> tuple[int, int, int]:
     total_capacity = max(1, int(total_jobs))
-    effective_variant_jobs = poldis_variant_slot_cost(requested_poldis_variant_jobs)
+    effective_variant_jobs = poldis_variant_slot_cost(requested_poldis_variant_jobs, poldis_shards, scale_variations)
     max_helper_jobs = max(0, min(int(requested_poldis_jobs), int(poldis_setup_count)))
     effective_poldis_jobs = max_helper_jobs
     while effective_poldis_jobs > 0 and total_capacity - effective_poldis_jobs * effective_variant_jobs < 1:
@@ -3186,7 +3691,11 @@ def find_order_yoda_inputs(
     campaign_dir = resolve_campaign_dir(base_dir, tag)
     manifest = load_manifest(campaign_dir)
     analysis_variant = analysis_variant if analysis_variant is not None else str(manifest.get("analysis_variant", ""))
-    required_helicities = ("00", "PP", "PM") if setup == "GAMMA" else ("00", "PP", "PM", "MP", "MM")
+    required_helicities = (
+        ("00",)
+        if analysis_variant == "RIVETWEIGHTS"
+        else (("00", "PP", "PM") if setup == "GAMMA" else ("00", "PP", "PM", "MP", "MM"))
+    )
     found: Dict[str, Path] = {}
     expected_runs = {
         hel: build_logical_run_stem(setup, order, hel, analysis_variant, scale_variation)
@@ -3239,7 +3748,11 @@ def find_order_yoda_shards(
     scale_variation: str = "nominal",
     scale_variations: bool = False,
 ) -> Dict[str, List[Path]]:
-    required_helicities = ("00", "PP", "PM") if setup == "GAMMA" else ("00", "PP", "PM", "MP", "MM")
+    required_helicities = (
+        ("00",)
+        if analysis_variant == "RIVETWEIGHTS"
+        else (("00", "PP", "PM") if setup == "GAMMA" else ("00", "PP", "PM", "MP", "MM"))
+    )
     found: Dict[str, List[Path]] = {hel: [] for hel in required_helicities}
     expected_runs = {
         hel: build_logical_run_stem(setup, order, hel, analysis_variant, scale_variation)
@@ -3294,7 +3807,11 @@ def cached_yoda_has_analysis_objects(path: Path, analysis_name: str) -> bool:
 
 
 def required_helicities_for_setup(setup: str) -> Sequence[str]:
-    return GAMMA_HELICITIES if setup == "GAMMA" else FULL_HELICITIES
+    if setup == "GAMMA":
+        return GAMMA_HELICITIES
+    if setup == "CC":
+        return CC_ELECTRON_HELICITIES
+    return FULL_HELICITIES
 
 
 def format_analysis_input_value(value: object, max_items: int = 3) -> str:
@@ -3472,6 +3989,225 @@ def merge_analysis_inputs(
     return merged
 
 
+def load_rivetweights_order_input(
+    base_dir: Path,
+    campaign_dir: Path,
+    tag: str,
+    setup: str,
+    order: str,
+    analysis_name: str,
+    analysis_variant: str,
+    scale_variation: str,
+    scale_variations: bool,
+    merge_tool_preference: str,
+    dry_run: bool,
+) -> Path:
+    try:
+        merged_inputs = find_order_yoda_inputs(
+            base_dir,
+            tag,
+            setup,
+            order,
+            analysis_variant=analysis_variant,
+            scale_variation=scale_variation,
+        )
+        merged_path = merged_inputs["00"]
+        if cached_yoda_has_analysis_objects(merged_path, analysis_name):
+            return merged_path
+    except Exception:
+        merged_path = None
+
+    shard_inputs = find_order_yoda_shards(
+        base_dir,
+        tag,
+        setup,
+        order,
+        analysis_variant,
+        scale_variation=scale_variation,
+        scale_variations=scale_variations,
+    )
+    shard_matches = [
+        path for path in shard_inputs.get("00", [])
+        if cached_yoda_has_analysis_objects(path, analysis_name)
+    ]
+    if not shard_matches:
+        detail = f"merged={merged_path}" if merged_path is not None else "merged=none"
+        raise FileNotFoundError(f"Could not find {analysis_name} objects for {setup} {order} 00 ({detail})")
+    merged = merge_analysis_inputs(
+        base_dir,
+        campaign_dir,
+        tag,
+        setup,
+        order,
+        {"00": shard_matches},
+        merge_tool_preference,
+        dry_run,
+    )
+    return merged["00"]
+
+
+def build_rivetweights_objects(
+    base_dir: Path,
+    campaign_dir: Path,
+    tag: str,
+    setup: str,
+    analysis_name: str,
+    analysis_variant: str,
+    scale_variation: str,
+    scale_variations: bool,
+    merge_tool_preference: str,
+    dry_run: bool,
+) -> Dict[str, object]:
+    pos_input = load_rivetweights_order_input(
+        base_dir,
+        campaign_dir,
+        tag,
+        setup,
+        "POSNLO",
+        analysis_name,
+        analysis_variant,
+        scale_variation,
+        scale_variations,
+        merge_tool_preference,
+        dry_run,
+    )
+    neg_input = load_rivetweights_order_input(
+        base_dir,
+        campaign_dir,
+        tag,
+        setup,
+        "NEGNLO",
+        analysis_name,
+        analysis_variant,
+        scale_variation,
+        scale_variations,
+        merge_tool_preference,
+        dry_run,
+    )
+
+    tmp_dir = campaign_dir / "analysis" / "_inputs"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    suffix = "" if scale_variation == "nominal" else f"-{scale_variation}"
+    output_path = tmp_dir / f"DIS-POL-POWHEG_00-NLO-{setup}-RIVETWEIGHTS{suffix}-{tag}.yoda"
+    if dry_run:
+        print(f"[dry-run] combine-rivetweights-normalized {pos_input} {neg_input} -> {output_path}")
+        return {}
+
+    combined = combine_rivetweights_normalized_order_histograms(
+        yoda.read(str(pos_input)),
+        yoda.read(str(neg_input)),
+        analysis_name,
+    )
+    write_analysis_yoda_gz(combined, str(output_path))
+    return combined
+
+
+RIVETWEIGHTS_ANALYSIS_LABELS = {
+    "Q2",
+    "Pt",
+    "XBj",
+    "Mjj",
+    "Eta",
+    "Zeta",
+    "pT1",
+    "pT2",
+    "pT2OverpT1",
+    "pTAsym",
+    "Q2PreCut",
+    "XBjPreCut",
+    "YPreCut",
+    "pT1PreCut",
+    "pT2PreCut",
+    "DQ2",
+    "DPt",
+    "DXBj",
+    "DMjj",
+    "DEta",
+    "DZeta",
+    "DpT1",
+    "DpT2",
+    "DpT2OverpT1",
+    "DpTAsym",
+    "DQ2PreCut",
+    "DXBjPreCut",
+    "DYPreCut",
+    "DpT1PreCut",
+    "DpT2PreCut",
+}
+
+
+def split_rivet_weight_suffix(path: str) -> tuple[str, Optional[str]]:
+    match = re.match(r"^(?P<base>.+)\[(?P<weight>[^\]]+)\]$", path)
+    if match is None:
+        return path, None
+    return match.group("base"), match.group("weight")
+
+
+def select_rivetweights_default_histograms(objects: Dict[str, object], analysis_name: str) -> Dict[str, object]:
+    selected: Dict[str, object] = {}
+    for path, obj in objects.items():
+        if path.startswith("/RAW/") or not hasattr(obj, "bins"):
+            continue
+        base_path, weight_name = split_rivet_weight_suffix(path)
+        if weight_name not in (None, "Default"):
+            continue
+        parts = [part for part in base_path.split("/") if part]
+        if len(parts) != 2:
+            continue
+        rivet_analysis_name = parts[0].split(":", 1)[0]
+        hist_label = parts[1]
+        if rivet_analysis_name != analysis_name or hist_label not in RIVETWEIGHTS_ANALYSIS_LABELS:
+            continue
+        canonical_path = f"/{analysis_name}/{hist_label}"
+        if canonical_path != path:
+            try:
+                obj.setPath(canonical_path)
+            except Exception:
+                pass
+        selected[canonical_path] = obj
+    if not selected:
+        available = ", ".join(sorted(objects.keys())[:12])
+        raise RuntimeError(
+            f"No plottable {analysis_name} Default-stream histograms found in RIVETWEIGHTS merged YODA. "
+            f"Available examples: {available}"
+        )
+    return selected
+
+
+def combine_rivetweights_normalized_order_histograms(
+    pos_objects: Dict[str, object],
+    neg_objects: Dict[str, object],
+    analysis_name: str,
+) -> Dict[str, object]:
+    pos_selected = select_rivetweights_default_histograms(pos_objects, analysis_name)
+    neg_selected = select_rivetweights_default_histograms(neg_objects, analysis_name)
+    common_paths = sorted(set(pos_selected).intersection(neg_selected))
+    if not common_paths:
+        raise RuntimeError("No common RIVETWEIGHTS histograms found between POSNLO and NEGNLO inputs")
+
+    combined: Dict[str, object] = {}
+    for path in common_paths:
+        pos_obj = pos_selected[path]
+        neg_obj = neg_selected[path]
+        edges = _x_edges(pos_obj)
+        out_obj = _new_estimate(edges, path)
+        if out_obj.numBins() != pos_obj.numBins() or out_obj.numBins() != neg_obj.numBins():
+            raise RuntimeError(
+                f"Cannot combine RIVETWEIGHTS histogram {path}: mismatched bin counts "
+                f"({out_obj.numBins()}, {pos_obj.numBins()}, {neg_obj.numBins()})"
+            )
+
+        for index in range(1, out_obj.numBins() + 1):
+            pos_value, pos_error = _bin_value_error(pos_obj.bin(index))
+            neg_value, neg_error = _bin_value_error(neg_obj.bin(index))
+            value = pos_value + neg_value
+            error = math.hypot(pos_error, neg_error)
+            set_bin_val_err(out_obj.bin(index), value, error)
+        combined[path] = out_obj
+
+    return combined
+
+
 def analyze_herwig_campaign(
     base_dir: Path,
     tag: str,
@@ -3505,6 +4241,60 @@ def analyze_herwig_campaign(
             plot_path = analysis_dir / f"Herwig_{analysis_name}_{setup}_NLO_polarized_plot.yoda.gz"
             print(f"[dry-run] analyze-herwig {setup} -> {output_path}")
             print(f"[dry-run] analyze-herwig-plot {setup} -> {plot_path}")
+            return setup, str(output_path), str(plot_path)
+
+        if analysis_variant == "RIVETWEIGHTS":
+            objects = build_rivetweights_objects(
+                base_dir,
+                campaign_dir,
+                tag,
+                setup,
+                analysis_name,
+                analysis_variant,
+                "nominal",
+                scale_variations,
+                merge_tool_preference,
+                dry_run,
+            )
+            apply_legend_annotation(objects, legend_label)
+            apply_setup_style_annotation(objects, setup)
+            output_path = analysis_dir / f"Herwig_{analysis_name}_{setup}_NLO_polarized.yoda.gz"
+            write_analysis_yoda_gz(objects, str(output_path))
+            plot_path = analysis_dir / f"Herwig_{analysis_name}_{setup}_NLO_polarized_plot.yoda.gz"
+            plot_objects = build_plot_scatter_objects(objects)
+            apply_legend_annotation(plot_objects, legend_label)
+            apply_setup_style_annotation(plot_objects, setup)
+            if variation_names:
+                combined_plot_objects = dict(plot_objects)
+                for variation_name in variation_names:
+                    variation_objects = build_rivetweights_objects(
+                        base_dir,
+                        campaign_dir,
+                        tag,
+                        setup,
+                        analysis_name,
+                        analysis_variant,
+                        variation_name,
+                        scale_variations,
+                        merge_tool_preference,
+                        dry_run,
+                    )
+                    variation_plot_objects = build_plot_scatter_objects(variation_objects)
+                    apply_legend_annotation(variation_plot_objects, legend_label)
+                    apply_setup_style_annotation(variation_plot_objects, setup)
+                    variation_plot_objects, skipped_variation_paths = filter_compatible_variation_plot_objects(
+                        plot_objects,
+                        variation_plot_objects,
+                    )
+                    for skipped_path, reason in sorted(skipped_variation_paths.items()):
+                        print(
+                            f"[warn] Skipping {variation_name} plotted variation for {setup} "
+                            f"at {skipped_path}: {reason}",
+                            flush=True,
+                        )
+                    combined_plot_objects.update(clone_objects_with_variation(variation_plot_objects, variation_name))
+                plot_objects = combined_plot_objects
+            write_analysis_yoda_gz(plot_objects, str(plot_path))
             return setup, str(output_path), str(plot_path)
 
         def build_objects_from_inputs(pos_inputs: Dict[str, object], neg_inputs: Dict[str, object]) -> Dict[str, object]:
@@ -4011,6 +4801,45 @@ def choose_rivet_mkhtml_tool(preference: str) -> Optional[str]:
     return shutil.which(preference)
 
 
+_RIVET_MKHTML_OPTION_CACHE: Dict[str, frozenset[str]] = {}
+
+
+def rivet_mkhtml_supported_options(tool: str) -> frozenset[str]:
+    cached = _RIVET_MKHTML_OPTION_CACHE.get(tool)
+    if cached is not None:
+        return cached
+    try:
+        proc = subprocess.run([tool, "--help"], text=True, capture_output=True)
+    except OSError:
+        supported = frozenset()
+    else:
+        help_text = "\n".join(part for part in (proc.stdout, proc.stderr) if part)
+        supported = frozenset(re.findall(r"(?<!\w)(--[A-Za-z0-9][A-Za-z0-9-]*)", help_text))
+    _RIVET_MKHTML_OPTION_CACHE[tool] = supported
+    return supported
+
+
+def rivet_mkhtml_label_args(tool: str, reference_label: str, ratio_label: str) -> tuple[List[str], List[str]]:
+    supported = rivet_mkhtml_supported_options(tool)
+    args: List[str] = []
+    warnings: List[str] = []
+    if reference_label:
+        if "--reflabel" in supported:
+            args.append(f"--reflabel={reference_label}")
+        elif "--reftitle" in supported:
+            args.append(f"--reftitle={reference_label}")
+        else:
+            warnings.append(
+                f"{Path(tool).name} does not support --reflabel/--reftitle; using the built-in reference legend."
+            )
+    if ratio_label:
+        if "--ratiolabel" in supported:
+            args.append(f"--ratiolabel={ratio_label}")
+        else:
+            warnings.append(f"{Path(tool).name} does not support --ratiolabel; using the default ratio label.")
+    return args, warnings
+
+
 def default_plot_dir(base_dir: Path, tag: str, setup: str, order: str) -> Path:
     campaign_dir = resolve_campaign_dir(base_dir, tag)
     return campaign_dir / f"plots_mc_vs_poldis_{setup.lower()}_{order.lower()}"
@@ -4050,6 +4879,7 @@ def run_ps_rivetplot_campaign(
     tool = choose_rivet_mkhtml_tool(rivet_mkhtml_tool)
     if tool is None:
         raise FileNotFoundError(f"Could not find rivet-mkhtml tool '{rivet_mkhtml_tool}'")
+    label_args, label_warnings = rivet_mkhtml_label_args(tool, f"{reflabel_prefix} {order}", ratiolabel)
     plot_config = resolve_plot_config_path(base_dir, analysis_name)
 
     selected = multi_family_ps_setups(setups)
@@ -4223,6 +5053,7 @@ def run_ps_hadronization_rivetplot_campaign(
     tool = choose_rivet_mkhtml_tool(rivet_mkhtml_tool)
     if tool is None:
         raise FileNotFoundError(f"Could not find rivet-mkhtml tool '{rivet_mkhtml_tool}'")
+    label_args, label_warnings = rivet_mkhtml_label_args(tool, f"{reflabel_prefix} {order}", ratiolabel)
     plot_config = resolve_plot_config_path(base_dir, analysis_name)
     if not has_ps_hadronization_toggle_inputs(setups):
         raise ValueError(
@@ -4430,12 +5261,21 @@ def run_rivetplot_campaign(
     reflabel_prefix: str,
     plot_dir: Optional[Path] = None,
     scale_variations: Optional[bool] = None,
+    poldis_error_mode: Optional[str] = None,
+    poldis_reference_campaign: Optional[str] = None,
     max_workers: int = 1,
     dry_run: bool = False,
 ) -> Dict[str, str]:
     campaign_dir = resolve_campaign_dir(base_dir, tag)
     manifest = load_manifest(campaign_dir)
+    reference_campaign_dir, reference_manifest = resolve_plot_poldis_reference_manifest(
+        base_dir,
+        campaign_dir,
+        manifest,
+        poldis_reference_campaign,
+    )
     scale_variations_enabled = resolve_scale_variations_requested(scale_variations, manifest, default=False)
+    poldis_error_mode_resolved = resolve_poldis_error_mode_requested(poldis_error_mode, manifest)
     analysis_outputs = manifest.get("analysis_yoda", {})
     if not isinstance(analysis_outputs, dict):
         analysis_outputs = {}
@@ -4454,13 +5294,18 @@ def run_rivetplot_campaign(
     raw_powheg_channel_analysis_plot_outputs = manifest.get("raw_powheg_channel_analysis_plot_yoda", {})
     if not isinstance(raw_powheg_channel_analysis_plot_outputs, dict):
         raw_powheg_channel_analysis_plot_outputs = {}
-    reference_output = manifest.get("reference_yoda")
-    if not isinstance(reference_output, str) or not reference_output:
-        raise FileNotFoundError(f"Missing POLDIS reference YODA in {campaign_dir / 'manifest.json'}")
+    legacy_reference_output = reference_manifest.get("reference_yoda")
+    (
+        dynamic_reference_by_setup,
+        dynamic_reference_variations_by_setup,
+        dynamic_reference_error_modes_by_setup,
+        dynamic_reference_mode_by_setup,
+    ) = resolve_dynamic_poldis_reference_maps(reference_manifest)
 
     tool = choose_rivet_mkhtml_tool(rivet_mkhtml_tool)
     if tool is None:
         raise FileNotFoundError(f"Could not find rivet-mkhtml tool '{rivet_mkhtml_tool}'")
+    label_args, label_warnings = rivet_mkhtml_label_args(tool, f"{reflabel_prefix} {order}", ratiolabel)
     plot_config = resolve_plot_config_path(base_dir, analysis_name)
 
     selected = normalize_setups(setups)
@@ -4477,6 +5322,13 @@ def run_rivetplot_campaign(
     worker_count = max(1, min(max_workers, len(selected))) if selected else 1
     mode = f"parallel, max_workers={worker_count}" if not dry_run and worker_count > 1 else "serial"
     print_stage(f"Building Rivet comparison plots for setups: {', '.join(selected)} ({mode})")
+    if reference_campaign_dir != campaign_dir:
+        print_stage(
+            f"Using POLDIS references from campaign '{reference_campaign_dir.name}' "
+            f"({reference_campaign_dir / 'manifest.json'})"
+        )
+    for warning in label_warnings:
+        print_stage(warning)
 
     def plot_setup(setup: str) -> tuple[str, str]:
         herwig_title = herwig_rivetplot_title(manifest_analysis_variant, setup)
@@ -4485,6 +5337,39 @@ def run_rivetplot_campaign(
             raise FileNotFoundError(
                 f"Missing analyzed Herwig YODA for setup {setup} in {campaign_dir / 'manifest.json'}"
             )
+        poldis_reference_output = None
+        setup_error_modes = dynamic_reference_error_modes_by_setup.get(setup, {})
+        if isinstance(setup_error_modes, dict) and poldis_error_mode_resolved in setup_error_modes:
+            poldis_reference_output = setup_error_modes[poldis_error_mode_resolved]
+        if not poldis_reference_output:
+            poldis_reference_output = dynamic_reference_by_setup.get(setup)
+        if not poldis_reference_output:
+            poldis_reference_output = legacy_reference_output if isinstance(legacy_reference_output, str) else None
+        if not poldis_reference_output:
+            raise FileNotFoundError(
+                f"Missing POLDIS reference YODA for setup {setup} in {reference_campaign_dir / 'manifest.json'}"
+            )
+        selected_setup_error_mode = dynamic_reference_mode_by_setup.get(setup)
+        if (
+            poldis_error_mode_resolved != DEFAULT_POLDIS_ERROR_MODE
+            and not dynamic_reference_by_setup.get(setup)
+            and not (isinstance(setup_error_modes, dict) and poldis_error_mode_resolved in setup_error_modes)
+        ):
+            raise FileNotFoundError(
+                f"POLDIS error mode {poldis_error_mode_resolved!r} requires dynamic POLDIS references for setup {setup} "
+                f"in {reference_campaign_dir / 'manifest.json'}"
+            )
+        if (
+            poldis_error_mode_resolved != selected_setup_error_mode
+            and dynamic_reference_by_setup.get(setup)
+            and not (isinstance(setup_error_modes, dict) and poldis_error_mode_resolved in setup_error_modes)
+        ):
+            raise FileNotFoundError(
+                f"POLDIS error mode {poldis_error_mode_resolved!r} is unavailable for setup {setup} "
+                f"in {reference_campaign_dir / 'manifest.json'}"
+            )
+        raw_poldis_variations = dynamic_reference_variations_by_setup.get(setup, {})
+        poldis_variations = raw_poldis_variations if isinstance(raw_poldis_variations, dict) else {}
         this_plot_dir = (plot_dir.resolve() if plot_dir is not None else default_plot_dir(base_dir, tag, setup, order))
         this_plot_dir.parent.mkdir(parents=True, exist_ok=True)
         sanitized_inputs_dir = campaign_dir / "analysis" / "_rivetplot_inputs"
@@ -4547,20 +5432,30 @@ def run_rivetplot_campaign(
                     f"raw_powheg_{channel.lower()}_{setup.lower()}",
                 )
                 command.append(f"{channel_plot_input}:Title={raw_powheg_channel_titles[channel]}")
-        reference_plot_input = sanitize_input_yoda(reference_output, f"reference_{setup.lower()}")
-        command: List[str] = [
+        overlay_poldis_variation_curves = scale_variations_enabled and poldis_error_mode_resolved == DEFAULT_POLDIS_ERROR_MODE
+        if overlay_poldis_variation_curves:
+            for variation_name in ("ScaleFactorDown", "ScaleFactorUp"):
+                variation_yoda = poldis_variations.get(variation_name)
+                if not variation_yoda:
+                    continue
+                variation_plot_input = sanitize_input_yoda(
+                    variation_yoda,
+                    f"reference_{variation_name.lower()}_{setup.lower()}",
+                )
+                command.append(f"{variation_plot_input}:Title={poldis_scale_variation_title(variation_name)}")
+        reference_plot_input = sanitize_input_yoda(poldis_reference_output, f"reference_{setup.lower()}")
+        file_args = [*command[1:], reference_plot_input]
+        command = [
             sys.executable,
             str((Path(__file__).resolve().parent / "rivet_mkhtml_safe.py")),
             tool,
-            *command[1:],
+            *file_args,
         ]
         if plot_config is not None:
             command.extend(["-c", str(plot_config)])
         command.extend(
             [
-                reference_plot_input,
-                f"--reflabel={reflabel_prefix} {order}",
-                f"--ratiolabel={ratiolabel}",
+                *label_args,
                 "--verbose",
                 "-o",
                 str(this_plot_dir),
@@ -5119,6 +6014,8 @@ def run_campaign_command(args: argparse.Namespace) -> int:
         args.change_number_of_events = bool(change_number_of_events or manifest.get("change_number_of_events", False))
     pdf_profile = resolve_pdf_profile_requested(getattr(args, "pdf_profile", None), manifest if rerun_failed else None)
     poldis_mode = resolve_poldis_mode_requested(getattr(args, "poldis", None), pdf_profile, manifest if rerun_failed else None)
+    poldis_error_mode = resolve_poldis_error_mode_requested(getattr(args, "poldis_error_mode", None), manifest if rerun_failed else None)
+    resolve_extractor_poldis_reference_source(args, manifest)
     scale_variations = resolve_scale_variations_requested(getattr(args, "scale_variations", None), manifest, default=False)
     include_lo = resolve_include_lo_requested(getattr(args, "include_lo", None), manifest, analysis_variant)
     diagnostics_enabled = resolve_extract_diagnostics_requested(getattr(args, "diagnostics", None), manifest if rerun_failed else None)
@@ -5126,6 +6023,18 @@ def run_campaign_command(args: argparse.Namespace) -> int:
     validate_setup_family(requested_setups)
     ps_mode = contains_ps_setups(requested_setups)
     analysis_variants_by_setup = ps_analysis_variants_by_setup(requested_setups) if ps_mode else None
+    if analysis_variant == "RIVETWEIGHTS":
+        unsupported = [setup for setup in requested_setups if setup not in SETUP_ORDER]
+        if unsupported:
+            raise ValueError(
+                "RIVETWEIGHTS is implemented for NC setups only: "
+                f"GAMMA, Z, and ALL (got {', '.join(unsupported)})."
+            )
+        if getattr(args, "include_lo", None):
+            raise ValueError("RIVETWEIGHTS is a 00-only POSNLO/NEGNLO workflow; do not use --include-lo.")
+        if enable_raw_powheg:
+            raise ValueError("--raw-powheg is not supported together with --rivetweights.")
+        include_lo = False
     if ps_mode:
         if analysis_variant == "RIVETFO":
             raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetfo.")
@@ -5144,11 +6053,20 @@ def run_campaign_command(args: argparse.Namespace) -> int:
     args.resolved_analysis_variant = analysis_variant
     args.pdf_profile = pdf_profile
     args.poldis = poldis_mode
+    args.poldis_error_mode = poldis_error_mode
+    external_ref_campaign = external_poldis_reference_campaign(args)
+    if poldis_error_mode != "stat" and should_build_dynamic_poldis_refs_for_args(args, poldis_mode, pdf_profile) and not scale_variations:
+        raise ValueError("--poldis-error-mode scale/stat+scale requires --scale-variations for dynamic POLDIS references.")
     existing_dynamic_refs = manifest.get("dynamic_poldis_refs_json") if isinstance(manifest.get("dynamic_poldis_refs_json"), str) else None
     if existing_dynamic_refs and Path(existing_dynamic_refs).exists():
         args.dynamic_poldis_refs_json = existing_dynamic_refs
     else:
         args.dynamic_poldis_refs_json = None
+    if external_ref_campaign:
+        print_stage(
+            f"Reusing POLDIS references from campaign '{external_ref_campaign}' "
+            "and skipping local dynamic POLDIS generation."
+        )
     if rerun_failed:
         existing_prepared = collect_existing_prepared_from_manifest(campaign_dir)
         all_existing_results = collect_existing_job_artifacts_from_manifest(campaign_dir)
@@ -5274,6 +6192,8 @@ def run_campaign_command(args: argparse.Namespace) -> int:
     )
 
     args.generated_profile_inputs_root = materialize_pdf_profile_inputs(base_dir, args.tag, pdf_profile, args.dry_run)
+    if analysis_variant == "RIVETWEIGHTS":
+        materialize_rivetweights_inputs(base_dir, args.tag, pdf_profile, requested_setups, args.dry_run)
 
     prepared: List[JobResult] = list(existing_prepared)
     do_prepare = args.force_prepare or not args.no_prepare
@@ -5297,7 +6217,7 @@ def run_campaign_command(args: argparse.Namespace) -> int:
         powheg_options_file = write_powheg_options_summary(campaign_dir, base_dir, jobs, analysis_variant)
 
     poldis_setups = normalize_poldis_setups(requested_setups)
-    dynamic_poldis_requested = should_build_dynamic_poldis_refs(poldis_mode, pdf_profile) and bool(poldis_setups)
+    dynamic_poldis_requested = should_build_dynamic_poldis_refs_for_args(args, poldis_mode, pdf_profile) and bool(poldis_setups)
     finished: List[JobResult]
     if dynamic_poldis_requested and not args.dry_run:
         herwig_slots, concurrent_poldis_jobs, concurrent_variant_jobs = resolve_concurrent_campaign_slots(
@@ -5305,6 +6225,8 @@ def run_campaign_command(args: argparse.Namespace) -> int:
             max(1, args.poldis_jobs),
             max(1, args.poldis_variant_jobs),
             len(poldis_setups),
+            max(1, args.poldis_shards),
+            bool(args.scale_variations),
         )
     else:
         herwig_slots = max(1, args.jobs)
@@ -5315,7 +6237,7 @@ def run_campaign_command(args: argparse.Namespace) -> int:
         print_stage(
             f"Running Herwig and POLDIS concurrently under the global --jobs cap "
             f"(Herwig slots={herwig_slots}, POLDIS helpers={concurrent_poldis_jobs}, "
-            f"POLDIS variants/helper={concurrent_variant_jobs}, total cap={max(1, args.jobs)})"
+            f"POLDIS internal jobs/helper={concurrent_variant_jobs}, total cap={max(1, args.jobs)})"
         )
         monitor_lock = threading.Lock()
         latest_herwig: Optional[Dict[str, object]] = None
@@ -5392,6 +6314,10 @@ def run_campaign_command(args: argparse.Namespace) -> int:
                 jobs=concurrent_poldis_jobs,
                 variant_jobs=concurrent_variant_jobs,
                 events=int(args.poldis_events),
+                shards=max(1, args.poldis_shards),
+                seed_base=int(args.poldis_seed_base),
+                scale_variations=bool(args.scale_variations),
+                error_mode=args.poldis_error_mode,
                 dry_run=args.dry_run,
                 progress_interval=args.progress_interval,
                 monitor_callback=poldis_monitor_callback,
@@ -5453,6 +6379,10 @@ def run_campaign_command(args: argparse.Namespace) -> int:
                 jobs=concurrent_poldis_jobs,
                 variant_jobs=concurrent_variant_jobs,
                 events=int(args.poldis_events),
+                shards=max(1, args.poldis_shards),
+                seed_base=int(args.poldis_seed_base),
+                scale_variations=bool(args.scale_variations),
+                error_mode=args.poldis_error_mode,
                 dry_run=args.dry_run,
                 progress_interval=args.progress_interval,
             )
@@ -5544,7 +6474,13 @@ def run_campaign_command(args: argparse.Namespace) -> int:
             ]
             extend_results_extractor_scope(dis_cmd, requested_setups)
             dis_cmd.extend(analysis_variant_args(analysis_variant))
-            maybe_extend_results_with_poldis_refs(dis_cmd, args.dynamic_poldis_refs_json)
+            explicit_results_refs = bool(args.poldis_refs_campaign or args.poldis_refs_results_csv)
+            maybe_extend_results_with_poldis_refs(
+                dis_cmd,
+                poldis_refs_json=None if explicit_results_refs else args.dynamic_poldis_refs_json,
+                poldis_refs_campaign=args.poldis_refs_campaign,
+                poldis_refs_results_csv=args.poldis_refs_results_csv,
+            )
             print_stage("Extracting DIS run summaries")
             extract_status["results"] = run_extractor(dis_cmd, campaign_dir / "results.txt", base_dir, args.dry_run)
             if diagnostics_enabled:
@@ -5684,23 +6620,41 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
     campaign_dir = resolve_campaign_dir(base_dir, args.tag)
     campaign_dir.mkdir(parents=True, exist_ok=True)
     manifest = load_manifest(campaign_dir)
+    progress_interval = float(getattr(args, "progress_interval", 5.0))
     analysis_variant = analysis_variant_from_args(args) or str(manifest.get("analysis_variant", ""))
     requested_setups = resolve_campaign_setups_requested(args.setup, manifest)
     validate_setup_family(requested_setups)
     ps_mode = contains_ps_setups(requested_setups)
+    if analysis_variant == "RIVETWEIGHTS":
+        unsupported = [setup for setup in requested_setups if setup not in SETUP_ORDER]
+        if unsupported:
+            raise ValueError(
+                "RIVETWEIGHTS is implemented for NC setups only: "
+                f"GAMMA, Z, and ALL (got {', '.join(unsupported)})."
+            )
     if ps_mode:
         if analysis_variant == "RIVETFO":
             raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetfo.")
+        if analysis_variant == "RIVETWEIGHTS":
+            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetweights.")
         analysis_variant = "RIVETPS"
     scale_variations = resolve_scale_variations_requested(getattr(args, "scale_variations", None), manifest, default=False)
     include_lo = resolve_include_lo_requested(getattr(args, "include_lo", None), manifest, analysis_variant)
     diagnostics_enabled = resolve_extract_diagnostics_requested(getattr(args, "diagnostics", None), manifest)
     pdf_profile = resolve_pdf_profile_requested(getattr(args, "pdf_profile", None), manifest)
     poldis_mode = resolve_poldis_mode_requested(getattr(args, "poldis", None), pdf_profile, manifest)
+    poldis_error_mode = resolve_poldis_error_mode_requested(getattr(args, "poldis_error_mode", None), manifest)
+    resolve_extractor_poldis_reference_source(args, manifest)
     if ps_mode:
         if include_lo:
             raise ValueError("SPINVAL/SPINCOMP/SPINHAD are NLO-only workflows; do not use --include-lo.")
         diagnostics_enabled = False
+    if analysis_variant == "RIVETWEIGHTS":
+        if include_lo:
+            raise ValueError("RIVETWEIGHTS is a 00-only POSNLO/NEGNLO workflow; do not use --include-lo.")
+        include_lo = False
+        if getattr(args, "raw_powheg", False):
+            raise ValueError("--raw-powheg is not supported together with --rivetweights.")
     resolve_analysis_name(args, requested_setups)
     args.setup = requested_setups
     args.scale_variations = scale_variations
@@ -5709,11 +6663,20 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
     args.resolved_analysis_variant = analysis_variant
     args.pdf_profile = pdf_profile
     args.poldis = poldis_mode
+    args.poldis_error_mode = poldis_error_mode
+    external_ref_campaign = external_poldis_reference_campaign(args)
+    if poldis_error_mode != "stat" and should_build_dynamic_poldis_refs_for_args(args, poldis_mode, pdf_profile) and not scale_variations:
+        raise ValueError("--poldis-error-mode scale/stat+scale requires --scale-variations for dynamic POLDIS references.")
     existing_dynamic_refs = manifest.get("dynamic_poldis_refs_json") if isinstance(manifest.get("dynamic_poldis_refs_json"), str) else None
     if existing_dynamic_refs and Path(existing_dynamic_refs).exists():
         args.dynamic_poldis_refs_json = existing_dynamic_refs
     else:
         args.dynamic_poldis_refs_json = None
+    if external_ref_campaign:
+        print_stage(
+            f"Reusing POLDIS references from campaign '{external_ref_campaign}' "
+            "and skipping local dynamic POLDIS generation."
+        )
     if getattr(args, "raw_powheg", False) and analysis_variant != "RIVETFO":
         raise ValueError("--raw-powheg is only supported together with --rivetfo.")
     print_stage(f"Postprocessing existing campaign '{args.tag}'")
@@ -5740,16 +6703,19 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
         scale_variations=scale_variations,
         include_lo=include_lo,
     )
-    if not finished:
-        print(f"No shard YODA files found for tag {args.tag} in {base_dir}")
-        return 1
+    have_yoda_inputs = bool(finished)
+    if not have_yoda_inputs:
+        print_stage(
+            f"No shard YODA files found for tag {args.tag}; "
+            "skipping YODA merge/analyze and continuing with POLDIS/extraction only"
+        )
 
     extract_status: Dict[str, int] = {}
     yoda_merge_results: List[YODAMergeResult] = []
     yoda_nlo_results: List[YODANLOResult] = []
     raw_powheg_results: List[RawPOWHEGYODAResult] = []
 
-    if should_build_dynamic_poldis_refs(poldis_mode, pdf_profile):
+    if should_build_dynamic_poldis_refs_for_args(args, poldis_mode, pdf_profile):
         print_stage("Building dynamic POLDIS references for campaign results")
         dynamic_refs_json = ensure_dynamic_poldis_references(
             base_dir=base_dir,
@@ -5761,8 +6727,12 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
             jobs=max(1, args.poldis_jobs),
             variant_jobs=max(1, args.poldis_variant_jobs),
             events=int(args.poldis_events),
+            shards=max(1, args.poldis_shards),
+            seed_base=int(args.poldis_seed_base),
+            scale_variations=bool(args.scale_variations),
+            error_mode=args.poldis_error_mode,
             dry_run=args.dry_run,
-            progress_interval=args.progress_interval,
+            progress_interval=progress_interval,
         )
         args.dynamic_poldis_refs_json = str(dynamic_refs_json) if dynamic_refs_json is not None else None
 
@@ -5783,7 +6753,7 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
         ),
     )
 
-    if use_raw_powheg_runtime(analysis_variant, bool(getattr(args, "raw_powheg", False))):
+    if have_yoda_inputs and use_raw_powheg_runtime(analysis_variant, bool(getattr(args, "raw_powheg", False))):
         print_stage("Rebuilding raw POWHEG shard YODAs from existing logs")
         raw_sources = collect_existing_job_artifacts_from_manifest(campaign_dir)
         raw_powheg_results = build_raw_powheg_yoda_files(
@@ -5799,7 +6769,7 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
     else:
         extract_status["raw_powheg"] = -2
 
-    if not args.no_merge_yoda:
+    if have_yoda_inputs and not args.no_merge_yoda:
         yoda_merge_results = merge_yoda_files(
             finished,
             base_dir,
@@ -5856,7 +6826,13 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
         ]
         extend_results_extractor_scope(dis_cmd, requested_setups)
         dis_cmd.extend(analysis_variant_args(analysis_variant))
-        maybe_extend_results_with_poldis_refs(dis_cmd, args.dynamic_poldis_refs_json)
+        explicit_results_refs = bool(args.poldis_refs_campaign or args.poldis_refs_results_csv)
+        maybe_extend_results_with_poldis_refs(
+            dis_cmd,
+            poldis_refs_json=None if explicit_results_refs else args.dynamic_poldis_refs_json,
+            poldis_refs_campaign=args.poldis_refs_campaign,
+            poldis_refs_results_csv=args.poldis_refs_results_csv,
+        )
         extract_status["results"] = run_extractor(dis_cmd, campaign_dir / "results.txt", base_dir, args.dry_run)
         if diagnostics_enabled:
             diag_cmd = [
@@ -5879,7 +6855,7 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
             extract_status["diagnostic"] = -2
         extract_status["spin_diagnostic"] = -2
 
-    if ps_mode:
+    if ps_mode and have_yoda_inputs:
         analyze_ps_herwig_campaign(
             base_dir=base_dir,
             tag=args.tag,
@@ -5890,7 +6866,7 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
             max_workers=max(1, args.jobs),
             dry_run=args.dry_run,
         )
-    elif args.dry_run:
+    elif have_yoda_inputs and args.dry_run:
         analyze_herwig_campaign(
             base_dir=base_dir,
             tag=args.tag,
@@ -5912,7 +6888,7 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
                 max_workers=max(1, args.jobs),
                 dry_run=True,
             )
-    else:
+    elif have_yoda_inputs:
         analyze_herwig_campaign(
             base_dir=base_dir,
             tag=args.tag,
@@ -6021,12 +6997,23 @@ def run_analyze_herwig_command(args: argparse.Namespace) -> int:
     validate_setup_family(requested_setups)
     ps_mode = contains_ps_setups(requested_setups)
     analysis_variant = analysis_variant_from_args(args) or str(manifest.get("analysis_variant", ""))
+    if analysis_variant == "RIVETWEIGHTS":
+        unsupported = [setup for setup in requested_setups if setup not in SETUP_ORDER]
+        if unsupported:
+            raise ValueError(
+                "RIVETWEIGHTS is implemented for NC setups only: "
+                f"GAMMA, Z, and ALL (got {', '.join(unsupported)})."
+            )
     if ps_mode:
+        if analysis_variant == "RIVETWEIGHTS":
+            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetweights.")
         analysis_variant = "RIVETPS"
     scale_variations = resolve_scale_variations_requested(getattr(args, "scale_variations", None), manifest, default=False)
+    poldis_error_mode = resolve_poldis_error_mode_requested(getattr(args, "poldis_error_mode", None), manifest)
     resolve_analysis_name(args, requested_setups)
     args.setup = requested_setups
     args.scale_variations = scale_variations
+    args.poldis_error_mode = poldis_error_mode
     args.resolved_analysis_variant = analysis_variant
     if getattr(args, "raw_powheg", False) and analysis_variant != "RIVETFO":
         raise ValueError("--raw-powheg is only supported together with --rivetfo.")
@@ -6109,6 +7096,7 @@ def run_rivetplot_command(args: argparse.Namespace) -> int:
     base_dir = args.base_dir.resolve()
     campaign_dir = resolve_campaign_dir(base_dir, args.tag)
     manifest = load_manifest(campaign_dir)
+    resolve_extractor_poldis_reference_source(args, manifest)
     requested_setups = resolve_campaign_setups_requested(args.setup, manifest)
     validate_setup_family(requested_setups)
     ps_mode = contains_ps_setups(requested_setups)
@@ -6116,10 +7104,13 @@ def run_rivetplot_command(args: argparse.Namespace) -> int:
     if ps_mode:
         analysis_variant = "RIVETPS"
     scale_variations = resolve_scale_variations_requested(getattr(args, "scale_variations", None), manifest, default=False)
+    poldis_error_mode = resolve_poldis_error_mode_requested(getattr(args, "poldis_error_mode", None), manifest)
     resolve_analysis_name(args, requested_setups)
     args.setup = requested_setups
     args.scale_variations = scale_variations
+    args.poldis_error_mode = poldis_error_mode
     args.resolved_analysis_variant = analysis_variant
+    external_ref_campaign = external_poldis_reference_campaign(args)
     print_stage(f"Running rivetplot for campaign '{args.tag}'")
     if ps_mode:
         outputs = run_ps_plotting_campaign(
@@ -6130,22 +7121,26 @@ def run_rivetplot_command(args: argparse.Namespace) -> int:
             rivet_mkhtml_tool=args.rivet_mkhtml_tool,
             plot_dir=args.plot_dir,
             scale_variations=scale_variations,
+            poldis_error_mode=poldis_error_mode,
             max_workers=max(1, args.jobs),
             dry_run=False,
         )
     else:
-        build_poldis_reference(
-            base_dir=base_dir,
-            unpol=args.unpol,
-            pol=args.pol,
-            analysis_name=args.analysis_name,
-            order=args.order,
-            out=args.out,
-            setups=args.setup,
-            analysis_variant=analysis_variant,
-            campaign_tag=args.tag,
-            dry_run=False,
-        )
+        if external_ref_campaign:
+            print_stage(f"Reusing POLDIS reference campaign '{external_ref_campaign}' for Rivet plots")
+        else:
+            build_poldis_reference(
+                base_dir=base_dir,
+                unpol=args.unpol,
+                pol=args.pol,
+                analysis_name=args.analysis_name,
+                order=args.order,
+                out=args.out,
+                setups=args.setup,
+                analysis_variant=analysis_variant,
+                campaign_tag=args.tag,
+                dry_run=False,
+            )
         outputs = run_rivetplot_campaign(
             base_dir=base_dir,
             tag=args.tag,
@@ -6157,6 +7152,8 @@ def run_rivetplot_command(args: argparse.Namespace) -> int:
             reflabel_prefix=args.reflabel_prefix,
             plot_dir=args.plot_dir,
             scale_variations=scale_variations,
+            poldis_error_mode=poldis_error_mode,
+            poldis_reference_campaign=external_ref_campaign,
             max_workers=max(1, args.jobs),
             dry_run=False,
         )
@@ -6180,6 +7177,7 @@ def run_full_command(args: argparse.Namespace) -> int:
 
     campaign_dir = resolve_campaign_dir(args.base_dir.resolve(), args.tag)
     manifest = load_manifest(campaign_dir)
+    resolve_extractor_poldis_reference_source(args, manifest)
     requested_setups = resolve_campaign_setups_requested(args.setup, manifest)
     validate_setup_family(requested_setups)
     ps_mode = contains_ps_setups(requested_setups)
@@ -6187,10 +7185,13 @@ def run_full_command(args: argparse.Namespace) -> int:
     if ps_mode:
         analysis_variant = "RIVETPS"
     scale_variations = resolve_scale_variations_requested(getattr(args, "scale_variations", None), manifest, default=False)
+    poldis_error_mode = resolve_poldis_error_mode_requested(getattr(args, "poldis_error_mode", None), manifest)
     resolve_analysis_name(args, requested_setups)
     args.setup = requested_setups
     args.scale_variations = scale_variations
+    args.poldis_error_mode = poldis_error_mode
     args.resolved_analysis_variant = analysis_variant
+    external_ref_campaign = external_poldis_reference_campaign(args)
     include_raw_powheg = use_raw_powheg_runtime(
         analysis_variant,
         bool(getattr(args, "raw_powheg", False) or manifest.get("raw_powheg")),
@@ -6216,6 +7217,7 @@ def run_full_command(args: argparse.Namespace) -> int:
                 rivet_mkhtml_tool=args.rivet_mkhtml_tool,
                 plot_dir=args.plot_dir,
                 scale_variations=scale_variations,
+                poldis_error_mode=poldis_error_mode,
                 max_workers=max(1, args.jobs),
                 dry_run=False,
             )
@@ -6253,18 +7255,21 @@ def run_full_command(args: argparse.Namespace) -> int:
             max_workers=max(1, args.jobs),
             dry_run=False,
         )
-    build_poldis_reference(
-        base_dir=args.base_dir.resolve(),
-        unpol=args.unpol,
-        pol=args.pol,
-        analysis_name=args.analysis_name,
-        order=args.order,
-        out=args.out,
-        setups=args.setup,
-        analysis_variant=analysis_variant,
-        campaign_tag=args.tag,
-        dry_run=False,
-    )
+    if external_ref_campaign:
+        print_stage(f"Reusing POLDIS reference campaign '{external_ref_campaign}' for Rivet plots")
+    else:
+        build_poldis_reference(
+            base_dir=args.base_dir.resolve(),
+            unpol=args.unpol,
+            pol=args.pol,
+            analysis_name=args.analysis_name,
+            order=args.order,
+            out=args.out,
+            setups=args.setup,
+            analysis_variant=analysis_variant,
+            campaign_tag=args.tag,
+            dry_run=False,
+        )
     outputs = run_rivetplot_campaign(
         base_dir=args.base_dir.resolve(),
         tag=args.tag,
@@ -6276,6 +7281,8 @@ def run_full_command(args: argparse.Namespace) -> int:
         reflabel_prefix=args.reflabel_prefix,
         plot_dir=args.plot_dir,
         scale_variations=scale_variations,
+        poldis_error_mode=poldis_error_mode,
+        poldis_reference_campaign=external_ref_campaign,
         max_workers=max(1, args.jobs),
         dry_run=False,
     )

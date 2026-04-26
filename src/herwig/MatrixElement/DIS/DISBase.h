@@ -8,6 +8,7 @@
 #include "Herwig/MatrixElement/HwMEBase.h"
 #include "Herwig/Shower/ShowerAlpha.h"
 #include "ThePEG/EventRecord/RhoDMatrix.h"
+#include <map>
 #include <string>
 
 namespace Herwig {
@@ -124,6 +125,11 @@ public:
    * given by the last call to generateKinematics().
    */
   virtual CrossSection dSigHatDR() const;
+
+  /**
+   * Optional named event weights propagated through ThePEG/HepMC.
+   */
+  virtual std::map<std::string,double> generateOptionalWeights();
   //@}
 
 
@@ -387,6 +393,43 @@ protected:
                                              bool isCompton) const;
 
   /**
+   * Structured result for mapped incoming-parton polarization and the rho
+   * matrix derived from it for the real-emission spin machinery.
+   */
+  struct MappedIncomingSpinDensity {
+    RhoDMatrix rho;
+    double x;
+    double scale;
+    double beamPz;
+    double rawPolarization;
+    double clampedPolarization;
+    double sumPdfValue;
+    double diffPdfValue;
+    double ratio;
+    bool finite;
+    bool usedFallback;
+    bool usedClamp;
+    std::string status;
+  };
+
+  /**
+   * Build the mapped incoming-parton rho matrix used by the real-emission
+   * spin machinery together with the underlying polarization diagnostics.
+   * When the mapped polarization is numerically unsafe, fall back to the
+   * unpolarized rho matrix for the requested parton.
+   */
+  MappedIncomingSpinDensity mappedIncomingSpinDensity(tcPDPtr parton,
+                                                      double x,
+                                                      Energy2 scale,
+                                                      const char * clampSource = nullptr) const;
+
+  /**
+   * Construct a longitudinal rho matrix for spin-1/2 and spin-1 particles.
+   * Any unsupported particle is returned in the unpolarized state.
+   */
+  RhoDMatrix longitudinalRhoMatrix(tcPDPtr data, double pol) const;
+
+  /**
    * Longitudinal polarisation of the mapped incoming parton at the
    * real-emission momentum fraction x. Returns zero if the required
    * polarized PDF information is unavailable.
@@ -428,6 +471,12 @@ protected:
   bool nextNLOAuditDiagnosticSlot(unsigned long & index) const;
 
   /**
+   * Return true if a mapped Delta f / f clamp diagnostic should be emitted
+   * and provide the running diagnostic index.
+   */
+  bool nextMappedPolarizationClampDiagnosticSlot(unsigned long & index) const;
+
+  /**
    * Return true if a sampled local LO gamma point should be emitted and
    * provide the running diagnostic index.
    */
@@ -450,6 +499,33 @@ protected:
    *  The NLO weight
    */
   double NLOWeight() const;
+
+  /**
+   * Signed NLO density ratio before POS/NEG clipping. When overridePolarizations
+   * is true, the supplied beam polarizations are used instead of the event setup.
+   */
+  double NLOWeightRaw(double leptonPolarization,
+                      double hadronPolarization,
+                      bool overridePolarizations,
+                      bool doDiagnostics = true) const;
+
+  /**
+   * Effective Born-side parton polarization built from the same polarized-PDF
+   * ratio used by the NLO terms.
+   */
+  double rivetWeightBornPartonPolarization(double hadronPolarization) const;
+
+  /**
+   * Born matrix element for a requested lepton and parton polarization. The
+   * neutral-current implementation overrides this with the exact NC structure.
+   */
+  virtual double rivetWeightBornME2(double leptonPolarization,
+                                    double partonPolarization) const;
+
+  /**
+   * Build correlated helicity weights for Rivet.
+   */
+  std::map<std::string,double> generateRivetWeights() const;
 
   /**
    *  Calculate the coefficient A for the correlations
@@ -895,6 +971,11 @@ private:
   bool useQ2ScaleInPOWHEGEmission_;
 
   /**
+   *  Attach correlated helicity weights for Rivet analyses.
+   */
+  bool generateRivetWeights_;
+
+  /**
    *  Master switch for optional DIS/POWHEG diagnostic logging.
    */
   bool disDiagnostics_;
@@ -1033,6 +1114,11 @@ private:
    *  Counter for emitted local LO gamma point diagnostics.
    */
   mutable unsigned long loGammaPointDiagnosticCount_;
+
+  /**
+   *  Counter for emitted mapped Delta f / f clamp diagnostics.
+   */
+  mutable unsigned long mappedPolarizationClampDiagnosticCount_;
 
   /**
    *  Counter for native-window points that still fail passCuts().

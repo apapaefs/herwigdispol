@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import math
 import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
@@ -626,8 +627,8 @@ def _combine_measurements(values: Sequence[Tuple[float, float]]) -> tuple[float,
     if not values:
         return 0.0, 0.0
     nshards = len(values)
-    mean = float(sum(value for value, _ in values) / nshards)
-    error = float(numpy.sqrt(sum(error * error for _, error in values)) / nshards)
+    mean = float(math.fsum(value for value, _ in values) / nshards)
+    error = float(math.sqrt(math.fsum(error * error for _, error in values)) / nshards)
     return mean, error
 
 
@@ -647,7 +648,7 @@ def _bin_value_with_subtraction(
     if not aos_neg:
         return pos_value, pos_error
     neg_value, neg_error = _bin_value(aos_neg, index)
-    return pos_value - neg_value, float(numpy.sqrt(pos_error**2 + neg_error**2))
+    return pos_value - neg_value, float(math.hypot(pos_error, neg_error))
 
 
 def _ratio_value_error(numerator: float, numerator_error: float,
@@ -657,8 +658,8 @@ def _ratio_value_error(numerator: float, numerator_error: float,
             abs(denominator) <= 0.0):
         return float("nan"), 0.0
     value = numerator / denominator
-    error = float(numpy.sqrt((numerator_error / denominator)**2 +
-                             (numerator * denominator_error / (denominator**2))**2))
+    error = float(math.hypot(numerator_error / denominator,
+                             numerator * denominator_error / (denominator**2)))
     return value, error
 
 
@@ -675,10 +676,10 @@ def _build_cumulative_ratio_hist(delta_hist: object, sigma_hist: object, path: s
             f"({len(delta_bins)}, {len(sigma_bins)}, {len(cumulative_bins)})"
         )
 
-    cumulative_sigma = 0.0
-    cumulative_delta = 0.0
-    cumulative_sigma_err2 = 0.0
-    cumulative_delta_err2 = 0.0
+    cumulative_sigma_terms: List[float] = []
+    cumulative_delta_terms: List[float] = []
+    cumulative_sigma_err2_terms: List[float] = []
+    cumulative_delta_err2_terms: List[float] = []
 
     for sigma_bin, delta_bin, out_bin in zip(
         reversed(sigma_bins), reversed(delta_bins), reversed(cumulative_bins)
@@ -687,16 +688,16 @@ def _build_cumulative_ratio_hist(delta_hist: object, sigma_hist: object, path: s
         delta_value, delta_error = _bin_value_error(delta_bin)
         width = float(sigma_bin.xMax()) - float(sigma_bin.xMin())
 
-        cumulative_sigma += sigma_value * width
-        cumulative_delta += delta_value * width
-        cumulative_sigma_err2 += (sigma_error * width) ** 2
-        cumulative_delta_err2 += (delta_error * width) ** 2
+        cumulative_sigma_terms.append(sigma_value * width)
+        cumulative_delta_terms.append(delta_value * width)
+        cumulative_sigma_err2_terms.append((sigma_error * width) ** 2)
+        cumulative_delta_err2_terms.append((delta_error * width) ** 2)
 
         cumulative_value, cumulative_error = _ratio_value_error(
-            cumulative_delta,
-            float(numpy.sqrt(cumulative_delta_err2)),
-            cumulative_sigma,
-            float(numpy.sqrt(cumulative_sigma_err2)),
+            float(math.fsum(cumulative_delta_terms)),
+            float(math.sqrt(math.fsum(cumulative_delta_err2_terms))),
+            float(math.fsum(cumulative_sigma_terms)),
+            float(math.sqrt(math.fsum(cumulative_sigma_err2_terms))),
         )
         set_bin_val_err(out_bin, cumulative_value, cumulative_error)
 
@@ -721,18 +722,21 @@ def _combine_setup_bin(
     npp, epp = _bin_value_with_subtraction(pp_sources, pp_sub_sources, index)
     npm, epm = _bin_value_with_subtraction(pm_sources, pm_sub_sources, index)
 
+    # Keep the physical helicity components separate until the final sigma and
+    # delta combinations, and use compensated summation for the cancellation-
+    # sensitive polarized differences.
     if setup == "GAMMA":
-        sigma_value = n00 if zero_sources else 0.5 * (npp + npm)
-        sigma_error = e00 if zero_sources else 0.5 * numpy.sqrt(epp**2 + epm**2)
-        delta_value = 0.5 * (npp - npm)
-        delta_error = 0.5 * numpy.sqrt(epp**2 + epm**2)
+        sigma_value = n00 if zero_sources else 0.5 * math.fsum((npp, npm))
+        sigma_error = e00 if zero_sources else 0.5 * math.sqrt(math.fsum((epp**2, epm**2)))
+        delta_value = 0.5 * math.fsum((npp, -npm))
+        delta_error = 0.5 * math.sqrt(math.fsum((epp**2, epm**2)))
     else:
         nmp, emp = _bin_value_with_subtraction(mp_sources, mp_sub_sources, index)
         nmm, emm = _bin_value_with_subtraction(mm_sources, mm_sub_sources, index)
-        sigma_value = n00 if zero_sources else 0.25 * (npp + npm + nmp + nmm)
-        sigma_error = e00 if zero_sources else 0.25 * numpy.sqrt(epp**2 + epm**2 + emp**2 + emm**2)
-        delta_value = 0.25 * (npp + nmm - npm - nmp)
-        delta_error = 0.25 * numpy.sqrt(epp**2 + epm**2 + emp**2 + emm**2)
+        sigma_value = n00 if zero_sources else 0.25 * math.fsum((npp, npm, nmp, nmm))
+        sigma_error = e00 if zero_sources else 0.25 * math.sqrt(math.fsum((epp**2, epm**2, emp**2, emm**2)))
+        delta_value = 0.25 * math.fsum((npp, nmm, -npm, -nmp))
+        delta_error = 0.25 * math.sqrt(math.fsum((epp**2, epm**2, emp**2, emm**2)))
     return sigma_value, sigma_error, delta_value, delta_error
 
 

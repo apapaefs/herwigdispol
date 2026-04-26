@@ -116,6 +116,66 @@ bool shouldEmitValidationDiagnostic(unsigned long count) {
   return count <= 20 || (count && (count & (count - 1)) == 0);
 }
 
+bool powhegEmissionPDFRatioForGeneration(tcPDFPtr pdf, tcBeamPtr beam,
+                                         tcPDPtr numeratorParton,
+                                         tcPDPtr denominatorParton,
+                                         Energy2 numeratorScale,
+                                         Energy2 denominatorScale,
+                                         double numeratorX,
+                                         double denominatorX,
+                                         double & generationRatio,
+                                         double * signedRatio = 0) {
+  generationRatio = 0.0;
+  if (signedRatio) *signedRatio = 0.0;
+  if (!pdf || !beam || !numeratorParton || !denominatorParton) return false;
+
+  const double numerator =
+    pdf->xfx(beam, numeratorParton, numeratorScale, numeratorX);
+  const double denominator =
+    pdf->xfx(beam, denominatorParton, denominatorScale, denominatorX);
+  if (!std::isfinite(numerator) || !std::isfinite(denominator) ||
+      std::abs(denominator) <= 1e-30) {
+    return false;
+  }
+
+  const double ratio = numerator / denominator;
+  if (!std::isfinite(ratio)) return false;
+
+  if (signedRatio) *signedRatio = ratio;
+  // The veto algorithm needs a bona fide probability. Keep the signed
+  // fixed-order ratio for diagnostics, but generate with its magnitude.
+  generationRatio = std::abs(ratio);
+  return true;
+}
+
+bool powhegAnalyzingPowerIsSafe(double value) {
+  // For physical longitudinal spin states the DIS analyzing power should stay
+  // inside |A_pol| <= 2. Values outside that range are a strong sign that the
+  // denominator reconstruction has become numerically delicate.
+  return std::isfinite(value) && std::abs(value) <= 2.0 + 1e-10;
+}
+
+bool powhegPositiveRatioIsSafe(double numerator,
+                               double denominator,
+                               double & ratio) {
+  ratio = 1.0;
+  if (!std::isfinite(numerator) || !std::isfinite(denominator)) return false;
+
+  // The analytic helicity kernels factor through denominator pieces that are
+  // expected to stay positive. When that response turns tiny or changes sign,
+  // fall back to the stable Born kernel rather than feeding a signed or wildly
+  // amplified ratio into the veto probability.
+  const double floor = 1e-12 * std::max(1.0, std::abs(denominator));
+  if (std::abs(denominator) <= floor) return false;
+  if (numerator <= 0.0) return false;
+
+  const double candidate = numerator / denominator;
+  if (!std::isfinite(candidate) || candidate <= 0.0) return false;
+
+  ratio = candidate;
+  return true;
+}
+
 bool parseDoubleValue(const std::string & text, double & value) {
   std::istringstream is(text);
   is >> value;
@@ -349,6 +409,7 @@ DISBase::DISBase()  : initial_(6.), final_(3.),
 		      contrib_(0),
 		      useFixedOrderAlphaSInPOWHEGEmission_(false),
 		      useQ2ScaleInPOWHEGEmission_(false),
+		      generateRivetWeights_(false),
 		      disDiagnostics_(false),
 		      useNativeDISWindowGeneration_(false),
 		      useUniformPolarizedNLORepresentation_(true),
@@ -376,6 +437,7 @@ DISBase::DISBase()  : initial_(6.), final_(3.),
 		      nloAuditAcceptedCount_(0),
 		      powhegRawMomentaDumpCount_(0),
 		      loGammaPointDiagnosticCount_(0),
+		      mappedPolarizationClampDiagnosticCount_(0),
 		      nativeWindowAcceptedButCutRejectedCount_(0),
 		      legacyOnlyAcceptedCount_(0),
 		      nativeDISWindow_(),
@@ -404,13 +466,15 @@ void DISBase::persistentOutput(PersistentOStream & os) const {
      << usePOWHEGRealSpinVertex_
      << dumpPOWHEGRawMomenta_ << powhegRawMomentaDumpMax_
      << diagnosePOWHEGRealSpinVertex_
-     << powhegRealSpinDiagMax_ << power_;
+     << powhegRealSpinDiagMax_
+     << generateRivetWeights_ << power_;
 }
 
 void DISBase::persistentInput(PersistentIStream & is, int version) {
   is >> comptonInt_ >> bgfInt_ >> procProb_  >> initial_ >> final_ >> alpha_
      >> iunit(pTmin_,GeV) >> comptonWeight_ >> BGFWeight_ >> gluon_
      >> iunit(muF_,GeV) >> scaleFact_ >> scaleOpt_ >> contrib_;
+  generateRivetWeights_ = false;
   if(version == 0) {
     useFixedOrderAlphaSInPOWHEGEmission_ = false;
     useQ2ScaleInPOWHEGEmission_ = false;
@@ -659,7 +723,7 @@ void DISBase::persistentInput(PersistentIStream & is, int version) {
        >> powhegRealSpinDiagMax_ >> power_;
     useRawFinitePolarizedNLODeltas_ = false;
   }
-  else {
+  else if(version == 12) {
     is >> useFixedOrderAlphaSInPOWHEGEmission_
        >> useQ2ScaleInPOWHEGEmission_
        >> disDiagnostics_
@@ -678,6 +742,26 @@ void DISBase::persistentInput(PersistentIStream & is, int version) {
        >> diagnosePOWHEGRealSpinVertex_
        >> powhegRealSpinDiagMax_ >> power_;
   }
+  else {
+    is >> useFixedOrderAlphaSInPOWHEGEmission_
+       >> useQ2ScaleInPOWHEGEmission_
+       >> disDiagnostics_
+       >> useNativeDISWindowGeneration_
+       >> useUniformPolarizedNLORepresentation_
+       >> useRawFinitePolarizedNLODeltas_
+       >> dumpNLOTermDiagnostics_
+       >> dumpNLOAuditDiagnostics_
+       >> nloAuditInitialSamples_ >> nloAuditSamplePeriod_
+       >> nloTermDiagnosticPeriod_
+       >> dumpLOGammaPointDiagnostics_ >> loGammaPointDiagnosticMax_
+       >> powhegEmissionComparisonMode_
+       >> powhegEmissionComparisonMaxAttempts_
+       >> usePOWHEGRealSpinVertex_
+       >> dumpPOWHEGRawMomenta_ >> powhegRawMomentaDumpMax_
+       >> diagnosePOWHEGRealSpinVertex_
+       >> powhegRealSpinDiagMax_
+       >> generateRivetWeights_ >> power_;
+  }
   if(powhegEmissionComparisonMode_ >
      POWHEGEmissionComparisonModeRealOnly) {
     powhegEmissionComparisonMode_ = POWHEGEmissionComparisonModeDefault;
@@ -692,6 +776,7 @@ void DISBase::persistentInput(PersistentIStream & is, int version) {
   nloAuditAcceptedCount_ = 0;
   powhegRawMomentaDumpCount_ = 0;
   loGammaPointDiagnosticCount_ = 0;
+  mappedPolarizationClampDiagnosticCount_ = 0;
   nativeWindowAcceptedButCutRejectedCount_ = 0;
   legacyOnlyAcceptedCount_ = 0;
   nativeDISWindow_ = NativeDISWindowDefinition();
@@ -701,7 +786,7 @@ void DISBase::persistentInput(PersistentIStream & is, int version) {
 // The following static variable is needed for the type
 // description system in ThePEG.
 DescribeAbstractClass<DISBase,HwMEBase>
-  describeHerwigDISBase("Herwig::DISBase", "HwMEDIS.so", 12);
+  describeHerwigDISBase("Herwig::DISBase", "HwMEDIS.so", 13);
 
 // Extract longitudinal polarisation for spin-1/2: P = (rho++ - rho--)/(rho++ + rho--).
 // ThePEG convention (PolarizedPartonExtractor): index 0 = NEGATIVE helicity,
@@ -712,6 +797,153 @@ double DISBase::longPol(const ThePEG::RhoDMatrix& rho) const {
   const double rhoPP = std::max(0.0, std::real(rho(1,1)));  // index 1 = plus
   const double norm  = (rhoPP + rhoMM) > 0.0 ? (rhoPP + rhoMM) : 1.0;
   return (rhoPP - rhoMM) / norm;
+}
+
+RhoDMatrix DISBase::longitudinalRhoMatrix(tcPDPtr data, double pol) const {
+  if (!data) return RhoDMatrix();
+
+  pol = std::max(-1.0, std::min(1.0, pol));
+  RhoDMatrix rho(data->iSpin());
+
+  if (data->iSpin() == PDT::Spin1Half) {
+    const unsigned int imax = rho.iSpin() - 1;
+    rho(0,0) = 0.5 * (1.0 - pol);
+    rho(imax,imax) = 0.5 * (1.0 + pol);
+    rho(0,imax) = 0.0;
+    rho(imax,0) = 0.0;
+  }
+  else if (data->iSpin() == PDT::Spin1) {
+    rho(0,0) = 0.5 * (1.0 - pol);
+    rho(1,1) = 0.0;
+    rho(2,2) = 0.5 * (1.0 + pol);
+    rho(0,1) = rho(1,0) = 0.0;
+    rho(0,2) = rho(2,0) = 0.0;
+    rho(1,2) = rho(2,1) = 0.0;
+  }
+
+  return rho;
+}
+
+DISBase::MappedIncomingSpinDensity
+DISBase::mappedIncomingSpinDensity(tcPDPtr parton,
+                                   double x,
+                                   Energy2 mu2,
+                                   const char * clampSource) const {
+  MappedIncomingSpinDensity out{
+    longitudinalRhoMatrix(parton, 0.0),
+    x,
+    mu2/GeV2,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    true,
+    true,
+    false,
+    "unpolarized"
+  };
+
+  if (!parton) {
+    out.finite = false;
+    out.status = "no-parton";
+    return out;
+  }
+  if (!hadron_) {
+    out.status = "no-hadron";
+    return out;
+  }
+  if (x <= 0.0 || x >= 1.0) {
+    out.status = "invalid-x";
+    return out;
+  }
+
+  const double Pz = getBeamPolarization(false).z();
+  out.beamPz = Pz;
+  if (std::abs(Pz) <= 1e-12) {
+    out.status = "zero-beam-pol";
+    out.usedFallback = false;
+    return out;
+  }
+
+  ThePEG::tcPDFPtr sumPdf = hadron_->pdf();
+  if (!sumPdf) {
+    out.status = "no-sum-pdf";
+    return out;
+  }
+
+  ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr ppe =
+    ThePEG::dynamic_ptr_cast<
+      ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr>(lastExtractor());
+  if (!ppe) {
+    out.status = "no-polarized-extractor";
+    return out;
+  }
+
+  ThePEG::tcPDFPtr diffPdf = ppe->longitudinalDifferencePDF().second;
+  if (!diffPdf) {
+    out.status = "no-diff-pdf";
+    return out;
+  }
+
+  const double sum = sumPdf->xfx(hadron_, parton, mu2, x) / x;
+  const double diff = diffPdf->xfx(hadron_, parton, mu2, x) / x;
+  out.sumPdfValue = sum;
+  out.diffPdfValue = diff;
+
+  if (!std::isfinite(sum) || !std::isfinite(diff)) {
+    out.finite = false;
+    out.status = "nonfinite-pdf";
+    return out;
+  }
+
+  if (std::abs(sum) <= 1e-30) {
+    out.status = "tiny-sum";
+    return out;
+  }
+
+  out.rawPolarization = Pz * diff / sum;
+  out.finite = std::isfinite(out.rawPolarization);
+  if (!out.finite) {
+    out.status = "nonfinite-pol";
+    out.rawPolarization = 0.0;
+    return out;
+  }
+
+  out.clampedPolarization =
+    std::max(-1.0, std::min(1.0, out.rawPolarization));
+  out.usedClamp = std::abs(out.rawPolarization) > 1.0 + 1e-12;
+  out.ratio = diff / sum;
+
+  if (out.usedClamp && clampSource && generator()) {
+    unsigned long index = 0;
+    if (nextMappedPolarizationClampDiagnosticSlot(index)) {
+      generator()->log()
+        << "DIS_POL_CLAMP"
+        << " idx=" << index
+        << " source=" << clampSource
+        << " run=" << generator()->runName()
+        << " parton=" << auditObjectLabel(parton)
+        << " hadron=" << auditObjectLabel(hadron_)
+        << " sumPdf=" << auditPdfLabel(sumPdf)
+        << " diffPdf=" << auditPdfLabel(diffPdf)
+        << " x=" << x
+        << " mu2=" << mu2/GeV2
+        << " beamPz=" << Pz
+        << " diff=" << diff
+        << " sum=" << sum
+        << " raw=" << out.rawPolarization
+        << " clamped=" << out.clampedPolarization
+        << " ratio=" << out.ratio
+        << "\n";
+    }
+  }
+
+  out.rho = longitudinalRhoMatrix(parton, out.clampedPolarization);
+  out.usedFallback = false;
+  out.status = out.usedClamp ? "clamped" : "mapped";
+  return out;
 }
 
 pair<RhoDMatrix,RhoDMatrix> DISBase::correctedLongitudinalRhoMatrices() const {
@@ -740,7 +972,31 @@ pair<RhoDMatrix,RhoDMatrix> DISBase::correctedLongitudinalRhoMatrices() const {
 
   const double dloPDF = diffPdf->xfx(hadron_, mePartonData()[1], mu2, xB_) / xB_;
   double Pq = Pz * dloPDF / loPDF;
-  Pq = std::max(-1.0, std::min(1.0, Pq));
+  const double clampedPq = std::max(-1.0, std::min(1.0, Pq));
+  if (std::abs(Pq) > 1.0 + 1e-12) {
+    unsigned long index = 0;
+    if (nextMappedPolarizationClampDiagnosticSlot(index) && generator()) {
+      generator()->log()
+        << "DIS_POL_CLAMP"
+        << " idx=" << index
+        << " source=corrected-rho"
+        << " run=" << generator()->runName()
+        << " parton=" << auditObjectLabel(mePartonData()[1])
+        << " hadron=" << auditObjectLabel(hadron_)
+        << " sumPdf=" << auditPdfLabel(sumPdf)
+        << " diffPdf=" << auditPdfLabel(diffPdf)
+        << " x=" << xB_
+        << " mu2=" << mu2/GeV2
+        << " beamPz=" << Pz
+        << " diff=" << dloPDF
+        << " sum=" << loPDF
+        << " raw=" << Pq
+        << " clamped=" << clampedPq
+        << " ratio=" << dloPDF/loPDF
+        << "\n";
+    }
+  }
+  Pq = clampedPq;
 
   // DIS always has a spin-1/2 incoming quark here.
   rho.second = RhoDMatrix(mePartonData()[1]->iSpin());
@@ -826,6 +1082,16 @@ bool DISBase::nextNLOAuditDiagnosticSlot(unsigned long & index) const {
   if (index <= nloAuditInitialSamples_) return true;
   if (nloAuditSamplePeriod_ == 0) return false;
   return index % nloAuditSamplePeriod_ == 0;
+}
+
+bool DISBase::nextMappedPolarizationClampDiagnosticSlot(unsigned long & index) const {
+  static const unsigned long diagMax = 20;
+  if (!disDiagnostics_) return false;
+  if (diagMax != 0 &&
+      mappedPolarizationClampDiagnosticCount_ >= diagMax) return false;
+  ++mappedPolarizationClampDiagnosticCount_;
+  index = mappedPolarizationClampDiagnosticCount_;
+  return true;
 }
 
 bool DISBase::nextLOGammaPointDiagnosticSlot(unsigned long & index) const {
@@ -972,28 +1238,7 @@ void DISBase::dumpPOWHEGRawSummary(unsigned long eventIndex) const {
 double DISBase::mappedIncomingLongitudinalPolarization(tcPDPtr parton,
                                                        double x,
                                                        Energy2 mu2) const {
-  if (!parton || !hadron_ || x <= 0.0 || x >= 1.0) return 0.0;
-
-  const double Pz = getBeamPolarization(false).z();
-  if (std::abs(Pz) <= 1e-12) return 0.0;
-
-  ThePEG::tcPDFPtr sumPdf = hadron_->pdf();
-  if (!sumPdf) return 0.0;
-
-  ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr ppe =
-    ThePEG::dynamic_ptr_cast<
-      ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr>(lastExtractor());
-  if (!ppe) return 0.0;
-
-  ThePEG::tcPDFPtr diffPdf = ppe->longitudinalDifferencePDF().second;
-  if (!diffPdf) return 0.0;
-
-  const double sum = sumPdf->xfx(hadron_, parton, mu2, x) / x;
-  if (std::abs(sum) <= 1e-30) return 0.0;
-
-  const double diff = diffPdf->xfx(hadron_, parton, mu2, x) / x;
-  double pol = Pz * diff / sum;
-  return std::max(-1.0, std::min(1.0, pol));
+  return mappedIncomingSpinDensity(parton, x, mu2, "powheg-map").clampedPolarization;
 }
 
 bool DISBase::resolveNativeDISWindow() const {
@@ -1313,6 +1558,21 @@ void DISBase::Init() {
      "Use Q2 as the alphaS scale and emission-PDF numerator scale in the POWHEG/MEC emission weights.",
      true);
 
+  static Switch<DISBase,bool> interfaceGenerateRivetWeights
+    ("GenerateRivetWeights",
+     "Attach correlated NC helicity weights for Rivet analyses.",
+     &DISBase::generateRivetWeights_, false, false, false);
+  static SwitchOption interfaceGenerateRivetWeightsNo
+    (interfaceGenerateRivetWeights,
+     "No",
+     "Do not attach correlated Rivet helicity weights.",
+     false);
+  static SwitchOption interfaceGenerateRivetWeightsYes
+    (interfaceGenerateRivetWeights,
+     "Yes",
+     "Attach HERWIG_DIS_PP/PM/MP/MM/SIGMA/DELTA_LL optional weights.",
+     true);
+
   static Switch<DISBase,bool> interfaceDISDiagnostics
     ("DISDiagnostics",
      "Master switch for optional DIS/POWHEG diagnostic log output. Specific diagnostic switches stay silent unless this is On.",
@@ -1526,6 +1786,7 @@ void DISBase::doinit() {
   nloAuditAcceptedCount_ = 0;
   powhegRawMomentaDumpCount_ = 0;
   loGammaPointDiagnosticCount_ = 0;
+  mappedPolarizationClampDiagnosticCount_ = 0;
   nativeWindowAcceptedButCutRejectedCount_ = 0;
   legacyOnlyAcceptedCount_ = 0;
   nativeDISWindow_ = NativeDISWindowDefinition();
@@ -1774,12 +2035,12 @@ RealEmissionProcessPtr DISBase::generateNativePOWHEGHardest(RealEmissionProcessP
     newout  = quark[1]->dataPtr()      ->produceParticle(BGFMomenta_[1]);
     emitted->incomingColour(newin, isQuark);
     newout ->incomingColour(newin,!isQuark);
-    FSR = false;
-    born->pT()[ShowerInteraction::QCD] = pTBGF_;
-  }
-  double x = newin->momentum().rho()/hadron->momentum().rho();
-  if(born->incoming().size()==0)
-    born->x(make_pair(x,1.));
+	    FSR = false;
+	    born->pT()[ShowerInteraction::QCD] = pTBGF_;
+	  }
+	  double x = newin->momentum().rho()/hadron->momentum().rho();
+	  if(born->incoming().size()==0)
+	    born->x(make_pair(x,1.));
   else
     born->x(make_pair(1.,x));
   if(FSR) {
@@ -1918,8 +2179,16 @@ RealEmissionProcessPtr DISBase::applyHardMatrixElementCorrection(RealEmissionPro
     Energy2 alphaScale = useQ2ScaleInPOWHEGEmission_ ? q2_ : scale;
     wgt *= 2./3./Constants::pi*powhegEmissionAlphaSValue(alphaScale)/procProb_;
     // PDF piece
-    wgt *= pdf_->xfx(beam_,quark[0]->dataPtr(),pdfScale,xB_/xp)/
-           pdf_->xfx(beam_,quark[0]->dataPtr(),q2_  ,xB_);
+    double pdfRatioGen = 0.0;
+    if (!powhegEmissionPDFRatioForGeneration(pdf_, beam_,
+                                             quark[0]->dataPtr(),
+                                             quark[0]->dataPtr(),
+                                             pdfScale, q2_,
+                                             xB_/xp, xB_,
+                                             pdfRatioGen)) {
+      return RealEmissionProcessPtr();
+    }
+    wgt *= pdfRatioGen;
     // other bits
     xperp = sqrt(4.*(1.-xp)*(1.-zp)*zp/xp);
     x1 = -1./xp;
@@ -1938,8 +2207,16 @@ RealEmissionProcessPtr DISBase::applyHardMatrixElementCorrection(RealEmissionPro
     Energy2 alphaScale = useQ2ScaleInPOWHEGEmission_ ? q2_ : scale;
     wgt *= 0.25/Constants::pi*powhegEmissionAlphaSValue(alphaScale)/(1.-procProb_);
     // PDF piece
-    wgt *= pdf_->xfx(beam_,gluon_              ,pdfScale,xB_/xp)/
-           pdf_->xfx(beam_,quark[0]->dataPtr(),q2_  ,xB_);
+    double pdfRatioGen = 0.0;
+    if (!powhegEmissionPDFRatioForGeneration(pdf_, beam_,
+                                             gluon_,
+                                             quark[0]->dataPtr(),
+                                             pdfScale, q2_,
+                                             xB_/xp, xB_,
+                                             pdfRatioGen)) {
+      return RealEmissionProcessPtr();
+    }
+    wgt *= pdfRatioGen;
     // other bits
     xperp = sqrt(4.*(1.-xp)*(1.-zp)*zp/xp);
     x1 = -1./xp;
@@ -2046,11 +2323,11 @@ RealEmissionProcessPtr DISBase::applyHardMatrixElementCorrection(RealEmissionPro
     emitted = quark[0]->dataPtr()->CC()->produceParticle(p2 );
     newout  = quark[1]->dataPtr()      ->produceParticle(p1 );
     emitted->incomingColour(newin, isQuark);
-    newout ->incomingColour(newin,!isQuark);
-    FSR = false;
-  }
-  // set x
-  double x(xB_/xp);
+	    newout ->incomingColour(newin,!isQuark);
+	    FSR = false;
+	  }
+	  // set x
+	  double x(xB_/xp);
   if(born->incoming().size()==0)
     born->x(make_pair(x,1.));
   else
@@ -2242,23 +2519,41 @@ DISBase::ComptonME(double xp, double x2, double xperp,
   double root = sqrt(std::max(0.0, sqr(l_)-1.));
   const double PqBorn =
     mappedIncomingLongitudinalPolarization(partons_[0], xB_, q2_);
-  const double aBorn = A_pol(leptons_[0], leptons_[1],
+  const double aZero = A_pol(leptons_[0], leptons_[1],
                              partons_[0], partons_[1],
-                             q2_, leptonPolarization_, PqBorn);
+                             q2_, leptonPolarization_, 0.0);
+  double aBorn = A_pol(leptons_[0], leptons_[1],
+                       partons_[0], partons_[1],
+                       q2_, leptonPolarization_, PqBorn);
+  if (!powhegAnalyzingPowerIsSafe(aBorn)) aBorn = aZero;
 
   double aMapped = aBorn;
   double mappedDenRatio = 1.0;
   if (useMappedPolarizedEmissionKernel() && xp > 0.0) {
     const double PqMapped =
       mappedIncomingLongitudinalPolarization(partons_[0], xB_/xp, q2_);
-    aMapped = A_pol(leptons_[0], leptons_[1],
-                    partons_[0], partons_[1],
-                    q2_, leptonPolarization_, PqMapped);
-    mappedDenRatio =
-      qcdcMappedDenominatorRatio(leptons_[0], leptons_[1],
-                                 partons_[0], partons_[1],
-                                 q2_, leptonPolarization_,
-                                 PqBorn, PqMapped);
+    const double dBorn =
+      realEmissionDenominatorFactor(leptons_[0], leptons_[1],
+                                    partons_[0], partons_[1],
+                                    q2_, leptonPolarization_, PqBorn);
+    const double dMapped =
+      realEmissionDenominatorFactor(leptons_[0], leptons_[1],
+                                    partons_[0], partons_[1],
+                                    q2_, leptonPolarization_, PqMapped);
+    const double aCandidate = A_pol(leptons_[0], leptons_[1],
+                                    partons_[0], partons_[1],
+                                    q2_, leptonPolarization_, PqMapped);
+    double candidateRatio = 1.0;
+
+    // The mapped kernel is preferable when it is well behaved, but the veto
+    // step should not be driven by a helicity decomposition sitting on a tiny
+    // or sign-flipped denominator. In that corner we revert to the stable Born
+    // kernel instead of manufacturing a spurious signed acceptance weight.
+    if (powhegAnalyzingPowerIsSafe(aCandidate) &&
+        powhegPositiveRatioIsSafe(dMapped, dBorn, candidateRatio)) {
+      aMapped = aCandidate;
+      mappedDenRatio = candidateRatio;
+    }
   }
 
   double lo(1.+aBorn*l_+sqr(l_));
@@ -2285,9 +2580,13 @@ DISBase::BGFME(double xp, double x2, double x3,
 
   const double PqBorn =
     mappedIncomingLongitudinalPolarization(partons_[0], xB_, q2_);
-  const double aBorn = A_pol(leptons_[0], leptons_[1],
+  const double aZero = A_pol(leptons_[0], leptons_[1],
                              partons_[0], partons_[1],
-                             q2_, leptonPolarization_, PqBorn);
+                             q2_, leptonPolarization_, 0.0);
+  double aBorn = A_pol(leptons_[0], leptons_[1],
+                       partons_[0], partons_[1],
+                       q2_, leptonPolarization_, PqBorn);
+  if (!powhegAnalyzingPowerIsSafe(aBorn)) aBorn = aZero;
 
   double r2DenRatio = 1.0;
   double r3DenRatio = 1.0;
@@ -2297,35 +2596,41 @@ DISBase::BGFME(double xp, double x2, double x3,
   if (useMappedPolarizedEmissionKernel() && xp > 0.0) {
     const double PgMapped =
       mappedIncomingLongitudinalPolarization(gluon_, xB_/xp, q2_);
-    aR2 = A_pol(leptons_[0], leptons_[1],
-                partons_[0], partons_[1],
-                q2_, leptonPolarization_, PgMapped);
-
     tcPDPtr qbarIn;
     if (partons_[0]) qbarIn = partons_[0]->CC();
     tcPDPtr qbarOut;
     if (partons_[1]) qbarOut = partons_[1]->CC();
     if (!qbarIn) qbarIn = partons_[0];
     if (!qbarOut) qbarOut = partons_[1];
-    aR3 = A_pol(leptons_[0], leptons_[1],
-                qbarIn, qbarOut,
-                q2_, leptonPolarization_, -PgMapped);
 
     const double dBorn =
       realEmissionDenominatorFactor(leptons_[0], leptons_[1],
                                     partons_[0], partons_[1],
                                     q2_, leptonPolarization_, PqBorn);
-    if (std::abs(dBorn) > 1e-30) {
-      const double dR2 =
-        realEmissionDenominatorFactor(leptons_[0], leptons_[1],
+    const double dR2 =
+      realEmissionDenominatorFactor(leptons_[0], leptons_[1],
+                                    partons_[0], partons_[1],
+                                    q2_, leptonPolarization_, PgMapped);
+    const double dR3 =
+      realEmissionDenominatorFactor(leptons_[0], leptons_[1],
+                                    qbarIn, qbarOut,
+                                    q2_, leptonPolarization_, -PgMapped);
+    const double aR2Candidate = A_pol(leptons_[0], leptons_[1],
                                       partons_[0], partons_[1],
                                       q2_, leptonPolarization_, PgMapped);
-      const double dR3 =
-        realEmissionDenominatorFactor(leptons_[0], leptons_[1],
+    const double aR3Candidate = A_pol(leptons_[0], leptons_[1],
                                       qbarIn, qbarOut,
                                       q2_, leptonPolarization_, -PgMapped);
-      r2DenRatio = dR2/dBorn;
-      r3DenRatio = dR3/dBorn;
+    double candidateRatio = 1.0;
+    if (powhegAnalyzingPowerIsSafe(aR2Candidate) &&
+        powhegPositiveRatioIsSafe(dR2, dBorn, candidateRatio)) {
+      aR2 = aR2Candidate;
+      r2DenRatio = candidateRatio;
+    }
+    if (powhegAnalyzingPowerIsSafe(aR3Candidate) &&
+        powhegPositiveRatioIsSafe(dR3, dBorn, candidateRatio)) {
+      aR3 = aR3Candidate;
+      r3DenRatio = candidateRatio;
     }
   }
 
@@ -2405,9 +2710,17 @@ void DISBase::generateCompton() {
     Energy2 scale = q2_*((1.-xp)*(1-zp)*zp/xp+1.);
     Energy2 pdfScale = powhegEmissionPDFScale(q2_, scale);
     raw.pdfScale = pdfScale/GeV2;
-    raw.pdfRatio = pdf_->xfx(beam_,partons_[0],pdfScale,xB_/xp)/
-                   pdf_->xfx(beam_,partons_[0],q2_  ,xB_);
-    wgt *= raw.pdfRatio;
+    double pdfRatioGen = 0.0;
+    if (!powhegEmissionPDFRatioForGeneration(pdf_, beam_,
+                                             partons_[0], partons_[0],
+                                             pdfScale, q2_,
+                                             xB_/xp, xB_,
+                                             pdfRatioGen, &raw.pdfRatio)) {
+      ++raw.rejectVeto;
+      if(xT<=xTMin) break;
+      continue;
+    }
+    wgt *= pdfRatioGen;
     // me piece of the weight
     double x2 = 1.-(1.-zp)/xp;
     azicoeff = ComptonME(xp,x2,xT,false);
@@ -2535,9 +2848,17 @@ void DISBase::generateBGF() {
     Energy2 scale = q2_*((1.-xp)*(1-zp)*zp/xp+1.);
     Energy2 pdfScale = powhegEmissionPDFScale(q2_, scale);
     raw.pdfScale = pdfScale/GeV2;
-    raw.pdfRatio = pdf_->xfx(beam_,gluon_     ,pdfScale,xB_/xp)/
-                   pdf_->xfx(beam_,partons_[0],q2_  ,xB_);
-    wgt *= raw.pdfRatio;
+    double pdfRatioGen = 0.0;
+    if (!powhegEmissionPDFRatioForGeneration(pdf_, beam_,
+                                             gluon_, partons_[0],
+                                             pdfScale, q2_,
+                                             xB_/xp, xB_,
+                                             pdfRatioGen, &raw.pdfRatio)) {
+      ++raw.rejectVeto;
+      if(xT<=xTMin) break;
+      continue;
+    }
+    wgt *= pdfRatioGen;
     // me piece of the weight
     double x1 = -1./xp;
     double x2 = 1.-(1.-zp)/xp;
@@ -2720,7 +3041,10 @@ CrossSection DISBase::dSigHatDR() const {
   return NLOWeight()*sigmaHat;
 }
 
-double DISBase::NLOWeight() const {
+double DISBase::NLOWeightRaw(double overrideLeptonPolarization,
+                             double overrideHadronPolarization,
+                             bool overridePolarizations,
+                             bool doDiagnostics) const {
 
   // If only leading order is required return 1:
   if (contrib_ == 0) return 1.;
@@ -2741,7 +3065,10 @@ double DISBase::NLOWeight() const {
   // The lepton rho matrix is reliable at NLO; rebuild the hadron-side
   // polarization below from Pz*Delta q(xB)/q(xB).
   double Pl = 0.0, Pq = 0.0;
-  {
+  if (overridePolarizations) {
+    Pl = overrideLeptonPolarization;
+  }
+  else {
     const std::pair<RhoDMatrix,RhoDMatrix> rho = getRhoMatrices();
     Pl = longPol(rho.first);
   }
@@ -2764,7 +3091,9 @@ double DISBase::NLOWeight() const {
   }
 
   // Longitudinal hadron beam polarisation (convention: false = proton beam)
-  const double Pz = getBeamPolarization(false).z();
+  const double Pz =
+    overridePolarizations ? overrideHadronPolarization :
+    getBeamPolarization(false).z();
 
   ThePEG::tcPDFPtr diffPdf;
   {
@@ -3013,7 +3342,7 @@ double DISBase::NLOWeight() const {
   if (comptonRawGap < 1e299 || bgfRawGap < 1e299) {
     rawWinner = (comptonRawGap <= bgfRawGap) ? "Compton" : "BGF";
   }
-  if (collqEndpoint && disDiagnostics_ && dumpNLOTermDiagnostics_) {
+  if (doDiagnostics && collqEndpoint && disDiagnostics_ && dumpNLOTermDiagnostics_) {
     static unsigned long endpoint_n = 0;
     ++endpoint_n;
     bool dumpEndpoint = false;
@@ -3234,7 +3563,7 @@ double DISBase::NLOWeight() const {
 
 #if 0
   // Diagnostic dump for selected NLO points.
-  {
+  if (doDiagnostics) {
     static unsigned long nlo_diag_counter_ = 0;
     ++nlo_diag_counter_;
     if (nlo_diag_counter_ <= 50 || nlo_diag_counter_ % 50000 == 0) {
@@ -3398,7 +3727,7 @@ double DISBase::NLOWeight() const {
       }
     }
 
-    if (disDiagnostics_ && dumpNLOTermDiagnostics_ && (badEvaluation || hugeVCG)) {
+    if (doDiagnostics && disDiagnostics_ && dumpNLOTermDiagnostics_ && (badEvaluation || hugeVCG)) {
       ++patho_n;
       bool dumpPatho = false;
       if (patho_n <= nloAuditInitialSamples_) dumpPatho = true;
@@ -3547,7 +3876,7 @@ double DISBase::NLOWeight() const {
       }
 
       unsigned long auditIndex = 0;
-      if (nextNLOAuditDiagnosticSlot(auditIndex)) {
+      if (doDiagnostics && nextNLOAuditDiagnosticSlot(auditIndex)) {
         const auto le = lastExtractor();
         const auto ehExtractor = generator()->eventHandler()->partonExtractor();
         const bool sameExtractor =
@@ -3686,7 +4015,7 @@ double DISBase::NLOWeight() const {
       }
     }
 
-    if (disDiagnostics_ && dumpNLOTermDiagnostics_ && nloTermDiagnosticPeriod_ > 0 &&
+    if (doDiagnostics && disDiagnostics_ && dumpNLOTermDiagnostics_ && nloTermDiagnosticPeriod_ > 0 &&
         accepted_n > 0 && accepted_n % nloTermDiagnosticPeriod_ == 0 &&
         std::abs(sRun) > 1e-30) {
       double F_total = (sVirt + sCqEven + sCqOdd + sCgEven + sCgOdd + sRq + sRg) / sRun;
@@ -3833,5 +4162,99 @@ double DISBase::NLOWeight() const {
   //     +(qPDF-xp_*loPDF)*CFfact/xp_*(2.*log(1.-xp_)/(1.-xp_)-1.5/(1.-xp_));
   //   double wgt = (f2g+f2q)/loPDF;
 
+  return wgt;
+}
+
+double DISBase::NLOWeight() const {
+  const double wgt = NLOWeightRaw(0.0, 0.0, false);
   return contrib_ == 1 ? max(0., wgt) : max(0., -wgt);
+}
+
+std::map<std::string,double> DISBase::generateOptionalWeights() {
+  return generateRivetWeights();
+}
+
+double DISBase::rivetWeightBornPartonPolarization(double hadronPolarization) const {
+  if (!hadron_ || mePartonData().size() < 2 || xB_ <= 0.0) return 0.0;
+  if (std::abs(hadronPolarization) <= 1e-12) return 0.0;
+
+  ThePEG::tcPDFPtr sumPdf = hadron_->pdf();
+  if (!sumPdf) return 0.0;
+
+  ThePEG::tcPDFPtr diffPdf;
+  ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr ppe =
+    ThePEG::dynamic_ptr_cast<
+      ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr>(lastExtractor());
+  if (ppe) diffPdf = ppe->longitudinalDifferencePDF().second;
+  if (!diffPdf) return 0.0;
+
+  const Energy2 mu2(scale());
+  const double loPDF =
+    sumPdf->xfx(hadron_, mePartonData()[1], mu2, xB_) / xB_;
+  if (!std::isfinite(loPDF) || std::abs(loPDF) <= 1e-30) return 0.0;
+
+  const double dloPDF =
+    diffPdf->xfx(hadron_, mePartonData()[1], mu2, xB_) / xB_;
+  if (!std::isfinite(dloPDF)) return 0.0;
+
+  const double polarization = hadronPolarization * dloPDF / loPDF;
+  if (!std::isfinite(polarization)) return 0.0;
+  return std::max(-1.0, std::min(1.0, polarization));
+}
+
+double DISBase::rivetWeightBornME2(double, double) const {
+  return me2();
+}
+
+std::map<std::string,double> DISBase::generateRivetWeights() const {
+  std::map<std::string,double> weights;
+  if (!generateRivetWeights_) return weights;
+
+  weights["HERWIG_DIS_PP"] = 0.0;
+  weights["HERWIG_DIS_PM"] = 0.0;
+  weights["HERWIG_DIS_MP"] = 0.0;
+  weights["HERWIG_DIS_MM"] = 0.0;
+  weights["HERWIG_DIS_SIGMA"] = 0.0;
+  weights["HERWIG_DIS_DELTA_LL"] = 0.0;
+
+  const tcEventPtr event = generator()->currentEvent();
+  const double eventWeight = event ? event->weight() : 1.0;
+  if (!std::isfinite(eventWeight)) return weights;
+
+  const double sampledPq = rivetWeightBornPartonPolarization(0.0);
+  const double sampledBorn = rivetWeightBornME2(0.0, sampledPq);
+  const double sampledRaw = NLOWeightRaw(0.0, 0.0, true, false);
+  const double sampledDensity = sampledBorn * sampledRaw;
+  const double sampledAbs = std::abs(sampledDensity);
+  if (!std::isfinite(sampledAbs) || sampledAbs <= 1e-30) return weights;
+
+  struct HelicityTarget {
+    const char * name;
+    double leptonPol;
+    double hadronPol;
+  };
+  static const HelicityTarget targets[] = {
+    { "HERWIG_DIS_PP",  1.0,  1.0 },
+    { "HERWIG_DIS_PM",  1.0, -1.0 },
+    { "HERWIG_DIS_MP", -1.0,  1.0 },
+    { "HERWIG_DIS_MM", -1.0, -1.0 }
+  };
+
+  for (const HelicityTarget & target : targets) {
+    const double partonPol =
+      rivetWeightBornPartonPolarization(target.hadronPol);
+    const double born = rivetWeightBornME2(target.leptonPol, partonPol);
+    const double raw =
+      NLOWeightRaw(target.leptonPol, target.hadronPol, true, false);
+    const double targetWeight = eventWeight * born * raw / sampledAbs;
+    weights[target.name] = std::isfinite(targetWeight) ? targetWeight : 0.0;
+  }
+
+  const double pp = weights["HERWIG_DIS_PP"];
+  const double pm = weights["HERWIG_DIS_PM"];
+  const double mp = weights["HERWIG_DIS_MP"];
+  const double mm = weights["HERWIG_DIS_MM"];
+  weights["HERWIG_DIS_SIGMA"] = 0.25 * (pp + pm + mp + mm);
+  weights["HERWIG_DIS_DELTA_LL"] = 0.25 * (pp + mm - pm - mp);
+  return weights;
 }
