@@ -159,6 +159,36 @@ def load_manifest(campaign_dir: Path) -> Dict[str, object]:
     return json.loads(manifest_path.read_text())
 
 
+def load_json_if_exists(path: Path) -> Optional[object]:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def load_campaign_monitor(campaign_dir: Path) -> Dict[str, object]:
+    payload = load_json_if_exists(campaign_dir / "monitor" / "status.json")
+    return payload if isinstance(payload, dict) else {}
+
+
+def compact_display_path(path_value: object, *, base_dir: Path, campaign_dir: Path) -> str:
+    if not isinstance(path_value, str) or not path_value:
+        return "-"
+    try:
+        path = Path(path_value).expanduser().resolve(strict=False)
+    except Exception:
+        return str(path_value)
+    for root in (campaign_dir, base_dir):
+        try:
+            return str(path.relative_to(root.resolve(strict=False)))
+        except Exception:
+            continue
+    rendered = str(path)
+    return rendered if len(rendered) <= 80 else f"...{rendered[-77:]}"
+
+
 def maybe_int(value: object, default: int = 0) -> int:
     try:
         return int(value)
@@ -330,8 +360,7 @@ def estimate_file_completion(
     }
 
 
-def extract_status_summary(manifest: Dict[str, object]) -> str:
-    extract_status = manifest.get("extract_status", {})
+def format_extract_status(extract_status: object) -> str:
     if not isinstance(extract_status, dict) or not extract_status:
         return "n/a"
     ordered_keys = ("raw_powheg", "yoda_merge", "yoda_nlo", "results", "diagnostic", "spin_diagnostic")
@@ -343,6 +372,10 @@ def extract_status_summary(manifest: Dict[str, object]) -> str:
         if key not in ordered_keys:
             parts.append(f"{key}={extract_status[key]}")
     return ", ".join(parts) if parts else "n/a"
+
+
+def extract_status_summary(manifest: Dict[str, object]) -> str:
+    return format_extract_status(manifest.get("extract_status", {}))
 
 
 def list_screen_sessions() -> List[Dict[str, str]]:
@@ -540,6 +573,7 @@ def collect_snapshot(args: argparse.Namespace) -> Dict[str, object]:
     base_dir = args.base_dir.resolve()
     campaign_dir = base_dir / "campaigns" / args.tag
     manifest = load_manifest(campaign_dir)
+    campaign_monitor = load_campaign_monitor(campaign_dir)
     analysis_variant, include_lo, diagnostics_enabled, analysis_variants_by_setup = resolve_analysis_configuration(args)
     requested_setups = normalize_campaign_setups(args.setup)
     jobs_limit = max(1, maybe_int(manifest.get("jobs_limit"), args.jobs))
@@ -668,6 +702,41 @@ def collect_snapshot(args: argparse.Namespace) -> Dict[str, object]:
     screen_matches_target = screen_total in (0, total_shards)
     eta = file_eta or (screen_eta if screen_matches_target else {})
 
+    monitor_phase = str(campaign_monitor.get("phase", "")) if campaign_monitor else ""
+    monitor_herwig = campaign_monitor.get("herwig") if isinstance(campaign_monitor.get("herwig"), dict) else {}
+    monitor_poldis = campaign_monitor.get("poldis") if isinstance(campaign_monitor.get("poldis"), dict) else {}
+    monitor_extract_status = campaign_monitor.get("extract_status") if isinstance(campaign_monitor.get("extract_status"), dict) else {}
+    monitor_herwig_total = maybe_int(monitor_herwig.get("total"), default=0)
+    monitor_herwig_completed = maybe_int(monitor_herwig.get("completed"), default=0)
+    monitor_herwig_running = maybe_int(monitor_herwig.get("running"), default=0)
+    monitor_herwig_pending = maybe_int(monitor_herwig.get("pending"), default=0)
+    monitor_herwig_failed = maybe_int(monitor_herwig.get("failed"), default=0)
+    monitor_logical_rows = monitor_herwig.get("logical_rows") if isinstance(monitor_herwig.get("logical_rows"), list) else []
+    if monitor_phase:
+        phase_lower = monitor_phase.lower()
+        if "failed" in phase_lower or monitor_herwig_failed > 0:
+            state = "failed"
+        elif "complete" in phase_lower:
+            state = "complete"
+        elif "running" in phase_lower or monitor_herwig_running > 0 or monitor_herwig_pending > 0:
+            state = "running"
+        elif monitor_herwig_total > 0 and monitor_herwig_completed >= monitor_herwig_total:
+            state = "complete"
+    monitor_poldis_rows: List[str] = []
+    hidden_poldis_rows = 0
+    raw_poldis_rows = monitor_poldis.get("rows")
+    if isinstance(raw_poldis_rows, list) and raw_poldis_rows:
+        hidden_poldis_rows = max(0, len(raw_poldis_rows) - max(0, args.max_listed))
+        for row in raw_poldis_rows[: max(0, args.max_listed)]:
+            if not isinstance(row, list) or len(row) < 5:
+                continue
+            setup, status, progress, variant, log_value = (str(row[index]) for index in range(5))
+            line = f"- {setup}: {status}, {progress}, {variant}"
+            compact_log = compact_display_path(log_value, base_dir=base_dir, campaign_dir=campaign_dir)
+            if compact_log != "-":
+                line += f" [{compact_log}]"
+            monitor_poldis_rows.append(line)
+
     return {
         "state": state,
         "host": socket.gethostname(),
@@ -696,49 +765,143 @@ def collect_snapshot(args: argparse.Namespace) -> Dict[str, object]:
         "unresolved_preview": unresolved_preview,
         "failed_count": len(failed_entries),
         "screen": screen_snapshot,
+        "campaign_monitor": campaign_monitor,
+        "monitor_phase": str(campaign_monitor.get("phase", "")) if campaign_monitor else "",
+        "monitor_message": str(campaign_monitor.get("message", "")) if campaign_monitor.get("message") is not None else "",
+        "monitor_elapsed_s": maybe_float(campaign_monitor.get("elapsed_s"), default=0.0) if campaign_monitor else 0.0,
+        "monitor_poldis_mode": str(campaign_monitor.get("poldis_mode", "")) if campaign_monitor else "",
+        "monitor_herwig": monitor_herwig,
+        "monitor_poldis": monitor_poldis,
+        "monitor_extract_status_summary": format_extract_status(monitor_extract_status),
+        "monitor_poldis_rows": monitor_poldis_rows,
+        "monitor_poldis_rows_hidden": hidden_poldis_rows,
+        "monitor_logical_rows": monitor_logical_rows,
     }
 
 
 def render_message(snapshot: Dict[str, object]) -> str:
+    def state_emoji(state: object) -> str:
+        value = str(state).lower()
+        if value == "complete":
+            return "✅"
+        if value == "running":
+            return "🚀"
+        if value == "failed":
+            return "🔥"
+        if value == "partial":
+            return "🧩"
+        return "⏸️"
+
+    def phase_emoji(phase: object) -> str:
+        value = str(phase).lower()
+        if "herwig+poldis" in value:
+            return "🎛️"
+        if "poldis" in value:
+            return "🌀"
+        if "herwig" in value:
+            return "🎯"
+        if "postprocess" in value or "extract" in value:
+            return "📦"
+        if "complete" in value:
+            return "✅"
+        return "🔎"
+
+    monitor_herwig = snapshot.get("monitor_herwig")
+    if not isinstance(monitor_herwig, dict):
+        monitor_herwig = {}
+    monitor_poldis = snapshot.get("monitor_poldis")
+    if not isinstance(monitor_poldis, dict):
+        monitor_poldis = {}
+
+    herwig_completed = maybe_int(monitor_herwig.get("completed"), snapshot["shards_complete"])
+    herwig_total = maybe_int(monitor_herwig.get("total"), snapshot["shards_total"])
+    herwig_running = maybe_int(monitor_herwig.get("running"), snapshot["shards_unresolved"])
+    herwig_pending = maybe_int(monitor_herwig.get("pending"), snapshot["shards_missing"])
+    herwig_failed = maybe_int(monitor_herwig.get("failed"), snapshot["failed_count"])
+    if herwig_total <= 0:
+        herwig_total = snapshot["shards_total"]
+    herwig_completion_pct = 0.0 if herwig_total <= 0 else 100.0 * herwig_completed / herwig_total
+
+    setups_text = ", ".join(snapshot["setups"]) if snapshot["setups"] else "default"
+    header_parts = [f"{state_emoji(snapshot['state'])} DISPOL {snapshot['tag']}", str(snapshot["state"]).upper()]
+    if snapshot.get("monitor_phase"):
+        header_parts.append(f"{phase_emoji(snapshot['monitor_phase'])} {snapshot['monitor_phase']}")
+
+    meta_parts = [str(snapshot["timestamp"])]
+    if snapshot.get("host"):
+        meta_parts.append(str(snapshot["host"]))
+    if setups_text:
+        meta_parts.append(f"setups={setups_text}")
+    if maybe_float(snapshot.get("monitor_elapsed_s"), default=0.0) > 0:
+        meta_parts.append(f"elapsed={format_duration(maybe_int(snapshot.get('monitor_elapsed_s'), 0))}")
+
     lines = [
-        f"DISPOL status: {snapshot['state']}",
-        f"Host: {snapshot['host']}",
-        f"Time: {snapshot['timestamp']}",
-        f"Tag: {snapshot['tag']}",
-        f"Setups: {', '.join(snapshot['setups']) if snapshot['setups'] else 'default'}",
-        f"Base dir: {snapshot['base_dir']}",
-        f"Manifest: {'present' if snapshot['manifest_present'] else 'missing'}",
+        " | ".join(header_parts),
+        " | ".join(meta_parts),
         (
-            f"Logical runs: {snapshot['logical_runs_complete']}/{snapshot['logical_runs_total']} complete, "
-            f"{snapshot['logical_runs_started']} started"
-        ),
-        (
-            f"Shards: {snapshot['shards_complete']}/{snapshot['shards_total']} complete "
-            f"({snapshot['completion_pct']:.1f}%), "
-            f"{snapshot['shards_unresolved']} launched/unresolved, "
-            f"{snapshot['shards_missing']} not yet launched"
+            f"🎯 Herwig: {herwig_completed}/{herwig_total} done ({herwig_completion_pct:.1f}%), "
+            f"{herwig_running} running, {herwig_pending} pending, {herwig_failed} failed"
         ),
     ]
+
+    workflow_text = str(snapshot.get("monitor_message") or "").strip()
+    if not workflow_text:
+        workflow_text = str(snapshot.get("monitor_phase") or "").strip()
+    if not workflow_text:
+        workflow_text = "waiting for live campaign monitor"
+    lines.append(f"🛠️ Workflow: {workflow_text}")
     if snapshot["manifest_present"]:
-        lines.append(f"Postprocess: {snapshot['extract_status_summary']}")
+        extract_summary = snapshot.get("monitor_extract_status_summary") or snapshot["extract_status_summary"]
+        if extract_summary != "n/a":
+            lines.append(f"📦 Postprocess: {extract_summary}")
     if snapshot["failed_count"]:
-        lines.append(f"Manifest failed shards: {snapshot['failed_count']}")
+        lines.append(f"⚠️ Manifest failed shards: {snapshot['failed_count']}")
+    if monitor_poldis or snapshot.get("monitor_poldis_mode"):
+        poldis_line = (
+            f"🌀 POLDIS: {maybe_int(monitor_poldis.get('completed'), 0)}/{maybe_int(monitor_poldis.get('total'), 0)} refs ready"
+            if monitor_poldis
+            else f"🌀 POLDIS: mode={snapshot.get('monitor_poldis_mode')}"
+        )
+        if monitor_poldis:
+            running_jobs = maybe_int(monitor_poldis.get("running_jobs"), 0)
+            compiling_jobs = maybe_int(monitor_poldis.get("compiling_jobs"), 0)
+            pending_jobs = maybe_int(monitor_poldis.get("pending_jobs"), 0)
+            total_jobs = maybe_int(monitor_poldis.get("total_jobs"), 0)
+            if total_jobs > 0 or running_jobs > 0 or compiling_jobs > 0 or pending_jobs > 0:
+                poldis_line += (
+                    f", {running_jobs} running"
+                    f", {compiling_jobs} compiling"
+                    f", {pending_jobs} pending"
+                )
+        lines.append(poldis_line)
+        if monitor_poldis:
+            for row in snapshot.get("monitor_poldis_rows", []):
+                lines.append(row)
+            hidden_rows = maybe_int(snapshot.get("monitor_poldis_rows_hidden"), default=0)
+            if hidden_rows > 0:
+                lines.append(f"... and {hidden_rows} more")
     eta = snapshot.get("eta")
     if isinstance(eta, dict) and eta:
         lines.append(
-            "ETA: "
+            "⏳ ETA: "
             f"{format_duration(maybe_int(eta.get('remaining_seconds'), 0))} remaining "
             f"(total ~{format_duration(maybe_int(eta.get('estimated_total_seconds'), 0))})"
         )
     elif snapshot.get("screen_matches_target") is False:
         lines.append(
-            f"ETA: unavailable (screen session reports {snapshot.get('screen_total', 0)} total shards, "
+            f"⏳ ETA: unavailable (screen session reports {snapshot.get('screen_total', 0)} total shards, "
             f"but the manifest target is {snapshot['shards_total']})"
         )
+    elif str(snapshot.get("state")).lower() == "complete":
+        lines.append("⏳ ETA: complete")
+    elif herwig_completed > 0 or herwig_running > 0 or maybe_int(monitor_poldis.get("running_jobs"), 0) > 0:
+        lines.append("⏳ ETA: estimating from live progress")
+    else:
+        lines.append("⏳ ETA: waiting for progress data")
     screen = snapshot.get("screen")
     if isinstance(screen, dict):
         lines.append(
-            f"Screen: {screen.get('status', 'unknown')}"
+            f"🖥️ Screen: {screen.get('status', 'unknown')}"
             + (
                 f" ({screen.get('session')}{':' + str(screen.get('window')) if screen.get('window') else ''})"
                 if screen.get("session")
@@ -777,8 +940,7 @@ def render_message(snapshot: Dict[str, object]) -> str:
 
     unresolved_preview = snapshot["unresolved_preview"]
     if unresolved_preview:
-        lines.append("")
-        lines.append("Recent unresolved shards:")
+        lines.append("🧩 Recent unresolved Herwig shards:")
         for item in unresolved_preview:
             lines.append(
                 f"- {item['stem']} [{item['tag']}] seed={item['seed']} progress={item['progress']}"

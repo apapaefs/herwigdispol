@@ -704,6 +704,74 @@ def _build_cumulative_ratio_hist(delta_hist: object, sigma_hist: object, path: s
     return cumulative_hist
 
 
+def _build_ratio_hist(numerator_hist: object, denominator_hist: object, path: str) -> object:
+    edges = _x_edges(denominator_hist)
+    ratio_hist = _new_estimate(edges, path)
+    if ratio_hist.numBins() != numerator_hist.numBins() or ratio_hist.numBins() != denominator_hist.numBins():
+        raise RuntimeError(
+            f"Could not build ratio histogram {path}: mismatched bin counts "
+            f"({ratio_hist.numBins()}, {numerator_hist.numBins()}, {denominator_hist.numBins()})"
+        )
+
+    for index in range(1, ratio_hist.numBins() + 1):
+        numerator_value, numerator_error = _bin_value_error(numerator_hist.bin(index))
+        denominator_value, denominator_error = _bin_value_error(denominator_hist.bin(index))
+        ratio_value, ratio_error = _ratio_value_error(
+            numerator_value,
+            numerator_error,
+            denominator_value,
+            denominator_error,
+        )
+        set_bin_val_err(ratio_hist.bin(index), ratio_value, ratio_error)
+    return ratio_hist
+
+
+def build_correlated_helicity_derived_objects(
+    objects: Dict[str, object],
+    analysis: str = "MC_DIS_BREIT",
+) -> Dict[str, object]:
+    """Add derived A_LL/moment objects to a correlated-weight sigma/delta set."""
+    output: Dict[str, object] = dict(objects)
+
+    for label in _analysis_all_labels(analysis):
+        sigma_path = f"/{analysis}/{label}"
+        delta_path = f"/{analysis}/D{label}"
+        sigma_hist = output.get(sigma_path)
+        delta_hist = output.get(delta_path)
+        if sigma_hist is None or delta_hist is None:
+            continue
+        all_path = f"/{analysis}/ALL{label}"
+        output[all_path] = _build_ratio_hist(delta_hist, sigma_hist, all_path)
+
+    intermediate_paths: set[str] = set()
+    for moment_label, numerator_label, denominator_label in _analysis_derived_moments(analysis):
+        numerator_path = f"/{analysis}/{numerator_label}"
+        denominator_path = f"/{analysis}/{denominator_label}"
+        numerator_hist = output.get(numerator_path)
+        denominator_hist = output.get(denominator_path)
+        if numerator_hist is not None and denominator_hist is not None:
+            moment_path = f"/{analysis}/{moment_label}"
+            output[moment_path] = _build_ratio_hist(numerator_hist, denominator_hist, moment_path)
+        intermediate_paths.add(numerator_path)
+        intermediate_paths.add(denominator_path)
+        intermediate_paths.add(f"/{analysis}/D{numerator_label}")
+        intermediate_paths.add(f"/{analysis}/D{denominator_label}")
+
+    for cumulative_label, base_label in _analysis_derived_cumulative_all(analysis):
+        sigma_path = f"/{analysis}/{base_label}"
+        delta_path = f"/{analysis}/D{base_label}"
+        sigma_hist = output.get(sigma_path)
+        delta_hist = output.get(delta_path)
+        if sigma_hist is None or delta_hist is None:
+            continue
+        cumulative_path = f"/{analysis}/{cumulative_label}"
+        output[cumulative_path] = _build_cumulative_ratio_hist(delta_hist, sigma_hist, cumulative_path)
+
+    for path in intermediate_paths:
+        output.pop(path, None)
+    return output
+
+
 def _combine_setup_bin(
     setup: str,
     index: int,

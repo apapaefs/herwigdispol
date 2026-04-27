@@ -209,111 +209,25 @@ def make_edges(xlow: float, xhigh: float, nbins: int, logx: bool) -> List[float]
     return [xlow * (r ** (i / nbins)) for i in range(nbins + 1)]
 
 
-def dataset_edges(frame: Frame, dataset: List[Tuple[float, float, float]]) -> List[float]:
-    """
-    Reconstruct cell edges from the printed Topdrawer abscissae.
-
-    POLDIS fills these histograms through GFLIN1, which linearly distributes an
-    event weight between neighbouring cells. The printed .top values therefore
-    behave like nodal values sampled at the booked x positions, not plain box
-    bin contents. We keep the booked end points from SET LIMITS X and use
-    midpoints between neighbouring printed x values for the internal edges.
-    """
-    if not dataset:
-        return []
-    xs = [pt[0] for pt in dataset]
-    if len(xs) == 1:
-        return [frame.xlow, frame.xhigh]
-    edges = [float(frame.xlow)]
-    for left, right in zip(xs[:-1], xs[1:]):
-        if frame.logx and left > 0.0 and right > 0.0:
-            edges.append(math.sqrt(left * right))
-        else:
-            edges.append(0.5 * (left + right))
-    edges.append(float(frame.xhigh))
-    return edges
-
-
-def _eval_linear(xs: List[float], ys: List[float], x: float) -> float:
-    if len(xs) == 1:
-        return ys[0]
-    if x <= xs[0]:
-        x1, x2 = xs[0], xs[1]
-        y1, y2 = ys[0], ys[1]
-    elif x >= xs[-1]:
-        x1, x2 = xs[-2], xs[-1]
-        y1, y2 = ys[-2], ys[-1]
-    else:
-        idx = 0
-        while idx + 1 < len(xs) and xs[idx + 1] < x:
-            idx += 1
-        x1, x2 = xs[idx], xs[idx + 1]
-        y1, y2 = ys[idx], ys[idx + 1]
-    if x2 == x1:
-        return y1
-    return y1 + (y2 - y1) * (x - x1) / (x2 - x1)
-
-
-def _integrate_linear_piecewise(xs: List[float], ys: List[float], a: float, b: float) -> float:
-    if b <= a:
-        return 0.0
-    if len(xs) == 1:
-        return ys[0] * (b - a)
-
-    breaks = [a]
-    for x in xs:
-        if a < x < b:
-            breaks.append(x)
-    breaks.append(b)
-    area = 0.0
-    for left, right in zip(breaks[:-1], breaks[1:]):
-        yl = _eval_linear(xs, ys, left)
-        yr = _eval_linear(xs, ys, right)
-        area += 0.5 * (yl + yr) * (right - left)
-    return area
-
-
-def nodal_to_bin_averages(
+def dataset_to_binned_integrals(
     frame: Frame, dataset: List[Tuple[float, float, float]]
 ) -> Tuple[List[float], List[float], List[float]]:
     """
-    Convert the Topdrawer nodal values written by the GFLIN1-backed POLDIS
-    histograms into true cell averages on the booked bin edges.
-
-    The returned y values are the average over each output cell; the returned
-    uncertainties are propagated assuming uncorrelated nodal errors.
+    user_dijet_rivetplots fills these observables with GFILL1, and GTOP1 writes
+    the resulting bin contents at the booked bin centres. Treat the printed
+    triplets as ordinary per-bin integrals on the booked grid, not as nodal
+    values to be linearly interpolated, otherwise threshold bins get smeared
+    into neighbouring bins that should remain empty.
     """
     if not dataset:
         return [], [], []
-    xs = [pt[0] for pt in dataset]
+    if frame.xlow is None or frame.xhigh is None:
+        raise RuntimeError(f"Frame {frame.title!r} is missing SET LIMITS X information.")
+
+    edges = make_edges(float(frame.xlow), float(frame.xhigh), len(dataset), frame.logx)
     ys = [pt[1] for pt in dataset]
     dys = [pt[2] for pt in dataset]
-    edges = dataset_edges(frame, dataset)
-    nbins = len(dataset)
-    avg_ys: List[float] = []
-    avg_dys: List[float] = []
-
-    for ibin in range(nbins):
-        left = edges[ibin]
-        right = edges[ibin + 1]
-        width = right - left
-        if width <= 0.0:
-            avg_ys.append(0.0)
-            avg_dys.append(0.0)
-            continue
-
-        weights: List[float] = []
-        for inode in range(nbins):
-            basis = [0.0] * nbins
-            basis[inode] = 1.0
-            weights.append(_integrate_linear_piecewise(xs, basis, left, right) / width)
-
-        value = sum(w * y for w, y in zip(weights, ys))
-        error = math.sqrt(sum((w * dy) ** 2 for w, dy in zip(weights, dys)))
-        avg_ys.append(value)
-        avg_dys.append(error)
-
-    return edges, avg_ys, avg_dys
+    return edges, ys, dys
 
 def new_binned_estimate(edges: List[float]):
     # FORCE binned estimate output. If your python-yoda can read MC as BinnedEstimate1D,
@@ -350,6 +264,197 @@ def fill_estimate(est, ys: List[float], dys: List[float]):
     n = min(len(bins), len(ys), len(dys))
     for i in range(n):
         set_bin_val_err(bins[i], ys[i], dys[i])
+
+
+def _bin_value_error(bin_obj) -> Tuple[float, float]:
+    if hasattr(bin_obj, "val"):
+        value = float(bin_obj.val())
+        try:
+            error = float(bin_obj.errAvg())
+        except Exception:
+            try:
+                error = 0.5 * (abs(float(bin_obj.errMinus())) + abs(float(bin_obj.errPlus())))
+            except Exception:
+                error = 0.0
+    elif hasattr(bin_obj, "height"):
+        value = float(bin_obj.height())
+        error = float(bin_obj.heightErr()) if hasattr(bin_obj, "heightErr") else 0.0
+    else:
+        raise RuntimeError(f"Unsupported YODA bin type {type(bin_obj).__name__}")
+
+    if not math.isfinite(error) or error < 0.0:
+        error = 0.0
+    return value, error
+
+
+def _estimate_edges(obj: object) -> List[float]:
+    if hasattr(obj, "xEdges"):
+        return [float(edge) for edge in obj.xEdges()]
+    bins = list(obj.bins()) if hasattr(obj, "bins") else []
+    if not bins:
+        raise RuntimeError(f"Object of type {type(obj).__name__} does not expose xEdges() or bins().")
+    edges = [float(bins[0].xMin())]
+    edges.extend(float(bin_obj.xMax()) for bin_obj in bins)
+    return edges
+
+
+def combine_ref_object_sets(
+    ref_object_sets: List[Dict[str, object]],
+    generated_events: Optional[List[int]] = None,
+) -> Dict[str, object]:
+    if not ref_object_sets:
+        raise ValueError("Need at least one reference-object set to combine.")
+    if generated_events is not None and len(generated_events) != len(ref_object_sets):
+        raise ValueError("generated_events must match the number of reference-object sets.")
+
+    common_paths = set(ref_object_sets[0])
+    for ref_objects in ref_object_sets[1:]:
+        common_paths &= set(ref_objects)
+    if not common_paths:
+        raise RuntimeError("No common reference-object paths found across shard outputs.")
+
+    weights = [float(events) for events in generated_events] if generated_events is not None else [1.0] * len(ref_object_sets)
+    if any(weight <= 0.0 for weight in weights):
+        raise ValueError("generated_events must be positive for every shard.")
+    total_weight = sum(weights)
+
+    combined: Dict[str, object] = {}
+    for path in sorted(common_paths):
+        objects = [ref_objects[path] for ref_objects in ref_object_sets]
+        edges = _estimate_edges(objects[0])
+        for other in objects[1:]:
+            other_edges = _estimate_edges(other)
+            if len(other_edges) != len(edges) or any(
+                not math.isclose(left, right, rel_tol=1.0e-12, abs_tol=1.0e-12)
+                for left, right in zip(edges, other_edges)
+            ):
+                raise RuntimeError(f"Mismatched bin grids for reference object {path}")
+
+        combined_values: List[float] = []
+        combined_errors: List[float] = []
+        per_object_bins = [list(obj.bins()) for obj in objects]
+        bin_count = len(edges) - 1
+        for bins in per_object_bins:
+            if len(bins) != bin_count:
+                raise RuntimeError(f"Mismatched bin counts for reference object {path}")
+
+        for bin_index in range(bin_count):
+            bin_measurements = [_bin_value_error(bins[bin_index]) for bins in per_object_bins]
+            value = sum(weight * measurement[0] for weight, measurement in zip(weights, bin_measurements)) / total_weight
+            error = math.sqrt(
+                sum((weight * measurement[1]) ** 2 for weight, measurement in zip(weights, bin_measurements))
+            ) / total_weight
+            combined_values.append(value)
+            combined_errors.append(error)
+
+        estimate = new_binned_estimate(edges)
+        if hasattr(estimate, "setPath"):
+            estimate.setPath(path)
+        else:
+            raise RuntimeError("Estimate object has no setPath method")
+        fill_estimate(estimate, combined_values, combined_errors)
+        try:
+            estimate.setAnnotation("Legend", "POLDIS NLO")
+        except Exception:
+            pass
+        combined[path] = estimate
+
+    return combined
+
+
+def _clone_ref_object(template_obj: object, values: List[float], errors: List[float]) -> object:
+    edges = _estimate_edges(template_obj)
+    estimate = new_binned_estimate(edges)
+    path = getattr(template_obj, "path", None)
+    if callable(path):
+        estimate.setPath(str(path()))
+    elif hasattr(template_obj, "path"):
+        estimate.setPath(str(template_obj.path))
+    else:
+        raise RuntimeError("Template reference object has no path information")
+    fill_estimate(estimate, values, errors)
+    try:
+        legend = template_obj.annotation("Legend")
+    except Exception:
+        legend = None
+    if legend is not None:
+        try:
+            estimate.setAnnotation("Legend", str(legend))
+        except Exception:
+            pass
+    return estimate
+
+
+def build_ref_object_error_mode(
+    nominal_ref_objects: Dict[str, object],
+    *,
+    error_mode: str = "stat",
+    scale_down_ref_objects: Optional[Dict[str, object]] = None,
+    scale_up_ref_objects: Optional[Dict[str, object]] = None,
+) -> Dict[str, object]:
+    if error_mode not in {"stat", "scale", "stat+scale"}:
+        raise ValueError(f"Unsupported reference error mode {error_mode!r}")
+
+    use_scale_errors = error_mode != "stat"
+    if use_scale_errors and (scale_down_ref_objects is None or scale_up_ref_objects is None):
+        raise ValueError("Scale-based reference error modes require both scale_down_ref_objects and scale_up_ref_objects")
+
+    if use_scale_errors:
+        nominal_paths = set(nominal_ref_objects)
+        down_paths = set(scale_down_ref_objects or {})
+        up_paths = set(scale_up_ref_objects or {})
+        if nominal_paths != down_paths or nominal_paths != up_paths:
+            raise RuntimeError("Nominal/down/up reference objects do not share identical object paths")
+
+    updated: Dict[str, object] = {}
+    for path in sorted(nominal_ref_objects):
+        nominal_obj = nominal_ref_objects[path]
+        nominal_bins = list(nominal_obj.bins())
+        bin_count = len(nominal_bins)
+        values: List[float] = []
+        errors: List[float] = []
+
+        if use_scale_errors:
+            down_obj = (scale_down_ref_objects or {})[path]
+            up_obj = (scale_up_ref_objects or {})[path]
+            down_edges = _estimate_edges(down_obj)
+            up_edges = _estimate_edges(up_obj)
+            nominal_edges = _estimate_edges(nominal_obj)
+            for other_edges, label in ((down_edges, "down"), (up_edges, "up")):
+                if len(other_edges) != len(nominal_edges) or any(
+                    not math.isclose(left, right, rel_tol=1.0e-12, abs_tol=1.0e-12)
+                    for left, right in zip(nominal_edges, other_edges)
+                ):
+                    raise RuntimeError(f"Mismatched {label} bin grid for reference object {path}")
+            down_bins = list(down_obj.bins())
+            up_bins = list(up_obj.bins())
+            if len(down_bins) != bin_count or len(up_bins) != bin_count:
+                raise RuntimeError(f"Mismatched bin counts for reference object {path}")
+        else:
+            down_bins = []
+            up_bins = []
+
+        for bin_index, nominal_bin in enumerate(nominal_bins):
+            nominal_value, nominal_error = _bin_value_error(nominal_bin)
+            scale_error = 0.0
+            if use_scale_errors:
+                down_value, _ = _bin_value_error(down_bins[bin_index])
+                up_value, _ = _bin_value_error(up_bins[bin_index])
+                scale_error = max(abs(down_value - nominal_value), abs(up_value - nominal_value))
+
+            if error_mode == "stat":
+                error = nominal_error
+            elif error_mode == "scale":
+                error = scale_error
+            else:
+                error = math.hypot(nominal_error, scale_error)
+
+            values.append(nominal_value)
+            errors.append(error)
+
+        updated[path] = _clone_ref_object(nominal_obj, values, errors)
+
+    return updated
 
 
 def to_density(edges: List[float], ys: List[float], dys: List[float]) -> Tuple[List[float], List[float]]:
@@ -390,14 +495,7 @@ def frames_to_refobjs(frames: List[Frame], analysis: str, prefix: str, order: st
         if not ds:
             continue
 
-        nbins = len(ds)
-        legacy_edges = make_edges(fr.xlow, fr.xhigh, nbins, fr.logx)
-        edges, ys, dys = nodal_to_bin_averages(fr, ds)
-        if not edges:
-            edges = legacy_edges
-            ys = [p[1] for p in ds]
-            dys = [p[2] for p in ds]
-
+        edges, ys, dys = dataset_to_binned_integrals(fr, ds)
         ys, dys = to_density(edges, ys, dys)
 
         est = new_binned_estimate(edges)

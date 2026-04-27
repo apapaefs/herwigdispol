@@ -45,7 +45,7 @@ except ImportError:
 RUN_RE = re.compile(
     r"^DIS-POL-(?P<kind>POWHEG|LO)_(?P<hel>PP|PM|MP|MM|00)"
     r"(?:-(?P<piece>POSNLO|NEGNLO))?-(?P<ew>ALL|GAMMA|Z)"
-    r"(?:-(?P<analysis>RIVETFOFIXED|RIVETFO|RIVET))?"
+    r"(?:-(?P<analysis>RIVETFOFIXED|RIVETWEIGHTS|RIVETFO|RIVET))?"
     r"(?:-(?P<variant>.+))?$"
 )
 # Support both plain shard variants like
@@ -1533,6 +1533,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Resolve and report only -RIVETFO logs/outputs.",
     )
     parser.add_argument(
+        "--rivetweights",
+        action="store_true",
+        help="Resolve and report only -RIVETWEIGHTS logs/outputs.",
+    )
+    parser.add_argument(
         "--rivetfofixed",
         action="store_true",
         help="Resolve and report only -RIVETFOFIXED logs/outputs.",
@@ -1568,13 +1573,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
-    if int(args.rivet) + int(args.rivetfo) + int(args.rivetfofixed) > 1:
-        raise SystemExit("Use at most one of --rivet, --rivetfo, and --rivetfofixed.")
+    if int(args.rivet) + int(args.rivetfo) + int(args.rivetweights) + int(args.rivetfofixed) > 1:
+        raise SystemExit("Use at most one of --rivet, --rivetfo, --rivetweights, and --rivetfofixed.")
     base_dir = Path(args.base_dir).resolve()
 
     requested_analysis = (
         "RIVETFOFIXED" if args.rivetfofixed else
-        ("RIVETFO" if args.rivetfo else ("RIVET" if args.rivet else ""))
+        ("RIVETWEIGHTS" if args.rivetweights else ("RIVETFO" if args.rivetfo else ("RIVET" if args.rivet else "")))
     )
     setup_filter = parse_filter_values(args.setup, uppercase=True)
     piece_filter = parse_filter_values(args.piece, uppercase=True)

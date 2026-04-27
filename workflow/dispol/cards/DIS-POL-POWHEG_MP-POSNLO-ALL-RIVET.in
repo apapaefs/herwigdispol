@@ -56,7 +56,7 @@ set /Herwig/EventHandlers/EventHandler:Cuts:X1Min 1E-5
 set /Herwig/EventHandlers/EventHandler:Cuts:X2Min 1E-5
 set /Herwig/Cuts/NeutralCurrentCut:MinW2 0*GeV2
 set /Herwig/Cuts/NeutralCurrentCut:MaxW2 1E99*GeV2
-set /Herwig/Cuts/NeutralCurrentCut:MinQ2 49.*GeV2
+set /Herwig/Cuts/NeutralCurrentCut:MinQ2 100.*GeV2
 set /Herwig/Cuts/NeutralCurrentCut:MaxQ2 2500.*GeV2
 set /Herwig/Cuts/NeutralCurrentCut:Miny 0.2
 set /Herwig/Cuts/NeutralCurrentCut:Maxy 0.6

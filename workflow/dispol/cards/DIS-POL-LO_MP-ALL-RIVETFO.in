@@ -19,7 +19,7 @@ set /Herwig/Particles/e+:PDF /Herwig/Partons/NoPDF
 
 create ThePEG::LHAPDF /Herwig/Partons/DiffPDF
 set /Herwig/Partons/DiffPDF:RemnantHandler /Herwig/Partons/HadronRemnants
-set /Herwig/Partons/DiffPDF:PDFName BDSSV24-NNLO
+set /Herwig/Partons/DiffPDF:PDFName NNPDFpol20_nlo_as_01180
 
 set  /Herwig/Partons/EPPolarizedExtractor:SecondLongitudinalDifferencePDF /Herwig/Partons/DiffPDF
 set  /Herwig/Partons/EPPolarizedExtractor:FirstLongitudinalPolarization -1
@@ -40,17 +40,17 @@ set /Herwig/Shower/ShowerHandler:Interactions QEDQCD
 
 
 create ThePEG::LHAPDF /Herwig/Partons/LHAPDF ThePEGLHAPDF.so
-set /Herwig/Partons/LHAPDF:PDFName PDF4LHC15_nnlo_100_pdfas
-set /Herwig/Partons/HardNLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
-set /Herwig/Partons/ShowerNLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+set /Herwig/Partons/LHAPDF:PDFName NNPDF40_nlo_pch_as_01180
+set /Herwig/Partons/HardNLOPDF:PDFName NNPDF40_nlo_pch_as_01180
+set /Herwig/Partons/ShowerNLOPDF:PDFName NNPDF40_nlo_pch_as_01180
 set /Herwig/Partons/RemnantDecayer:AllowTop Yes
 set /Herwig/Partons/RemnantDecayer:DISRemnantOption AllParticles
 set /Herwig/Partons/RemnantDecayer:DISOneRemnantFallback RelaxMass
 set /Herwig/Partons/LHAPDF:RemnantHandler /Herwig/Partons/HadronRemnants
 set /Herwig/Particles/p+:PDF /Herwig/Partons/HardLOPDF
 set /Herwig/Partons/EPPolarizedExtractor:SecondPDF  /Herwig/Partons/HardLOPDF
-set /Herwig/Partons/HardLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
-set /Herwig/Partons/ShowerLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+set /Herwig/Partons/HardLOPDF:PDFName NNPDF40_nlo_pch_as_01180
+set /Herwig/Partons/ShowerLOPDF:PDFName NNPDF40_nlo_pch_as_01180
 
 
 set EventGenerator:EventHandler:BeamA /Herwig/Particles/e-
@@ -63,41 +63,41 @@ set /Herwig/EventHandlers/EventHandler:Cuts:X1Min 1E-5
 set /Herwig/EventHandlers/EventHandler:Cuts:X2Min 1E-5
 set /Herwig/Cuts/NeutralCurrentCut:MinW2 0*GeV2
 set /Herwig/Cuts/NeutralCurrentCut:MaxW2 1E99*GeV2
-set /Herwig/Cuts/NeutralCurrentCut:MinQ2 49.*GeV2
+set /Herwig/Cuts/NeutralCurrentCut:MinQ2 100.*GeV2
 set /Herwig/Cuts/NeutralCurrentCut:MaxQ2 2500.*GeV2
 set /Herwig/Cuts/NeutralCurrentCut:Miny 0.2
 set /Herwig/Cuts/NeutralCurrentCut:Maxy 0.6
 set /Herwig/Cuts/Cuts:MHatMin 0.
 
 # set the electron/positron hard process mass to zero
-set /Herwig/Particles/e-:HardProcessMass 0
-set /Herwig/Particles/e+:HardProcessMass 0
+# set /Herwig/Particles/e-:HardProcessMass 0
+# set /Herwig/Particles/e+:HardProcessMass 0
 
 # set the quark hard process masses to zero for massless DIS comparisons
-set /Herwig/Particles/u:HardProcessMass 0*GeV
-set /Herwig/Particles/ubar:HardProcessMass 0*GeV
-set /Herwig/Particles/d:HardProcessMass 0*GeV
-set /Herwig/Particles/dbar:HardProcessMass 0*GeV
-set /Herwig/Particles/s:HardProcessMass 0*GeV
-set /Herwig/Particles/sbar:HardProcessMass 0*GeV
-set /Herwig/Particles/c:HardProcessMass 0*GeV
-set /Herwig/Particles/cbar:HardProcessMass 0*GeV
-set /Herwig/Particles/b:HardProcessMass 0*GeV
-set /Herwig/Particles/bbar:HardProcessMass 0*GeV
+# set /Herwig/Particles/u:HardProcessMass 0*GeV
+# set /Herwig/Particles/ubar:HardProcessMass 0*GeV
+# set /Herwig/Particles/d:HardProcessMass 0*GeV
+# set /Herwig/Particles/dbar:HardProcessMass 0*GeV
+# set /Herwig/Particles/s:HardProcessMass 0*GeV
+# set /Herwig/Particles/sbar:HardProcessMass 0*GeV
+# set /Herwig/Particles/c:HardProcessMass 0*GeV
+# set /Herwig/Particles/cbar:HardProcessMass 0*GeV
+# set /Herwig/Particles/b:HardProcessMass 0*GeV
+# set /Herwig/Particles/bbar:HardProcessMass 0*GeV
 
 # align nominal masses with the hard-process masses for consistent massless plain-run tests
-do /Herwig/Particles/e-:AdjustNominalMass
-do /Herwig/Particles/e+:AdjustNominalMass
-do /Herwig/Particles/u:AdjustNominalMass
-do /Herwig/Particles/ubar:AdjustNominalMass
-do /Herwig/Particles/d:AdjustNominalMass
-do /Herwig/Particles/dbar:AdjustNominalMass
-do /Herwig/Particles/s:AdjustNominalMass
-do /Herwig/Particles/sbar:AdjustNominalMass
-do /Herwig/Particles/c:AdjustNominalMass
-do /Herwig/Particles/cbar:AdjustNominalMass
-do /Herwig/Particles/b:AdjustNominalMass
-do /Herwig/Particles/bbar:AdjustNominalMass
+# do /Herwig/Particles/e-:AdjustNominalMass
+# do /Herwig/Particles/e+:AdjustNominalMass
+# do /Herwig/Particles/u:AdjustNominalMass
+# do /Herwig/Particles/ubar:AdjustNominalMass
+# do /Herwig/Particles/d:AdjustNominalMass
+# do /Herwig/Particles/dbar:AdjustNominalMass
+# do /Herwig/Particles/s:AdjustNominalMass
+# do /Herwig/Particles/sbar:AdjustNominalMass
+# do /Herwig/Particles/c:AdjustNominalMass
+# do /Herwig/Particles/cbar:AdjustNominalMass
+# do /Herwig/Particles/b:AdjustNominalMass
+# do /Herwig/Particles/bbar:AdjustNominalMass
 
 
 set /Herwig/Particles/W+:NominalMass 80.450
@@ -228,7 +228,7 @@ read snippets/Rivet.in
 # ZEUS D production
 #insert /Herwig/Analysis/Rivet:Analyses 0 ZEUS_2008_I810112
 # MC DIS EXTRA
-insert /Herwig/Analysis/Rivet:Analyses 0 MC_DIS_BREIT:JETINPUT=TOP2PARTONS
+insert /Herwig/Analysis/Rivet:Analyses 0 MC_DIS_BREIT:JETINPUT=MEPARTONS
 
 
 #insert /Herwig/Analysis/Rivet:Analyses 0 XXX_2015_ABC123

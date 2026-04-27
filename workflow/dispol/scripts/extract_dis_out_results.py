@@ -24,6 +24,15 @@ and, when all four polarized helicity states are available,
     sigma_p  = (PP - PM + MP - MM) / 4
     sigma_LL = (PP + MM - PM - MP) / 4
 
+For the default e^- p charged-current workflow, only the physical nonzero
+lepton-helicity channels MP and MM are generated, with PP = PM = 0 imposed
+analytically. In that case the script reconstructs
+
+    sigma_0  = (MP + MM) / 4
+    sigma_l  = -(MP + MM) / 4
+    sigma_p  = (MP - MM) / 4
+    sigma_LL = (MM - MP) / 4
+
 for LO, POSNLO, NEGNLO, and the total NLO result. It also reports internal
 consistency checks such as sigma_avg - sigma_00 and K-factors with respect to
 LO when both orders are present for the same electroweak setup.
@@ -106,20 +115,23 @@ RIVETFOFIXED_DEFAULT_RUNS = [
     "DIS-POL-POWHEG_PM-POSNLO-GAMMA.out",
 ]
 
+RIVETWEIGHTS_DEFAULT_RUNS = [
+    "DIS-POL-POWHEG_00-POSNLO-ALL.out",
+    "DIS-POL-POWHEG_00-NEGNLO-ALL.out",
+    "DIS-POL-POWHEG_00-POSNLO-Z.out",
+    "DIS-POL-POWHEG_00-NEGNLO-Z.out",
+    "DIS-POL-POWHEG_00-POSNLO-GAMMA.out",
+    "DIS-POL-POWHEG_00-NEGNLO-GAMMA.out",
+]
+
 CC_DEFAULT_RUNS = [
-    "DIS-POL-POWHEG_PP-POSNLO-CC.out",
     "DIS-POL-POWHEG_00-POSNLO-CC.out",
-    "DIS-POL-POWHEG_PM-POSNLO-CC.out",
-    "DIS-POL-POWHEG_PP-NEGNLO-CC.out",
-    "DIS-POL-POWHEG_00-NEGNLO-CC.out",
-    "DIS-POL-POWHEG_PM-NEGNLO-CC.out",
     "DIS-POL-POWHEG_MP-POSNLO-CC.out",
     "DIS-POL-POWHEG_MM-POSNLO-CC.out",
+    "DIS-POL-POWHEG_00-NEGNLO-CC.out",
     "DIS-POL-POWHEG_MP-NEGNLO-CC.out",
     "DIS-POL-POWHEG_MM-NEGNLO-CC.out",
     "DIS-POL-LO_00-CC.out",
-    "DIS-POL-LO_PP-CC.out",
-    "DIS-POL-LO_PM-CC.out",
     "DIS-POL-LO_MP-CC.out",
     "DIS-POL-LO_MM-CC.out",
 ]
@@ -140,11 +152,11 @@ UNIT_RE = re.compile(r"Cross-section\s*\(([^)]+)\)")
 
 LO_NAME_RE = re.compile(
     r"^DIS-POL-LO_(?P<hel>PP|PM|MP|MM|00)-(?P<ew>ALL|GAMMA|Z|CC)"
-    r"(?:-(?P<analysis>RIVETFOFIXED|RIVETFO|RIVET))?(?:-(?P<variant>[^.]+))?\.out$"
+    r"(?:-(?P<analysis>RIVETFOFIXED|RIVETWEIGHTS|RIVETFO|RIVET))?(?:-(?P<variant>[^.]+))?\.out$"
 )
 NLO_NAME_RE = re.compile(
     r"^DIS-POL-POWHEG_(?P<hel>PP|PM|MP|MM|00)-(?P<part>POSNLO|NEGNLO)-(?P<ew>ALL|GAMMA|Z|CC)"
-    r"(?:-(?P<analysis>RIVETFOFIXED|RIVETFO|RIVET))?(?:-(?P<variant>[^.]+))?\.out$"
+    r"(?:-(?P<analysis>RIVETFOFIXED|RIVETWEIGHTS|RIVETFO|RIVET))?(?:-(?P<variant>[^.]+))?\.out$"
 )
 # Support both plain shard variants like
 #   S700560-plain48-z-termdiag-s001
@@ -180,6 +192,8 @@ def emit_progress(enabled: bool, message: str) -> None:
 HELICITY_ORDER = ("PP", "PM", "MP", "MM", "00")
 THREE_STATE_TAGS = ("PP", "PM", "00")
 FOUR_STATE_TAGS = ("PP", "PM", "MP", "MM")
+CC_ELECTRON_REQUIRED_TAGS = ("00", "MP", "MM")
+CC_ELECTRON_NONZERO_TAGS = ("MP", "MM")
 STAGE_ORDER = ("LO", "POSNLO", "NEGNLO", "NLO")
 COMPARISON_ORDER = ("LO_unpol", "NLO_unpol", "LO_pol", "NLO_pol")
 INTERFERENCE_COMPARISON_ORDER = ("LO_unpol", "NLO_unpol", "LO_pol", "NLO_pol")
@@ -196,25 +210,36 @@ DISPLAY_LABELS = {
     "00": "sigma_00",
 }
 
+CC_REDUCED_DISPLAY_LABELS = {
+    "sigma0": "sigma0 = (MP+MM)/4",
+    "sigma_l": "sigma_l = -(MP+MM)/4",
+    "sigma_p": "sigma_p = (MP-MM)/4",
+    "sigma_ll": "sigma_LL = (MM-MP)/4",
+    "sigma0_minus_00": "sigma0 - 00",
+}
+
 DELTA_OBSERVABLES = {"avg_minus_00", "sigma0_minus_00"}
 
 
-# POLDIS reference cross sections for the current validation cut Q^2 > 49 GeV^2.
+# Built-in POLDIS reference cross sections for the broad-window validation
+# setup. The ALL/GAMMA/Z defaults track the plain55nn NNPDF-paired totals so
+# extractor reruns inherit the latest validated reference values without
+# requiring an explicit override JSON.
 POLDIS_POL_REFS: Dict[str, Dict[str, Measurement]] = {
     "ALL": {
-        "LO": Measurement(50.140712, 0.003077),
-        "NLO": Measurement(48.288810, 0.003227),
-        "NNLO": Measurement(48.158641, 0.003761),
+        "LO": Measurement(56.031213, 0.002277),
+        "NLO": Measurement(53.509426, 0.002497),
+        "NNLO": Measurement(53.112493, 0.002972),
     },
     "GAMMA": {
-        "LO": Measurement(45.426932, 0.002804),
-        "NLO": Measurement(43.669509, 0.003004),
-        "NNLO": Measurement(43.544651, 0.003565),
+        "LO": Measurement(51.041677, 0.002117),
+        "NLO": Measurement(48.625541, 0.002372),
+        "NNLO": Measurement(48.236180, 0.002872),
     },
     "Z": {
-        "LO": Measurement(0.054656, 0.000010),
-        "NLO": Measurement(0.050150, 0.000010),
-        "NNLO": Measurement(0.049715, 0.000010),
+        "LO": Measurement(0.048301, 0.000006),
+        "NLO": Measurement(0.044247, 0.000006),
+        "NNLO": Measurement(0.043779, 0.000006),
     },
     "CC": {
         "LO": Measurement(3.157534, 0.001497),
@@ -225,19 +250,19 @@ POLDIS_POL_REFS: Dict[str, Dict[str, Measurement]] = {
 
 POLDIS_UNPOL_REFS: Dict[str, Dict[str, Measurement]] = {
     "ALL": {
-        "LO": Measurement(2965.620920, 0.200533),
-        "NLO": Measurement(2768.302391, 0.227469),
-        "NNLO": Measurement(2689.313720, 0.299187),
+        "LO": Measurement(2946.460174, 0.140624),
+        "NLO": Measurement(2743.766873, 0.160680),
+        "NNLO": Measurement(2665.250699, 0.215069),
     },
     "GAMMA": {
-        "LO": Measurement(2952.498947, 0.200487),
-        "NLO": Measurement(2756.008931, 0.227363),
-        "NNLO": Measurement(2677.170133, 0.299018),
+        "LO": Measurement(2933.779543, 0.140627),
+        "NLO": Measurement(2731.895815, 0.160630),
+        "NNLO": Measurement(2653.522703, 0.214955),
     },
     "Z": {
-        "LO": Measurement(1.210471, 0.000119),
-        "NLO": Measurement(1.153555, 0.000118),
-        "NNLO": Measurement(1.139722, 0.000123),
+        "LO": Measurement(1.232776, 0.000086),
+        "NLO": Measurement(1.175938, 0.000085),
+        "NNLO": Measurement(1.162157, 0.000089),
     },
     "CC": {
         "LO": Measurement(9.431494, 0.003275),
@@ -316,17 +341,75 @@ def load_poldis_reference_overrides(
     return unpol_refs, pol_refs
 
 
+def load_poldis_reference_results_csv(
+    path: Path,
+) -> Tuple[Dict[str, Dict[str, Measurement]], Dict[str, Dict[str, Measurement]]]:
+    unpol_refs: Dict[str, Dict[str, Measurement]] = {}
+    pol_refs: Dict[str, Dict[str, Measurement]] = {}
+    with path.open(newline="") as handle:
+        reader = csv.DictReader(handle)
+        for index, row in enumerate(reader, start=2):
+            if row.get("row_type", "").strip() != "poldis_reference":
+                continue
+            setup = row.get("setup", "").strip()
+            stage = row.get("stage", "").strip()
+            observable = row.get("observable", "").strip().lower()
+            if setup not in SUPPORTED_SETUPS or stage not in ("LO", "NLO", "NNLO"):
+                continue
+            try:
+                meas = Measurement(float(row["value_pb"]), float(row["error_pb"]))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid POLDIS reference CSV {path}:{index}: expected numeric value_pb/error_pb"
+                ) from exc
+            if observable in ("unpol", "unpolarized"):
+                unpol_refs.setdefault(setup, {})[stage] = meas
+            elif observable in ("pol", "polarized"):
+                pol_refs.setdefault(setup, {})[stage] = meas
+    if not unpol_refs and not pol_refs:
+        raise ValueError(f"POLDIS reference CSV {path} does not contain any poldis_reference rows")
+    return unpol_refs, pol_refs
+
+
+def resolve_poldis_reference_campaign_results(base_dir: Path, campaign_tag: str) -> Path:
+    candidate = (base_dir / "campaigns" / campaign_tag / "results.csv").resolve()
+    if candidate.exists():
+        return candidate
+    raise FileNotFoundError(
+        f"Could not find results.csv for POLDIS reference campaign {campaign_tag!r} under {base_dir / 'campaigns'}"
+    )
+
+
 def resolve_poldis_reference_maps(
+    base_dir: Path,
+    override_campaign: Optional[str],
+    override_results_csv: Optional[Path],
     override_json: Optional[Path],
 ) -> Tuple[Dict[str, Dict[str, Measurement]], Dict[str, Dict[str, Measurement]], Optional[str]]:
-    if override_json is None:
-        return clone_reference_map(POLDIS_UNPOL_REFS), clone_reference_map(POLDIS_POL_REFS), None
-    unpol_override, pol_override = load_poldis_reference_overrides(override_json)
-    return (
-        merge_reference_maps(POLDIS_UNPOL_REFS, unpol_override),
-        merge_reference_maps(POLDIS_POL_REFS, pol_override),
-        str(override_json),
-    )
+    unpol_refs = clone_reference_map(POLDIS_UNPOL_REFS)
+    pol_refs = clone_reference_map(POLDIS_POL_REFS)
+    sources: List[str] = []
+
+    if override_campaign:
+        campaign_results = resolve_poldis_reference_campaign_results(base_dir, override_campaign)
+        unpol_override, pol_override = load_poldis_reference_results_csv(campaign_results)
+        unpol_refs = merge_reference_maps(unpol_refs, unpol_override)
+        pol_refs = merge_reference_maps(pol_refs, pol_override)
+        sources.append(str(campaign_results))
+
+    if override_results_csv is not None:
+        unpol_override, pol_override = load_poldis_reference_results_csv(override_results_csv)
+        unpol_refs = merge_reference_maps(unpol_refs, unpol_override)
+        pol_refs = merge_reference_maps(pol_refs, pol_override)
+        sources.append(str(override_results_csv))
+
+    if override_json is not None:
+        unpol_override, pol_override = load_poldis_reference_overrides(override_json)
+        unpol_refs = merge_reference_maps(unpol_refs, unpol_override)
+        pol_refs = merge_reference_maps(pol_refs, pol_override)
+        sources.append(str(override_json))
+
+    return unpol_refs, pol_refs, ", ".join(sources) if sources else None
 
 
 @dataclass
@@ -691,6 +774,64 @@ def display_label(observable: str) -> str:
     return DISPLAY_LABELS.get(observable, observable)
 
 
+def stage_observable_label(stage: Dict[str, object], observable: str) -> str:
+    derived_labels = stage.get("derived_labels", {})
+    if isinstance(derived_labels, dict) and observable in derived_labels:
+        return str(derived_labels[observable])
+    return display_label(observable)
+
+
+def uses_reduced_cc_helicity_basis(setup: str, runs: Dict[str, Measurement]) -> bool:
+    return setup == "CC" and has_tags(runs, CC_ELECTRON_NONZERO_TAGS) and not has_tags(runs, ("PP", "PM"))
+
+
+def derive_cc_reduced_observables(runs: Dict[str, Measurement]) -> Dict[str, Measurement]:
+    sigma0 = linear_combo([(0.25, runs["MP"]), (0.25, runs["MM"])])
+    sigma_l = linear_combo([(-0.25, runs["MP"]), (-0.25, runs["MM"])])
+    sigma_p = linear_combo([(0.25, runs["MP"]), (-0.25, runs["MM"])])
+    sigma_ll = linear_combo([(-0.25, runs["MP"]), (0.25, runs["MM"])])
+    derived = {
+        "sigma0": sigma0,
+        "sigma_l": sigma_l,
+        "sigma_p": sigma_p,
+        "sigma_ll": sigma_ll,
+    }
+    if "00" in runs:
+        derived["sigma0_minus_00"] = sub(sigma0, runs["00"])
+    return derived
+
+
+def derive_stage_observables(setup: str, runs: Dict[str, Measurement]) -> Tuple[Dict[str, Measurement], Dict[str, str]]:
+    derived: Dict[str, Measurement] = {}
+    labels: Dict[str, str] = {}
+
+    if has_tags(runs, ("PP", "PM")):
+        pol = half_diff(runs["PP"], runs["PM"])
+        avg = half_sum(runs["PP"], runs["PM"])
+        derived["pol"] = pol
+        derived["avg"] = avg
+        if "00" in runs:
+            derived["avg_minus_00"] = sub(avg, runs["00"])
+
+    if uses_reduced_cc_helicity_basis(setup, runs):
+        derived.update(derive_cc_reduced_observables(runs))
+        labels.update(CC_REDUCED_DISPLAY_LABELS)
+        return derived, labels
+
+    if has_tags(runs, FOUR_STATE_TAGS):
+        sigma0 = linear_combo([(0.25, runs["PP"]), (0.25, runs["PM"]), (0.25, runs["MP"]), (0.25, runs["MM"])])
+        sigma_l = linear_combo([(0.25, runs["PP"]), (0.25, runs["PM"]), (-0.25, runs["MP"]), (-0.25, runs["MM"])])
+        sigma_p = linear_combo([(0.25, runs["PP"]), (-0.25, runs["PM"]), (0.25, runs["MP"]), (-0.25, runs["MM"])])
+        sigma_ll = linear_combo([(0.25, runs["PP"]), (-0.25, runs["PM"]), (-0.25, runs["MP"]), (0.25, runs["MM"])])
+        derived["sigma0"] = sigma0
+        derived["sigma_l"] = sigma_l
+        derived["sigma_p"] = sigma_p
+        derived["sigma_ll"] = sigma_ll
+        if "00" in runs:
+            derived["sigma0_minus_00"] = sub(sigma0, runs["00"])
+    return derived, labels
+
+
 def format_stage_observable(observable: str, measurement: Measurement) -> str:
     if observable in DELTA_OBSERVABLES:
         return fmt_delta(measurement)
@@ -791,7 +932,7 @@ def select_pol_observable(
         meas = derived["sigma_ll"]
         return (
             "sigma_ll",
-            "sigma_LL = (PP+MM-PM-MP)/4",
+            stage_observable_label(stage, "sigma_ll"),
             Measurement(meas["value_pb"], meas["error_pb"]),
         )
     if "pol" in derived:
@@ -813,7 +954,7 @@ def select_unpol_observable(
         meas = derived["sigma0"]
         return (
             "sigma0",
-            "sigma0 = (PP+PM+MP+MM)/4",
+            stage_observable_label(stage, "sigma0"),
             Measurement(meas["value_pb"], meas["error_pb"]),
         )
     if "00" in helicity:
@@ -827,42 +968,39 @@ def select_unpol_observable(
         meas = derived["sigma0"]
         return (
             "sigma0",
-            "sigma0 = (PP+PM+MP+MM)/4",
+            stage_observable_label(stage, "sigma0"),
             Measurement(meas["value_pb"], meas["error_pb"]),
         )
     return None
 
 
-def summarise_stage(label: str, runs: Dict[str, Measurement]) -> List[str]:
+def summarise_stage(setup: str, label: str, runs: Dict[str, Measurement]) -> List[str]:
     lines: List[str] = [f"  {label}:"]
     for hel in HELICITY_ORDER:
         if hel in runs:
             lines.append(f"    {hel}: {fmt_xsec(runs.get(hel))}")
 
-    any_derived = False
-    if has_tags(runs, ("PP", "PM")):
-        pol = half_diff(runs["PP"], runs["PM"])
-        avg = half_sum(runs["PP"], runs["PM"])
-        lines.append(f"    (PP-PM)/2: {fmt_xsec(pol)}")
-        lines.append(f"    (PP+PM)/2: {fmt_xsec(avg)}")
-        if "00" in runs:
-            lines.append(f"    (PP+PM)/2 - 00: {fmt_delta(sub(avg, runs['00']))}")
-        any_derived = True
+    derived, labels = derive_stage_observables(setup, runs)
+    for observable in (
+        "avg",
+        "pol",
+        "avg_minus_00",
+        "sigma0",
+        "sigma_l",
+        "sigma_p",
+        "sigma_ll",
+        "sigma0_minus_00",
+    ):
+        if observable not in derived:
+            continue
+        value = derived[observable]
+        label_text = labels.get(observable, display_label(observable))
+        if observable in DELTA_OBSERVABLES:
+            lines.append(f"    {label_text}: {fmt_delta(value)}")
+        else:
+            lines.append(f"    {label_text}: {fmt_xsec(value)}")
 
-    if has_tags(runs, FOUR_STATE_TAGS):
-        sigma0 = linear_combo([(0.25, runs["PP"]), (0.25, runs["PM"]), (0.25, runs["MP"]), (0.25, runs["MM"])])
-        sigma_l = linear_combo([(0.25, runs["PP"]), (0.25, runs["PM"]), (-0.25, runs["MP"]), (-0.25, runs["MM"])])
-        sigma_p = linear_combo([(0.25, runs["PP"]), (-0.25, runs["PM"]), (0.25, runs["MP"]), (-0.25, runs["MM"])])
-        sigma_ll = linear_combo([(0.25, runs["PP"]), (-0.25, runs["PM"]), (-0.25, runs["MP"]), (0.25, runs["MM"])])
-        lines.append(f"    sigma0 = (PP+PM+MP+MM)/4: {fmt_xsec(sigma0)}")
-        lines.append(f"    sigma_l = (PP+PM-MP-MM)/4: {fmt_xsec(sigma_l)}")
-        lines.append(f"    sigma_p = (PP-PM+MP-MM)/4: {fmt_xsec(sigma_p)}")
-        lines.append(f"    sigma_LL = (PP+MM-PM-MP)/4: {fmt_xsec(sigma_ll)}")
-        if "00" in runs:
-            lines.append(f"    sigma0 - 00: {fmt_delta(sub(sigma0, runs['00']))}")
-        any_derived = True
-
-    if not any_derived:
+    if not derived:
         lines.append("    Derived combinations: incomplete helicity set")
     return lines
 
@@ -895,33 +1033,28 @@ def measurement_to_dict(m: Measurement) -> Dict[str, float]:
     }
 
 
-def stage_payload(runs: Dict[str, Measurement]) -> Dict[str, object]:
+def stage_payload(setup: str, runs: Dict[str, Measurement]) -> Dict[str, object]:
+    complete_helicity_set = has_tags(runs, THREE_STATE_TAGS)
+    complete_four_helicity_set = has_tags(runs, FOUR_STATE_TAGS)
+    if uses_reduced_cc_helicity_basis(setup, runs):
+        complete_helicity_set = has_tags(runs, CC_ELECTRON_REQUIRED_TAGS)
+        complete_four_helicity_set = has_tags(runs, CC_ELECTRON_NONZERO_TAGS)
     payload: Dict[str, object] = {
-        "complete_helicity_set": has_tags(runs, THREE_STATE_TAGS),
-        "complete_four_helicity_set": has_tags(runs, FOUR_STATE_TAGS),
+        "complete_helicity_set": complete_helicity_set,
+        "complete_four_helicity_set": complete_four_helicity_set,
         "helicity": {hel: measurement_to_dict(runs[hel]) for hel in HELICITY_ORDER if hel in runs},
     }
-    derived: Dict[str, object] = {}
-    if has_tags(runs, ("PP", "PM")):
-        pol = half_diff(runs["PP"], runs["PM"])
-        avg = half_sum(runs["PP"], runs["PM"])
-        derived["pol"] = measurement_to_dict(pol)
-        derived["avg"] = measurement_to_dict(avg)
-        if "00" in runs:
-            derived["avg_minus_00"] = measurement_to_dict(sub(avg, runs["00"]))
-    if has_tags(runs, FOUR_STATE_TAGS):
-        sigma0 = linear_combo([(0.25, runs["PP"]), (0.25, runs["PM"]), (0.25, runs["MP"]), (0.25, runs["MM"])])
-        sigma_l = linear_combo([(0.25, runs["PP"]), (0.25, runs["PM"]), (-0.25, runs["MP"]), (-0.25, runs["MM"])])
-        sigma_p = linear_combo([(0.25, runs["PP"]), (-0.25, runs["PM"]), (0.25, runs["MP"]), (-0.25, runs["MM"])])
-        sigma_ll = linear_combo([(0.25, runs["PP"]), (-0.25, runs["PM"]), (-0.25, runs["MP"]), (0.25, runs["MM"])])
-        derived["sigma0"] = measurement_to_dict(sigma0)
-        derived["sigma_l"] = measurement_to_dict(sigma_l)
-        derived["sigma_p"] = measurement_to_dict(sigma_p)
-        derived["sigma_ll"] = measurement_to_dict(sigma_ll)
-        if "00" in runs:
-            derived["sigma0_minus_00"] = measurement_to_dict(sub(sigma0, runs["00"]))
+    derived_measurements, derived_labels = derive_stage_observables(setup, runs)
+    derived: Dict[str, object] = {
+        observable: measurement_to_dict(meas)
+        for observable, meas in derived_measurements.items()
+    }
     if derived:
         payload["derived"] = derived
+    if derived_labels:
+        payload["derived_labels"] = derived_labels
+    if uses_reduced_cc_helicity_basis(setup, runs):
+        payload["reduced_cc_electron_basis"] = True
     return payload
 
 
@@ -1051,20 +1184,20 @@ def build_summary(
 
         lo_runs = existing_measurements(pieces.get("LO", {}))
         if lo_runs:
-            stage_map["LO"] = stage_payload(lo_runs)
+            stage_map["LO"] = stage_payload(setup, lo_runs)
 
         pos_runs = existing_measurements(pieces.get("POSNLO", {}))
         neg_runs = existing_measurements(pieces.get("NEGNLO", {}))
         if pos_runs:
-            stage_map["POSNLO"] = stage_payload(pos_runs)
+            stage_map["POSNLO"] = stage_payload(setup, pos_runs)
 
         if neg_runs:
-            stage_map["NEGNLO"] = stage_payload(neg_runs)
+            stage_map["NEGNLO"] = stage_payload(setup, neg_runs)
 
         common_nlo_hels = [hel for hel in HELICITY_ORDER if hel in pos_runs and hel in neg_runs]
         if common_nlo_hels:
             nlo_runs = {hel: sub(pos_runs[hel], neg_runs[hel]) for hel in common_nlo_hels}
-            stage_map["NLO"] = stage_payload(nlo_runs)
+            stage_map["NLO"] = stage_payload(setup, nlo_runs)
 
         pol_refs = pol_refs_map.get(setup)
         if pol_refs:
@@ -1127,7 +1260,7 @@ def build_report(
 
     ref_source_text = summary.get("poldis_reference_source")
     if ref_source_text:
-        lines.append(f"POLDIS reference overrides: {ref_source_text}")
+        lines.append(f"POLDIS reference source: {ref_source_text}")
         lines.append("")
 
     used_rows = []
@@ -1207,7 +1340,7 @@ def build_report(
                     stage_rows.append(
                         [
                             stage,
-                            display_label(observable),
+                            stage_observable_label(stage_payload, observable),
                             format_stage_observable(
                                 observable, measurement_from_dict(stage_payload["derived"][observable])
                             ),
@@ -1484,6 +1617,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Resolve and report only -RIVETFO output files.",
     )
     parser.add_argument(
+        "--rivetweights",
+        action="store_true",
+        help="Resolve and report only -RIVETWEIGHTS output files.",
+    )
+    parser.add_argument(
         "--rivetfofixed",
         action="store_true",
         help="Resolve and report only -RIVETFOFIXED output files.",
@@ -1495,6 +1633,14 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--csv-out",
         help="Optional path to write a flattened summary table as CSV.",
+    )
+    parser.add_argument(
+        "--poldis-refs-campaign",
+        help="Optional campaign tag whose campaigns/<tag>/results.csv should provide POLDIS references.",
+    )
+    parser.add_argument(
+        "--poldis-refs-results-csv",
+        help="Optional results.csv file containing poldis_reference rows to use as POLDIS references.",
     )
     parser.add_argument(
         "--poldis-refs-json",
@@ -1524,20 +1670,32 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
-    if int(args.rivet) + int(args.rivetfo) + int(args.rivetfofixed) > 1:
-        raise SystemExit("Use at most one of --rivet, --rivetfo, and --rivetfofixed.")
+    if int(args.rivet) + int(args.rivetfo) + int(args.rivetweights) + int(args.rivetfofixed) > 1:
+        raise SystemExit("Use at most one of --rivet, --rivetfo, --rivetweights, and --rivetfofixed.")
     base_dir = Path(args.base_dir).resolve()
     progress_enabled = sys.stderr.isatty() if args.progress is None else args.progress
     requested_analysis = (
         "RIVETFOFIXED" if args.rivetfofixed else
-        ("RIVETFO" if args.rivetfo else ("RIVET" if args.rivet else ""))
+        ("RIVETWEIGHTS" if args.rivetweights else ("RIVETFO" if args.rivetfo else ("RIVET" if args.rivet else "")))
     )
     override_path = Path(args.poldis_refs_json).resolve() if args.poldis_refs_json else None
-    unpol_refs_map, pol_refs_map, ref_source = resolve_poldis_reference_maps(override_path)
+    override_results_csv = (
+        Path(args.poldis_refs_results_csv).resolve()
+        if args.poldis_refs_results_csv
+        else None
+    )
+    unpol_refs_map, pol_refs_map, ref_source = resolve_poldis_reference_maps(
+        base_dir,
+        args.poldis_refs_campaign,
+        override_results_csv,
+        override_path,
+    )
     selected_setups = set(normalize_requested_setups(args.setup or ()))
     requested_base_runs = (
         RIVETFOFIXED_DEFAULT_RUNS
         if requested_analysis == "RIVETFOFIXED" and args.runs == DEFAULT_RUNS
+        else RIVETWEIGHTS_DEFAULT_RUNS
+        if requested_analysis == "RIVETWEIGHTS" and args.runs == DEFAULT_RUNS
         else args.runs
     )
     if args.runs == DEFAULT_RUNS and requested_analysis != "RIVETFOFIXED" and "CC" in selected_setups:

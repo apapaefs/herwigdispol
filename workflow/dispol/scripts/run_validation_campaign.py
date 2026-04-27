@@ -44,6 +44,7 @@ from analyze_DIS_polarized import (
     _bin_value_error,
     _new_estimate,
     _x_edges,
+    build_correlated_helicity_derived_objects,
     build_dis_polarized_objects,
     build_plot_scatter_objects,
     build_scale_envelope_plot_yoda,
@@ -115,6 +116,9 @@ PS_SETUP_FAMILIES = {
     "SPINCOMP": ("RIVETPS-SPIN", "RIVETPS-NOSPIN", "RIVETPS-NOSPIN-UNPOL"),
     "SPINHAD": ("RIVETPS-SPIN", "RIVETPS-NOSPIN", "RIVETPS-NOSPIN-UNPOL"),
 }
+PS_WEIGHTED_ANALYSIS_VARIANT = "RIVETPSWEIGHTS"
+PS_WEIGHTED_FAMILY_PREFIX = "RIVETPSWEIGHTS-"
+PS_FAMILY_PREFIX = "RIVETPS-"
 PS_FAMILY_LABELS = {
     "RIVETPS-SPIN": "Full",
     "RIVETPS-NOSPIN": "Born-Only",
@@ -397,7 +401,7 @@ def analysis_variant_args(analysis_variant: str) -> List[str]:
         return ["--rivet"]
     if analysis_variant == "RIVETFO":
         return ["--rivetfo"]
-    if analysis_variant == "RIVETWEIGHTS":
+    if analysis_variant in {"RIVETWEIGHTS", PS_WEIGHTED_ANALYSIS_VARIANT}:
         return ["--rivetweights"]
     return []
 
@@ -409,12 +413,58 @@ def resolved_analysis_variant_from_args(args: argparse.Namespace) -> str:
     return analysis_variant_from_args(args)
 
 
+def is_ps_weighted_family(analysis_variant: str) -> bool:
+    return str(analysis_variant).startswith(PS_WEIGHTED_FAMILY_PREFIX)
+
+
+def ps_weighted_family(analysis_variant: str) -> str:
+    if is_ps_weighted_family(analysis_variant):
+        return analysis_variant
+    if str(analysis_variant).startswith(PS_FAMILY_PREFIX):
+        return PS_WEIGHTED_FAMILY_PREFIX + str(analysis_variant)[len(PS_FAMILY_PREFIX):]
+    return analysis_variant
+
+
+def ps_unweighted_family(analysis_variant: str) -> str:
+    if is_ps_weighted_family(analysis_variant):
+        return PS_FAMILY_PREFIX + str(analysis_variant)[len(PS_WEIGHTED_FAMILY_PREFIX):]
+    return analysis_variant
+
+
+def is_ps_family_variant(analysis_variant: str) -> bool:
+    return str(analysis_variant).startswith(PS_FAMILY_PREFIX) or is_ps_weighted_family(analysis_variant)
+
+
+def is_correlated_weight_variant(analysis_variant: str) -> bool:
+    return analysis_variant == "RIVETWEIGHTS" or is_ps_weighted_family(analysis_variant)
+
+
+def ps_manifest_uses_rivetweights(manifest: Mapping[str, object]) -> bool:
+    variant = str(manifest.get("analysis_variant", ""))
+    if variant == PS_WEIGHTED_ANALYSIS_VARIANT:
+        return True
+    variants = manifest.get("analysis_variants", [])
+    return isinstance(variants, list) and any(is_ps_weighted_family(str(item)) for item in variants)
+
+
+def resolve_ps_analysis_variant(analysis_variant: str) -> str:
+    if analysis_variant in {"RIVETWEIGHTS", PS_WEIGHTED_ANALYSIS_VARIANT}:
+        return PS_WEIGHTED_ANALYSIS_VARIANT
+    return "RIVETPS"
+
+
 def use_rivet_runtime(analysis_variant: str) -> bool:
-    return analysis_variant in {"RIVET", "RIVETFO", "RIVETWEIGHTS", "RIVETPS"} or analysis_variant.startswith("RIVETPS-")
+    return (
+        analysis_variant in {"RIVET", "RIVETFO", "RIVETWEIGHTS", "RIVETPS", PS_WEIGHTED_ANALYSIS_VARIANT}
+        or is_ps_family_variant(analysis_variant)
+    )
 
 
 def use_lo_runtime(analysis_variant: str) -> bool:
-    return analysis_variant not in {"RIVETFO", "RIVETWEIGHTS", "RIVETPS"} and not analysis_variant.startswith("RIVETPS-")
+    return (
+        analysis_variant not in {"RIVETFO", "RIVETWEIGHTS", "RIVETPS", PS_WEIGHTED_ANALYSIS_VARIANT}
+        and not is_ps_family_variant(analysis_variant)
+    )
 
 
 def use_raw_powheg_runtime(analysis_variant: str, enabled: bool) -> bool:
@@ -442,15 +492,18 @@ def validate_setup_family(setups: Sequence[str]) -> None:
         raise ValueError("Do not mix SPINVAL/SPINCOMP/SPINHAD with GAMMA/Z/ALL/CC in the same invocation.")
 
 
-def ps_families_for_setup(setup: str) -> Sequence[str]:
+def ps_families_for_setup(setup: str, rivetweights: bool = False) -> Sequence[str]:
     try:
-        return PS_SETUP_FAMILIES[setup]
+        families = PS_SETUP_FAMILIES[setup]
     except KeyError as exc:
         raise ValueError(f"Unsupported PS setup {setup!r}") from exc
+    if rivetweights:
+        return tuple(ps_weighted_family(family) for family in families)
+    return families
 
 
-def ps_analysis_variants_by_setup(setups: Sequence[str]) -> Dict[str, Sequence[str]]:
-    return {setup: ps_families_for_setup(setup) for setup in setups if is_ps_setup(setup)}
+def ps_analysis_variants_by_setup(setups: Sequence[str], rivetweights: bool = False) -> Dict[str, Sequence[str]]:
+    return {setup: ps_families_for_setup(setup, rivetweights=rivetweights) for setup in setups if is_ps_setup(setup)}
 
 
 def supports_ps_family_comparison(setup: str) -> bool:
@@ -467,11 +520,12 @@ def has_ps_hadronization_toggle_inputs(setups: Sequence[str]) -> bool:
 
 
 def ps_family_label(analysis_variant: str) -> str:
-    return PS_FAMILY_LABELS.get(analysis_variant, analysis_variant)
+    base_variant = ps_unweighted_family(analysis_variant)
+    return PS_FAMILY_LABELS.get(base_variant, analysis_variant)
 
 
 def herwig_legend_label(analysis_variant: str, setup: str = "") -> str:
-    if analysis_variant in PS_FAMILY_LABELS:
+    if ps_unweighted_family(analysis_variant) in PS_FAMILY_LABELS:
         return ps_family_label(analysis_variant)
     if analysis_variant in {"RIVET", "RIVETFO"}:
         return "HERWIG POWHEG CC" if is_cc_setup(setup) else "HERWIG POWHEG NC"
@@ -479,7 +533,7 @@ def herwig_legend_label(analysis_variant: str, setup: str = "") -> str:
 
 
 def herwig_rivetplot_title(analysis_variant: str, setup: str = "") -> str:
-    if analysis_variant in PS_FAMILY_LABELS:
+    if ps_unweighted_family(analysis_variant) in PS_FAMILY_LABELS:
         return ps_family_label(analysis_variant)
     if analysis_variant in {"RIVET", "RIVETFO"}:
         return "HERWIG POWHEG CC" if is_cc_setup(setup) else "HERWIG POWHEG NC"
@@ -510,7 +564,7 @@ def apply_setup_style_annotation(objects: Dict[str, object], setup: str) -> None
 
 
 def apply_variant_style_annotation(objects: Dict[str, object], analysis_variant: str) -> None:
-    style = PS_FAMILY_STYLES.get(analysis_variant)
+    style = PS_FAMILY_STYLES.get(ps_unweighted_family(analysis_variant))
     if style is None:
         return
 
@@ -817,6 +871,69 @@ def rewrite_rivetweights_card_text(source_text: str, target_stem: str) -> str:
     return text
 
 
+def rewrite_ps_rivetweights_card_text(source_text: str, target_stem: str) -> str:
+    text = source_text
+    anchor = None
+    anchor_patterns = (
+        r"^set /Herwig/MatrixElements/PowhegMEDISNCPol:Contribution \S+\s*$",
+        r"^set PowhegMEDISNCPol:Contribution \S+\s*$",
+    )
+    for pattern in anchor_patterns:
+        match = re.search(pattern, text, flags=re.MULTILINE)
+        if match:
+            anchor = match.group(0)
+            break
+    if anchor is None:
+        raise RuntimeError("Could not locate PowhegMEDISNCPol contribution setting in RIVETPS source card")
+
+    rivetweights_setting = "set /Herwig/MatrixElements/PowhegMEDISNCPol:GenerateRivetWeights Yes"
+    text, setting_count = re.subn(
+        r"^set\s+(?:/Herwig/MatrixElements/)?PowhegMEDISNCPol:GenerateRivetWeights\s+\S+\s*$",
+        rivetweights_setting,
+        text,
+        flags=re.MULTILINE,
+    )
+    if setting_count == 0:
+        text, _ = set_or_insert_card_setting(
+            text,
+            "/Herwig/MatrixElements/PowhegMEDISNCPol:GenerateRivetWeights",
+            "Yes",
+            anchor,
+        )
+
+    analysis_line = (
+        "insert /Herwig/Analysis/Rivet:Analyses 0 "
+        "MC_DIS_PS:JETINPUT=FULL:RIVETWEIGHTS=YES"
+    )
+    text, analysis_count = re.subn(
+        r"^\s*insert\s+/Herwig/Analysis/Rivet:Analyses\s+0\s+MC_DIS_PS(?::\S+)?\s*$",
+        analysis_line,
+        text,
+        flags=re.MULTILINE,
+    )
+    if analysis_count == 0:
+        text, analysis_count = re.subn(
+            r"^(?P<indent>\s*saverun\s+)",
+            analysis_line + "\n" + r"\g<indent>",
+            text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+    if analysis_count == 0:
+        raise RuntimeError("Could not insert MC_DIS_PS RIVETWEIGHTS analysis line")
+
+    text, saverun_count = re.subn(
+        r"^(?P<indent>\s*saverun\s+)\S+(?P<suffix>\s+EventGenerator(?:\s*#.*)?)$",
+        rf"\g<indent>{target_stem}\g<suffix>",
+        text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if saverun_count == 0:
+        raise RuntimeError("Could not rewrite saverun line for RIVETPSWEIGHTS card")
+    return text
+
+
 def materialize_rivetweights_inputs(
     base_dir: Path,
     tag: str,
@@ -847,6 +964,38 @@ def materialize_rivetweights_inputs(
             if target_path.exists() and target_path.read_text() == rendered:
                 continue
             target_path.write_text(rendered)
+
+
+def materialize_ps_rivetweights_inputs(
+    base_dir: Path,
+    tag: str,
+    profile: str,
+    setups: Sequence[str],
+    dry_run: bool = False,
+) -> None:
+    selected_setups = [setup for setup in normalize_campaign_setups(setups) if is_ps_setup(setup)]
+    root = profile_generated_input_root_path(base_dir, tag, profile) if profile != "hybrid" else base_dir
+    source_root = root if profile != "hybrid" else base_dir
+    for setup in selected_setups:
+        for family in ps_families_for_setup(setup):
+            weighted_family = ps_weighted_family(family)
+            for order in ("POSNLO", "NEGNLO"):
+                source_stem = build_logical_run_stem(setup, order, "00", family, "nominal")
+                target_stem = build_logical_run_stem(setup, order, "00", weighted_family, "nominal")
+                source_path = source_root / f"{source_stem}.in"
+                if not source_path.exists() and profile != "hybrid":
+                    source_path = base_dir / f"{source_stem}.in"
+                target_path = root / f"{target_stem}.in"
+                if dry_run:
+                    print(f"[dry-run] generate-ps-rivetweights-card {source_path} -> {target_path}")
+                    continue
+                if not source_path.exists():
+                    raise FileNotFoundError(f"Missing RIVETPS source card for RIVETPSWEIGHTS: {source_path}")
+                rendered = rewrite_ps_rivetweights_card_text(source_path.read_text(), target_stem)
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                if target_path.exists() and target_path.read_text() == rendered:
+                    continue
+                target_path.write_text(rendered)
 
 
 def apply_legend_annotation(objects: Dict[str, object], legend: str) -> None:
@@ -970,7 +1119,7 @@ def build_jobs(
         )
         if include_lo:
             for variant in variants:
-                helicities = ("00",) if variant == "RIVETWEIGHTS" else default_helicities
+                helicities = ("00",) if is_correlated_weight_variant(variant) else default_helicities
                 for hel in helicities:
                     nominal_stem = build_logical_run_stem(setup, "LO", hel, variant, "nominal")
                     nominal_input = (
@@ -1002,7 +1151,7 @@ def build_jobs(
         pieces = (("POSNLO", posnlo_events), ("NEGNLO", negnlo_events))
         for piece, events in pieces:
             for variant in variants:
-                helicities = ("00",) if variant == "RIVETWEIGHTS" else default_helicities
+                helicities = ("00",) if is_correlated_weight_variant(variant) else default_helicities
                 for hel in helicities:
                     nominal_stem = build_logical_run_stem(setup, piece, hel, variant, "nominal")
                     nominal_input = (
@@ -1443,7 +1592,7 @@ def set_or_insert_card_setting(text: str, setting: str, value: str, anchor: str)
 
 
 def patch_ps_spin_card(in_path: Path, spec: JobSpec) -> bool:
-    if not spec.analysis_variant.startswith("RIVETPS-") or not in_path.exists():
+    if not is_ps_family_variant(spec.analysis_variant) or not in_path.exists():
         return False
 
     text = in_path.read_text()
@@ -1453,9 +1602,10 @@ def patch_ps_spin_card(in_path: Path, spec: JobSpec) -> bool:
     if anchor not in text:
         return False
 
-    use_real_spin = "Yes" if spec.analysis_variant == "RIVETPS-SPIN" else "No"
-    shower_spin = "No" if spec.analysis_variant == "RIVETPS-NOSPIN-UNPOL" else "Yes"
-    diagnostics_enabled = spec.setup == "SPINVAL" and spec.analysis_variant == "RIVETPS-SPIN"
+    base_family = ps_unweighted_family(spec.analysis_variant)
+    use_real_spin = "Yes" if base_family == "RIVETPS-SPIN" else "No"
+    shower_spin = "No" if base_family == "RIVETPS-NOSPIN-UNPOL" else "Yes"
+    diagnostics_enabled = spec.setup == "SPINVAL" and base_family == "RIVETPS-SPIN"
 
     modified = False
     settings = [
@@ -1486,6 +1636,17 @@ def patch_rivetweights_card(in_path: Path, spec: JobSpec) -> bool:
         return False
     text = in_path.read_text()
     rendered = rewrite_rivetweights_card_text(text, spec.stem)
+    if rendered == text:
+        return False
+    in_path.write_text(rendered)
+    return True
+
+
+def patch_ps_rivetweights_card(in_path: Path, spec: JobSpec) -> bool:
+    if not is_ps_weighted_family(spec.analysis_variant) or not in_path.exists():
+        return False
+    text = in_path.read_text()
+    rendered = rewrite_ps_rivetweights_card_text(text, spec.stem)
     if rendered == text:
         return False
     in_path.write_text(rendered)
@@ -1623,6 +1784,8 @@ def ensure_run_file(
     if patch_ps_spin_card(in_path, spec):
         card_patched = True
     if patch_rivetweights_card(in_path, spec):
+        card_patched = True
+    if patch_ps_rivetweights_card(in_path, spec):
         card_patched = True
     if run_path.exists() and not force_prepare:
         if in_path.exists() and run_path.stat().st_mtime < in_path.stat().st_mtime:
@@ -2966,7 +3129,7 @@ def write_manifest(
         "rivet": bool(resolved_analysis_variant),
         "analysis_variant": resolved_analysis_variant,
         "analysis_variants": analysis_variants,
-        "ps_mode": bool(analysis_variants and all(variant.startswith("RIVETPS-") for variant in analysis_variants)),
+        "ps_mode": bool(analysis_variants and all(is_ps_family_variant(variant) for variant in analysis_variants)),
         "campaign_setups": normalize_campaign_setups(getattr(args, "setup", [])),
         "event_counts": {
             "LO": args.lo_events,
@@ -3090,7 +3253,7 @@ def persist_campaign_plan_manifest(
     manifest["rivet"] = bool(analysis_variant)
     manifest["analysis_variant"] = analysis_variant
     manifest["analysis_variants"] = analysis_variants
-    manifest["ps_mode"] = bool(analysis_variants and all(str(variant).startswith("RIVETPS-") for variant in analysis_variants))
+    manifest["ps_mode"] = bool(analysis_variants and all(is_ps_family_variant(str(variant)) for variant in analysis_variants))
     manifest["campaign_setups"] = normalize_campaign_setups(getattr(args, "setup", []))
     manifest["event_counts"] = {
         "LO": int(getattr(args, "lo_events", 0)),
@@ -3693,7 +3856,7 @@ def find_order_yoda_inputs(
     analysis_variant = analysis_variant if analysis_variant is not None else str(manifest.get("analysis_variant", ""))
     required_helicities = (
         ("00",)
-        if analysis_variant == "RIVETWEIGHTS"
+        if is_correlated_weight_variant(analysis_variant)
         else (("00", "PP", "PM") if setup == "GAMMA" else ("00", "PP", "PM", "MP", "MM"))
     )
     found: Dict[str, Path] = {}
@@ -3750,7 +3913,7 @@ def find_order_yoda_shards(
 ) -> Dict[str, List[Path]]:
     required_helicities = (
         ("00",)
-        if analysis_variant == "RIVETWEIGHTS"
+        if is_correlated_weight_variant(analysis_variant)
         else (("00", "PP", "PM") if setup == "GAMMA" else ("00", "PP", "PM", "MP", "MM"))
     )
     found: Dict[str, List[Path]] = {hel: [] for hel in required_helicities}
@@ -3853,7 +4016,11 @@ def load_analysis_input_sources(
     scale_variations: bool = False,
     context_label: str = "",
 ) -> Dict[str, object]:
-    required_helicities = required_helicities_for_setup(setup)
+    required_helicities = (
+        ("00",)
+        if is_correlated_weight_variant(fallback_analysis_variant)
+        else required_helicities_for_setup(setup)
+    )
     merged_inputs: Dict[str, Path] = {}
     merged_error: Optional[Exception] = None
     try:
@@ -4088,7 +4255,7 @@ def build_rivetweights_objects(
     tmp_dir = campaign_dir / "analysis" / "_inputs"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     suffix = "" if scale_variation == "nominal" else f"-{scale_variation}"
-    output_path = tmp_dir / f"DIS-POL-POWHEG_00-NLO-{setup}-RIVETWEIGHTS{suffix}-{tag}.yoda"
+    output_path = tmp_dir / f"DIS-POL-POWHEG_00-NLO-{setup}-{analysis_variant}{suffix}-{tag}.yoda"
     if dry_run:
         print(f"[dry-run] combine-rivetweights-normalized {pos_input} {neg_input} -> {output_path}")
         return {}
@@ -4098,6 +4265,7 @@ def build_rivetweights_objects(
         yoda.read(str(neg_input)),
         analysis_name,
     )
+    combined = build_correlated_helicity_derived_objects(combined, analysis_name)
     write_analysis_yoda_gz(combined, str(output_path))
     return combined
 
@@ -4133,6 +4301,24 @@ RIVETWEIGHTS_ANALYSIS_LABELS = {
     "DYPreCut",
     "DpT1PreCut",
     "DpT2PreCut",
+    "NJets",
+    "pT3",
+    "pT3OverpT1",
+    "SumPtExtra",
+    "Phi3",
+    "PhiCurrentHemi",
+    "Broadening",
+    "Cos2PhiCurrentHemiNumQ2",
+    "Cos2PhiCurrentHemiDenQ2",
+    "DNJets",
+    "DpT3",
+    "DpT3OverpT1",
+    "DSumPtExtra",
+    "DPhi3",
+    "DPhiCurrentHemi",
+    "DBroadening",
+    "DCos2PhiCurrentHemiNumQ2",
+    "DCos2PhiCurrentHemiDenQ2",
 }
 
 
@@ -4425,13 +4611,15 @@ def analyze_ps_herwig_campaign(
     dry_run: bool = False,
 ) -> Dict[str, Dict[str, str]]:
     campaign_dir = resolve_campaign_dir(base_dir, tag)
+    manifest = load_manifest(campaign_dir)
     analysis_dir = campaign_dir / "analysis"
     analysis_dir.mkdir(parents=True, exist_ok=True)
 
     outputs: Dict[str, Dict[str, str]] = {}
     plot_outputs: Dict[str, Dict[str, str]] = {}
     selected = [setup for setup in normalize_campaign_setups(setups) if is_ps_setup(setup)]
-    tasks = [(setup, family) for setup in selected for family in ps_families_for_setup(setup)]
+    weighted_ps = ps_manifest_uses_rivetweights(manifest)
+    tasks = [(setup, family) for setup in selected for family in ps_families_for_setup(setup, rivetweights=weighted_ps)]
     worker_count = max(1, min(max_workers, len(tasks))) if tasks else 1
     mode = f"parallel, max_workers={worker_count}" if not dry_run and worker_count > 1 else "serial"
     print_stage(
@@ -4450,6 +4638,61 @@ def analyze_ps_herwig_campaign(
             plot_path = analysis_dir / f"Herwig_{analysis_name}_{family}_{setup}_NLO_polarized_plot.yoda.gz"
             print(f"[dry-run] analyze-herwig-ps {setup}/{family} -> {output_path}")
             print(f"[dry-run] analyze-herwig-ps-plot {setup}/{family} -> {plot_path}")
+            return setup, family, str(output_path), str(plot_path)
+
+        if is_ps_weighted_family(family):
+            objects = build_rivetweights_objects(
+                base_dir,
+                campaign_dir,
+                tag,
+                setup,
+                analysis_name,
+                family,
+                "nominal",
+                scale_variations,
+                merge_tool_preference,
+                dry_run,
+            )
+            apply_legend_annotation(objects, legend_label)
+            apply_variant_style_annotation(objects, family)
+            output_path = analysis_dir / f"Herwig_{analysis_name}_{family}_{setup}_NLO_polarized.yoda.gz"
+            write_analysis_yoda_gz(objects, str(output_path))
+
+            plot_objects = build_plot_scatter_objects(objects)
+            apply_legend_annotation(plot_objects, legend_label)
+            apply_variant_style_annotation(plot_objects, family)
+            if variation_names:
+                combined_plot_objects = dict(plot_objects)
+                for variation_name in variation_names:
+                    variation_objects = build_rivetweights_objects(
+                        base_dir,
+                        campaign_dir,
+                        tag,
+                        setup,
+                        analysis_name,
+                        family,
+                        variation_name,
+                        scale_variations,
+                        merge_tool_preference,
+                        dry_run,
+                    )
+                    variation_plot_objects = build_plot_scatter_objects(variation_objects)
+                    apply_legend_annotation(variation_plot_objects, legend_label)
+                    apply_variant_style_annotation(variation_plot_objects, family)
+                    variation_plot_objects, skipped_variation_paths = filter_compatible_variation_plot_objects(
+                        plot_objects,
+                        variation_plot_objects,
+                    )
+                    for skipped_path, reason in sorted(skipped_variation_paths.items()):
+                        print(
+                            f"[warn] Skipping {variation_name} plotted variation for {setup}/{family} "
+                            f"at {skipped_path}: {reason}",
+                            flush=True,
+                        )
+                    combined_plot_objects.update(clone_objects_with_variation(variation_plot_objects, variation_name))
+                plot_objects = combined_plot_objects
+            plot_path = analysis_dir / f"Herwig_{analysis_name}_{family}_{setup}_NLO_polarized_plot.yoda.gz"
+            write_analysis_yoda_gz(plot_objects, str(plot_path))
             return setup, family, str(output_path), str(plot_path)
 
         def build_objects_from_inputs(
@@ -4863,6 +5106,7 @@ def run_ps_rivetplot_campaign(
     rivet_mkhtml_tool: str,
     plot_dir: Optional[Path] = None,
     scale_variations: Optional[bool] = None,
+    poldis_error_mode: Optional[str] = None,
     max_workers: int = 1,
     dry_run: bool = False,
 ) -> Dict[str, str]:
@@ -4875,6 +5119,7 @@ def run_ps_rivetplot_campaign(
     analysis_plot_outputs = manifest.get("analysis_plot_yoda_by_family", {})
     if not isinstance(analysis_plot_outputs, dict):
         analysis_plot_outputs = {}
+    weighted_ps = ps_manifest_uses_rivetweights(manifest)
 
     tool = choose_rivet_mkhtml_tool(rivet_mkhtml_tool)
     if tool is None:
@@ -4952,7 +5197,7 @@ def run_ps_rivetplot_campaign(
             return str(sanitized_path)
 
         sanitized_inputs: Dict[str, str] = {}
-        for family in ps_families_for_setup(setup):
+        for family in ps_families_for_setup(setup, rivetweights=weighted_ps):
             sanitized_input = sanitize_input_yoda(
                 family_yoda(family),
                 f"{setup.lower()}_{family.lower()}",
@@ -4969,7 +5214,7 @@ def run_ps_rivetplot_campaign(
                 )
 
         file_args: List[str] = []
-        for family in ps_families_for_setup(setup):
+        for family in ps_families_for_setup(setup, rivetweights=weighted_ps):
             file_args.append(f"{sanitized_inputs[family]}:Title={ps_family_label(family)}")
 
         command: List[str] = [
@@ -5049,6 +5294,7 @@ def run_ps_hadronization_rivetplot_campaign(
     analysis_plot_outputs = manifest.get("analysis_plot_yoda_by_family", {})
     if not isinstance(analysis_plot_outputs, dict):
         analysis_plot_outputs = {}
+    weighted_ps = ps_manifest_uses_rivetweights(manifest)
 
     tool = choose_rivet_mkhtml_tool(rivet_mkhtml_tool)
     if tool is None:
@@ -5116,12 +5362,12 @@ def run_ps_hadronization_rivetplot_campaign(
         return str(sanitized_path)
 
     no_had_input = sanitize_input_yoda(
-        family_yoda("SPINCOMP", "RIVETPS-SPIN"),
+        family_yoda("SPINCOMP", ps_weighted_family("RIVETPS-SPIN") if weighted_ps else "RIVETPS-SPIN"),
         "spincomp_rivetps_spin",
         scale_envelope=scale_variations_enabled,
     )
     had_input = sanitize_input_yoda(
-        family_yoda("SPINHAD", "RIVETPS-SPIN"),
+        family_yoda("SPINHAD", ps_weighted_family("RIVETPS-SPIN") if weighted_ps else "RIVETPS-SPIN"),
         "spinhad_rivetps_spin",
         scale_envelope=scale_variations_enabled,
     )
@@ -5212,6 +5458,7 @@ def run_ps_plotting_campaign(
     rivet_mkhtml_tool: str,
     plot_dir: Optional[Path] = None,
     scale_variations: Optional[bool] = None,
+    poldis_error_mode: Optional[str] = None,
     max_workers: int = 1,
     dry_run: bool = False,
 ) -> Dict[str, str]:
@@ -5933,7 +6180,7 @@ def update_manifest_postprocess(
     manifest["rivet"] = bool(resolved_analysis_variant)
     manifest["analysis_variant"] = resolved_analysis_variant
     manifest["analysis_variants"] = [str(item) for item in analysis_variants]
-    manifest["ps_mode"] = bool(analysis_variants and all(str(item).startswith("RIVETPS-") for item in analysis_variants))
+    manifest["ps_mode"] = bool(analysis_variants and all(is_ps_family_variant(str(item)) for item in analysis_variants))
     manifest["extract_status"] = extract_status
     manifest["merged_yoda"] = [
         {
@@ -5996,7 +6243,10 @@ def run_campaign_command(args: argparse.Namespace) -> int:
                 f"--rerun-failed-random-seed requested, but no existing manifest was found at {campaign_dir / 'manifest.json'}"
             )
         manifest_variant = str(manifest.get("analysis_variant", ""))
-        if analysis_variant and manifest_variant and analysis_variant != manifest_variant:
+        equivalent_variant = (
+            analysis_variant == "RIVETWEIGHTS" and manifest_variant == PS_WEIGHTED_ANALYSIS_VARIANT
+        )
+        if analysis_variant and manifest_variant and analysis_variant != manifest_variant and not equivalent_variant:
             raise ValueError(
                 f"Requested analysis variant {analysis_variant!r} does not match existing campaign variant {manifest_variant!r}"
             )
@@ -6022,8 +6272,25 @@ def run_campaign_command(args: argparse.Namespace) -> int:
     requested_setups = resolve_campaign_setups_requested(getattr(args, "setup", ()), manifest if rerun_failed else None)
     validate_setup_family(requested_setups)
     ps_mode = contains_ps_setups(requested_setups)
-    analysis_variants_by_setup = ps_analysis_variants_by_setup(requested_setups) if ps_mode else None
-    if analysis_variant == "RIVETWEIGHTS":
+    if ps_mode:
+        if analysis_variant == "RIVETFO":
+            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetfo.")
+        if enable_raw_powheg:
+            raise ValueError("--raw-powheg is not supported for SPINVAL/SPINCOMP/SPINHAD.")
+        if getattr(args, "include_lo", None):
+            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are NLO-only workflows; do not use --include-lo.")
+        analysis_variant = resolve_ps_analysis_variant(analysis_variant)
+        include_lo = False
+        diagnostics_enabled = False
+    analysis_variants_by_setup = (
+        ps_analysis_variants_by_setup(
+            requested_setups,
+            rivetweights=analysis_variant == PS_WEIGHTED_ANALYSIS_VARIANT,
+        )
+        if ps_mode
+        else None
+    )
+    if analysis_variant == "RIVETWEIGHTS" and not ps_mode:
         unsupported = [setup for setup in requested_setups if setup not in SETUP_ORDER]
         if unsupported:
             raise ValueError(
@@ -6035,16 +6302,6 @@ def run_campaign_command(args: argparse.Namespace) -> int:
         if enable_raw_powheg:
             raise ValueError("--raw-powheg is not supported together with --rivetweights.")
         include_lo = False
-    if ps_mode:
-        if analysis_variant == "RIVETFO":
-            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetfo.")
-        if enable_raw_powheg:
-            raise ValueError("--raw-powheg is not supported for SPINVAL/SPINCOMP/SPINHAD.")
-        if getattr(args, "include_lo", None):
-            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are NLO-only workflows; do not use --include-lo.")
-        analysis_variant = "RIVETPS"
-        include_lo = False
-        diagnostics_enabled = False
     resolve_analysis_name(args, requested_setups)
     args.setup = requested_setups
     args.scale_variations = scale_variations
@@ -6192,8 +6449,10 @@ def run_campaign_command(args: argparse.Namespace) -> int:
     )
 
     args.generated_profile_inputs_root = materialize_pdf_profile_inputs(base_dir, args.tag, pdf_profile, args.dry_run)
-    if analysis_variant == "RIVETWEIGHTS":
+    if analysis_variant == "RIVETWEIGHTS" and not ps_mode:
         materialize_rivetweights_inputs(base_dir, args.tag, pdf_profile, requested_setups, args.dry_run)
+    if analysis_variant == PS_WEIGHTED_ANALYSIS_VARIANT:
+        materialize_ps_rivetweights_inputs(base_dir, args.tag, pdf_profile, requested_setups, args.dry_run)
 
     prepared: List[JobResult] = list(existing_prepared)
     do_prepare = args.force_prepare or not args.no_prepare
@@ -6625,7 +6884,7 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
     requested_setups = resolve_campaign_setups_requested(args.setup, manifest)
     validate_setup_family(requested_setups)
     ps_mode = contains_ps_setups(requested_setups)
-    if analysis_variant == "RIVETWEIGHTS":
+    if analysis_variant == "RIVETWEIGHTS" and not ps_mode:
         unsupported = [setup for setup in requested_setups if setup not in SETUP_ORDER]
         if unsupported:
             raise ValueError(
@@ -6635,9 +6894,7 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
     if ps_mode:
         if analysis_variant == "RIVETFO":
             raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetfo.")
-        if analysis_variant == "RIVETWEIGHTS":
-            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetweights.")
-        analysis_variant = "RIVETPS"
+        analysis_variant = resolve_ps_analysis_variant(analysis_variant)
     scale_variations = resolve_scale_variations_requested(getattr(args, "scale_variations", None), manifest, default=False)
     include_lo = resolve_include_lo_requested(getattr(args, "include_lo", None), manifest, analysis_variant)
     diagnostics_enabled = resolve_extract_diagnostics_requested(getattr(args, "diagnostics", None), manifest)
@@ -6699,7 +6956,14 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
         args.tag,
         analysis_variant,
         setups=requested_setups,
-        analysis_variants_by_setup=ps_analysis_variants_by_setup(requested_setups) if ps_mode else None,
+        analysis_variants_by_setup=(
+            ps_analysis_variants_by_setup(
+                requested_setups,
+                rivetweights=analysis_variant == PS_WEIGHTED_ANALYSIS_VARIANT,
+            )
+            if ps_mode
+            else None
+        ),
         scale_variations=scale_variations,
         include_lo=include_lo,
     )
@@ -6997,7 +7261,7 @@ def run_analyze_herwig_command(args: argparse.Namespace) -> int:
     validate_setup_family(requested_setups)
     ps_mode = contains_ps_setups(requested_setups)
     analysis_variant = analysis_variant_from_args(args) or str(manifest.get("analysis_variant", ""))
-    if analysis_variant == "RIVETWEIGHTS":
+    if analysis_variant == "RIVETWEIGHTS" and not ps_mode:
         unsupported = [setup for setup in requested_setups if setup not in SETUP_ORDER]
         if unsupported:
             raise ValueError(
@@ -7005,9 +7269,9 @@ def run_analyze_herwig_command(args: argparse.Namespace) -> int:
                 f"GAMMA, Z, and ALL (got {', '.join(unsupported)})."
             )
     if ps_mode:
-        if analysis_variant == "RIVETWEIGHTS":
-            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetweights.")
-        analysis_variant = "RIVETPS"
+        if analysis_variant == "RIVETFO":
+            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetfo.")
+        analysis_variant = resolve_ps_analysis_variant(analysis_variant)
     scale_variations = resolve_scale_variations_requested(getattr(args, "scale_variations", None), manifest, default=False)
     poldis_error_mode = resolve_poldis_error_mode_requested(getattr(args, "poldis_error_mode", None), manifest)
     resolve_analysis_name(args, requested_setups)
@@ -7102,7 +7366,7 @@ def run_rivetplot_command(args: argparse.Namespace) -> int:
     ps_mode = contains_ps_setups(requested_setups)
     analysis_variant = analysis_variant_from_args(args) or str(manifest.get("analysis_variant", ""))
     if ps_mode:
-        analysis_variant = "RIVETPS"
+        analysis_variant = resolve_ps_analysis_variant(analysis_variant)
     scale_variations = resolve_scale_variations_requested(getattr(args, "scale_variations", None), manifest, default=False)
     poldis_error_mode = resolve_poldis_error_mode_requested(getattr(args, "poldis_error_mode", None), manifest)
     resolve_analysis_name(args, requested_setups)
@@ -7183,7 +7447,7 @@ def run_full_command(args: argparse.Namespace) -> int:
     ps_mode = contains_ps_setups(requested_setups)
     analysis_variant = analysis_variant_from_args(args) or str(manifest.get("analysis_variant", ""))
     if ps_mode:
-        analysis_variant = "RIVETPS"
+        analysis_variant = resolve_ps_analysis_variant(analysis_variant)
     scale_variations = resolve_scale_variations_requested(getattr(args, "scale_variations", None), manifest, default=False)
     poldis_error_mode = resolve_poldis_error_mode_requested(getattr(args, "poldis_error_mode", None), manifest)
     resolve_analysis_name(args, requested_setups)

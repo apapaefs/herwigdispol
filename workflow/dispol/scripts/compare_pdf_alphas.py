@@ -2,12 +2,12 @@
 """
 Compare alpha_s(Q^2) from multiple LHAPDF PDF sets over the active DISPOL range.
 
-By default, this compares the polarized Herwig-side set and the unpolarized
-reference set, and adds the Herwig Matchbox NLOAlphaS curve used by the DIS
-cards, normalized through its input value alpha_s(M_Z) = 0.118:
+By default, this compares the paired NNPDF DIS validation set and adds the
+Herwig Matchbox NLOAlphaS curve used by the DIS cards, normalized through its
+input value alpha_s(M_Z) = 0.118:
 
-  - BDSSV24-NNLO
-  - PDF4LHC15_nnlo_100_pdfas
+  - NNPDF40_nlo_pch_as_01180
+  - NNPDFpol20_nlo_as_01180
   - Herwig Matchbox NLOAlphaS (input alpha_s(MZ)=0.118)
 
 The POLDIS-internal DSSV replica can still be compared later by passing an
@@ -32,17 +32,17 @@ from typing import Callable, Dict, List, Sequence
 
 DEFAULT_LHAPDF_DATA_PATH = "/opt/homebrew/Cellar/lhapdf/6.5.4/share/LHAPDF"
 DEFAULT_PDFS = [
-    "BDSSV24-NNLO",
-    "PDF4LHC15_nnlo_100_pdfas",
+    "NNPDF40_nlo_pch_as_01180",
+    "NNPDFpol20_nlo_as_01180",
 ]
-DEFAULT_REFERENCE = "BDSSV24-NNLO"
+HERWIG_REFERENCE_TOKEN = "herwig"
+DEFAULT_REFERENCE = HERWIG_REFERENCE_TOKEN
 DEFAULT_INPUT_ALPHA_S = 0.118
 DEFAULT_INPUT_SCALE = 91.188
 DEFAULT_Q2_MIN = 49.0
 DEFAULT_Q2_MAX = 2500.0
 DEFAULT_NUM_POINTS = 300
 DEFAULT_Q2_VALUES = [49.0, 100.0, 500.0, 1500.0, 2500.0]
-HERWIG_REFERENCE_TOKEN = "herwig"
 
 
 def parse_q2_values(text: str) -> List[float]:
@@ -74,9 +74,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--reference",
         help=(
-            "Reference curve for the ratio panel. Defaults to "
-            f"{DEFAULT_REFERENCE} when present, otherwise the first requested curve. "
-            f"Use '{HERWIG_REFERENCE_TOKEN}' to select the Herwig-style curve."
+            "Reference curve for the ratio panel. Defaults to the Herwig-style "
+            f"curve. Use '{HERWIG_REFERENCE_TOKEN}' explicitly to select it, or "
+            "pass any requested PDF curve name."
         ),
     )
     parser.add_argument(
@@ -165,17 +165,18 @@ def resolve_pdf_names(args: argparse.Namespace) -> List[str]:
 def resolve_reference_name(
     series_names: Sequence[str], requested: str | None, herwig_name: str | None = None
 ) -> str:
+    requested_name = requested.strip() if requested else DEFAULT_REFERENCE
+    if herwig_name and requested_name.lower() == HERWIG_REFERENCE_TOKEN:
+        return herwig_name
     if requested:
-        if herwig_name and requested.strip().lower() == HERWIG_REFERENCE_TOKEN:
-            return herwig_name
-        if requested not in series_names:
+        if requested_name not in series_names:
             raise SystemExit(
-                f"Reference curve '{requested}' is not in the requested comparison list: "
+                f"Reference curve '{requested_name}' is not in the requested comparison list: "
                 f"{', '.join(series_names)}"
             )
-        return requested
-    if DEFAULT_REFERENCE in series_names:
-        return DEFAULT_REFERENCE
+        return requested_name
+    if requested_name in series_names:
+        return requested_name
     return series_names[0]
 
 

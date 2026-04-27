@@ -19,8 +19,61 @@ _HELPER_BLOCK = textwrap.dedent(
 
     # Codex scale-envelope patch
     scale_band_labels = {label for label in dataf['yvals'] if '.herwig_' in label}
+    raw_overlay_labels = {
+        label
+        for label in dataf['yvals']
+        if '.raw_powheg_' in label or label.startswith('Raw_POWHEG')
+    }
     reference_label = next((label for label in dataf['yvals'] if label.startswith('POLDIS')), None)
+    if reference_label is None and 'Data' in dataf['yvals']:
+        reference_label = 'Data'
+    if reference_label is None:
+        reference_label = next(
+            (
+                label
+                for label in dataf['yvals']
+                if label not in scale_band_labels and label not in raw_overlay_labels
+            ),
+            None,
+        )
+    desired_reference_label = 'POLDIS NLO'
     scale_band_opacity = 0.5
+
+    def _rename_plot_label(old, new):
+        if old is None or old == new or old not in dataf['yvals']:
+            return old
+        for key in ('yvals', 'yerrs', 'xpoints', 'xedges', 'xerrs'):
+            mapping = dataf.get(key)
+            if isinstance(mapping, dict) and old in mapping:
+                mapping[new] = mapping.pop(old)
+        variation_mapping = dataf.get('variation_yvals')
+        if isinstance(variation_mapping, dict):
+            renamed_variations = {}
+            for label in list(variation_mapping):
+                if label.startswith(old):
+                    renamed_variations[new + label[len(old):]] = variation_mapping.pop(label)
+            variation_mapping.update(renamed_variations)
+        if isinstance(dataf.get('add_legend_handle'), list):
+            dataf['add_legend_handle'] = [new if label == old else label for label in dataf['add_legend_handle']]
+        if old in styles:
+            styles[new] = styles.pop(old)
+        return new
+
+    if reference_label is not None:
+        reference_label = _rename_plot_label(reference_label, desired_reference_label)
+
+    def _symmetrize_reference_yerrs(label):
+        if label is None or label not in dataf.get('yerrs', {}):
+            return
+        yerrs = np.asarray(dataf['yerrs'][label], dtype=float)
+        if yerrs.shape[0] != 2:
+            return
+        down = np.asarray(yerrs[0], dtype=float)
+        up = np.asarray(yerrs[1], dtype=float)
+        if np.any(down > 0.0) and np.allclose(up, 0.0):
+            dataf['yerrs'][label] = np.vstack([down, down])
+
+    _symmetrize_reference_yerrs(reference_label)
 
     def _safe_ratio(num, den):
         num = np.asarray(num, dtype=float)
@@ -29,6 +82,23 @@ _HELPER_BLOCK = textwrap.dedent(
 
     def _scale_band_color(label):
         return styles.get(label, {}).get('color', '#EE3311')
+
+    def _foreground_zorder():
+        zorders = []
+        for style in styles.values():
+            try:
+                zorders.append(float(style.get('zorder', 0.0)))
+            except Exception:
+                continue
+        return (max(zorders) if zorders else 0.0) + 2.0
+
+    def _enabled_errorbar_scale(style_key, axis_key):
+        style = styles.get(style_key, {})
+        try:
+            value = float(style.get(axis_key, 1.0))
+        except Exception:
+            value = 1.0
+        return value if value > 0.0 else 1.0
 
     def _main_band_arrays(label):
         if label not in scale_band_labels:
@@ -46,6 +116,20 @@ _HELPER_BLOCK = textwrap.dedent(
         if reference_label is None or label == reference_label:
             return None
         return _safe_ratio(dataf['yvals'][label], dataf['yvals'][reference_label])
+
+    def _ratio_yerrs(label):
+        if reference_label is None or label not in dataf.get('yerrs', {}):
+            return None
+        yerrs = np.asarray(dataf['yerrs'][label], dtype=float)
+        if yerrs.shape[0] != 2:
+            return None
+        ref = np.asarray(dataf['yvals'][reference_label], dtype=float)
+        abs_ref = np.abs(ref)
+        err_dn = np.divide(yerrs[0], abs_ref, out=np.zeros_like(yerrs[0], dtype=float), where=abs_ref != 0)
+        err_up = np.divide(yerrs[1], abs_ref, out=np.zeros_like(yerrs[1], dtype=float), where=abs_ref != 0)
+        err_dn = np.where(np.isfinite(err_dn), err_dn, 0.0)
+        err_up = np.where(np.isfinite(err_up), err_up, 0.0)
+        return np.vstack([err_dn, err_up])
 
     def _ratio_band_arrays(label):
         if label not in scale_band_labels or reference_label is None:
@@ -146,7 +230,7 @@ _RATIO_PANEL_BLOCK = textwrap.dedent(
                                solid_joinstyle='miter')
             else:
                 tmp = ratio0_ax.errorbar(dataf['xpoints'][label], ratio_yvals,
-                                         xerr=np.array(dataf['xerrs'][label])*styles[label]['ratio0_xerrorbars'],
+                                         xerr=None,
                                          yerr=None,
                                          fmt=styles[label]['ratio0_marker'], capsize=styles[label]['ratio0_capsize'],
                                          alpha=styles[label]['ratio0_lineopacity'],
@@ -349,7 +433,7 @@ _NOSCALE_RATIO_PANEL_BLOCK = textwrap.dedent(
                            drawstyle=styles[label]['ratio0_drawstyle'], zorder=styles[label]['zorder'],
                            solid_joinstyle='miter')
         tmp = ratio0_ax.errorbar(_main_xpoints(label), ratio_yvals,
-                                 xerr=np.array(_main_xerrs(label))*styles[label]['ratio0_xerrorbars'],
+                                 xerr=None,
                                  yerr=np.array(_ratio_yerrs(label))*styles[label]['ratio0_yerrorbars'],
                                  fmt=styles[label]['ratio0_marker'], capsize=styles[label]['ratio0_capsize'],
                                  alpha=styles[label]['ratio0_lineopacity'],

@@ -37,8 +37,8 @@ from compare_pdf_alphas import (
 
 
 DEFAULT_LHAPDF_DATA_PATH = "/opt/homebrew/Cellar/lhapdf/6.5.4/share/LHAPDF"
-DEFAULT_SUM_PDF = "PDF4LHC15_nnlo_100_pdfas"
-DEFAULT_DIFF_PDF = "BDSSV24-NNLO"
+DEFAULT_SUM_PDF = "NNPDF40_nlo_pch_as_01180"
+DEFAULT_DIFF_PDF = "NNPDFpol20_nlo_as_01180"
 DEFAULT_CHANNEL = "ALL"
 DEFAULT_Q2_VALUES = [49.0, 100.0, 500.0, 1500.0, 2500.0]
 DEFAULT_Y_VALUES = [0.2, 0.4, 0.6]
