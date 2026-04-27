@@ -7,6 +7,7 @@ Authors:
 Options:
  - JETINPUT=FULL,HARDPARTONS,TOP2PARTONS,TOP3PARTONS
  - DISMODE=NC,CC
+ - RIVETWEIGHTS=NO,YES
 
 RunInfo: Suitable for DIS.
 NumEvents: 1000
@@ -18,7 +19,7 @@ Description:
   the additional histograms probe accepted extra radiation and current-
   hemisphere particle-level spin-correlation structure after the standard
   dijet selection.
-  The DIS event selection uses 49 < Q^2 < 2500 GeV^2 together with
+  The DIS event selection uses 100 < Q^2 < 2500 GeV^2 together with
   0.2 < y < 0.6.
   The JETINPUT option selects either the full DIS final state (FULL, default),
   only final-state q/g partons from the Rivet DIS final state (HARDPARTONS),
@@ -27,4 +28,7 @@ Description:
   clustering in the Breit frame.
   Particle-level observables are constructed from visible stable particles in
   the Breit-frame current hemisphere, excluding the scattered lepton.
+  With RIVETWEIGHTS=YES, the analysis reads the Herwig correlated helicity
+  weights HERWIG_DIS_SIGMA and HERWIG_DIS_DELTA_LL, filling unpolarized
+  histograms from the former and D... polarized histograms from the latter.
 NeedsCrossSection: yes

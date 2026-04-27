@@ -121,7 +121,7 @@ namespace Rivet {
 
       // Histograms (no Q2-binned sets)
      
-      book(_h_Q2, "Q2", 100, 49.0, 2500.0);
+      book(_h_Q2, "Q2", 100, 100.0, 2500.0);
       book(_h_Pt, "Pt", 15, 5.0, 30.0);
       book(_h_XBj, "XBj", 20, 0.0, 1.0);
       book(_h_Mjj, "Mjj", logspace(15, 10.0, 100.0));
@@ -131,13 +131,13 @@ namespace Rivet {
       book(_h_pT2, "pT2", 15, 5.0, 30.0);
       book(_h_pT2OverpT1, "pT2OverpT1", 15, 0.0, 1.0);
       book(_h_pTAsym, "pTAsym", 15, 0.0, 1.0);
-      book(_h_Q2PreCut, "Q2PreCut", 100, 49.0, 2500.0);
+      book(_h_Q2PreCut, "Q2PreCut", 100, 100.0, 2500.0);
       book(_h_XBjPreCut, "XBjPreCut", 20, 0.0, 1.0);
       book(_h_YPreCut, "YPreCut", 40, 0.2, 0.6);
       book(_h_pT1PreCut, "pT1PreCut", 30, 0.0, 30.0);
       book(_h_pT2PreCut, "pT2PreCut", 30, 0.0, 30.0);
       if (_rivetWeightsMode) {
-        book(_h_DQ2, "DQ2", 100, 49.0, 2500.0);
+        book(_h_DQ2, "DQ2", 100, 100.0, 2500.0);
         book(_h_DPt, "DPt", 15, 5.0, 30.0);
         book(_h_DXBj, "DXBj", 20, 0.0, 1.0);
         book(_h_DMjj, "DMjj", logspace(15, 10.0, 100.0));
@@ -147,7 +147,7 @@ namespace Rivet {
         book(_h_DpT2, "DpT2", 15, 5.0, 30.0);
         book(_h_DpT2OverpT1, "DpT2OverpT1", 15, 0.0, 1.0);
         book(_h_DpTAsym, "DpTAsym", 15, 0.0, 1.0);
-        book(_h_DQ2PreCut, "DQ2PreCut", 100, 49.0, 2500.0);
+        book(_h_DQ2PreCut, "DQ2PreCut", 100, 100.0, 2500.0);
         book(_h_DXBjPreCut, "DXBjPreCut", 20, 0.0, 1.0);
         book(_h_DYPreCut, "DYPreCut", 40, 0.2, 0.6);
         book(_h_DpT1PreCut, "DpT1PreCut", 30, 0.0, 30.0);
@@ -173,8 +173,8 @@ namespace Rivet {
       const double xbj = dis.x();
       const double y   = dis.y();
 
-      // Kinematic window: 49 < Q^2 < 2500 GeV^2 and 0.2 < y < 0.6
-      if (!inRange(Q2, 49*GeV2, 2500*GeV2)) vetoEvent;
+      // Kinematic window: 100 < Q^2 < 2500 GeV^2 and 0.2 < y < 0.6
+      if (!inRange(Q2, 100*GeV2, 2500*GeV2)) vetoEvent;
       if (!inRange(y,  0.2,     0.6))       vetoEvent;
 
       vector<ClusteredJet> jets;

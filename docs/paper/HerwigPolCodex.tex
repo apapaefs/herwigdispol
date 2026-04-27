@@ -82,7 +82,7 @@ In this paper we address both of these requirements. We present the implementati
 
 The second contribution concerns the propagation of spin information from the hard event to the parton shower. Once the hardest POWHEG emission has been generated, the accepted configuration is a specific real-emission state whose final-state particles carry correlated spin information. To preserve these correlations in the showered event, the parton shower must be initialized with the full spin-density information of the accepted real-emission state. We achieve this by constructing the spin-density matrix from the exact real-emission helicity amplitudes, and using it to initialize the shower, without modifying the accepted hard-event normalization or hardest-emission choice.
 
-The remainder of this paper is organized as follows. In Section~\ref{sec:formalism} we review the spin-density-matrix formalism for polarized hadrons and the corresponding modifications to the parton shower. Section~\ref{sec:polarizeddis} presents the polarized DIS implementation, including the real and virtual contributions and their fixed-order validation, as well as the real-emission spin-correlation framework for the shower and the jet- and particle-level observables designed to isolate the phenomenological impact of the new spin information at EIC energies. We provide our conclusions and outlook in Section~\ref{sec:conclusions}.
+The remainder of this paper is organized as follows. In Section~\ref{sec:formalism} we review the spin-density-matrix formalism for polarized hadrons and the corresponding modifications to the parton shower. Section~\ref{sec:polarizeddis} presents the polarized DIS implementation, including the real and virtual contributions and their fixed-order validation, as well as the real-emission spin-correlation framework for the shower and the jet- and particle-level observables designed to isolate the phenomenological impact of the new spin information at EIC energies. Appendix~\ref{app:rivet-workflow} describes the Rivet analyses and reproducibility workflow used for these validations. Appendix~\ref{app:dis-remnant-fallback} documents the one-remnant fallback used in rare DIS kinematic configurations, and Appendix~\ref{app:hadronization-extra} gives an additional hadron-level comparison of the shower-spin configurations. We provide our conclusions and outlook in Section~\ref{sec:conclusions}.
 
 \section{Formalism and Definitions}\label{sec:formalism}
 \subsection{Polarized Hadrons}
@@ -686,7 +686,7 @@ We use dimensional regularization in $d=4-2\epsilon$ and the $\overline{\text{MS
 We work with $Q^2\equiv -q^2>0$ in the Breit frame. In massless QCD the one-loop quark form factor is helicity conserving, so the renormalized virtual correction multiplies the Born spin projector and remains diagonal in helicity.
 
 \paragraph{Flux convention and Born decomposition.}
-In this work we generate the \emph{physical cross section for polarized beams} rather than the spin-difference observable $\Delta\sigma$.
+In this work we primarily generate the \emph{physical cross section for polarized beams} rather than the spin-difference observable $\Delta\sigma$.\footnote{For selected validation samples the four longitudinal helicity combinations and the derived $\sigma$ and $\Delta\sigma$ combinations are also made available by event reweighting. These named weights can be read either from the HepMC event record or directly by the custom Rivet analyses described in Appendix~\ref{app:rivet-workflow}.}
 The spin dependence of the Born cross section is carried by the hadron spin-density matrix of Sec.~\ref{sec:formalism} together with the lepton-helicity dependence of the Born amplitude, and is summarized by the exact Born structure $\Sigma_B(\Phi_B)$.
 
 The virtual correction is evaluated at the Born momentum fraction $x_B$, is helicity-diagonal, and therefore multiplies the polarized Born uniformly.
@@ -1064,11 +1064,11 @@ Having assembled the complete NLO ingredients: real-emission, virtual, and colli
 The fixed-order comparison is performed using the \texttt{Rivet} analysis framework~\cite{Bierlich:2024vqo}, with a configuration designed to
 follow the \POLDIS\ definition as closely as possible. At generator
 level we use $E_e=18~\mathrm{GeV}$ and $E_p=275~\mathrm{GeV}$, with the DIS window
-$49 \le Q^2 \le 2500~\mathrm{GeV}^2$, $0.2 \le y \le 0.6$ and
+$100~\mathrm{GeV}^2 < Q^2 \le 2500~\mathrm{GeV}^2$, $0.2 \le y \le 0.6$ and
 the event-handler incoming-leg momentum-fraction cuts \texttt{X1Min}=\texttt{X2Min}=$10^{-5}$. No additional restriction is imposed on the hadronic invariant mass $W^2 \equiv (p + q)^2$ beyond
 $W^2 \ge 0$, and the Herwig minimum partonic invariant-mass cut \texttt{Cuts:MHatMin} is set to
 $\hat{M}_{\mathrm{min}}=0$.
-This $Q^2$ window matches the active DIS validation cards in the repository, where the neutral-current and charged-current cuts use \texttt{MinQ2}$=49~\mathrm{GeV}^2$ and \texttt{MaxQ2}$=2500~\mathrm{GeV}^2$.
+This $Q^2$ window matches the active DIS validation cards in the repository, where the neutral-current and charged-current cuts use \texttt{MinQ2}$=100~\mathrm{GeV}^2$ and \texttt{MaxQ2}$=2500~\mathrm{GeV}^2$.
 
 To isolate the perturbative content of the comparison, hadronization and decays are disabled, the shower
 is restricted to its hardest emission only by enabling \texttt{LimitEmissions HardOnly}, constituent masses are disabled with \texttt{UseConstituentMasses No}, and the
@@ -1087,19 +1087,35 @@ but before the Breit-frame $p_T$ thresholds and laboratory-frame rapidity cuts
 are imposed.
 
 The PDF choices are adjusted to bring the \Herwig\ \textsc{POWHEG} setup as
-close as practical to the \POLDIS\ fixed-order reference. The unpolarized
-proton PDFs are taken from \texttt{PDF4LHC15\_nnlo\_100\_pdfas}~\cite{Butterworth:2015oua}, while the
-polarized difference PDF is taken from \texttt{BDSSV24-NNLO}~\cite{Borsa:2024mss}. This is a validation-driven hybrid input choice adopted to isolate implementation differences as cleanly as possible, rather than a final phenomenological PDF setup. For the LO and NLO \Herwig-vs-\POLDIS\ implementation checks we intentionally use the same NNLO PDF inputs in both perturbative orders, since the aim is to isolate implementation differences rather than perform an order-matched PDF phenomenology study.
-This setup also provides a useful stress test of the polarized projector construction, since the chosen polarized PDFs can change sign across the relevant $x$ range. In the implementation the polarized terms enter through the finite combinations proportional to $P_z\,\Delta f_m/f_q$, with no separate division by $\Delta f_q(x_B)$, and we observe no numerical instability associated with polarized-PDF nodes in the validation runs.
-As an additional robustness check we repeated the broad $\gamma$ comparison
-with the \texttt{NNPDF40\_nlo\_pch\_as\_01180} and
-\texttt{NNPDFpol20\_nlo\_as\_01180} sets, and found the same qualitative
-pattern. We therefore regard the residual differences at the
-few-$10^{-1}\,\mathrm{pb}$ level as compatible with the remaining input-level
-conventions of the comparison. In particular, the polarized and unpolarized
-PDFs are not obtained from a single simultaneous fit, so the ratio
-$\Delta f/f$ should not be interpreted as a strictly bounded event-level
-polarization variable throughout the full sampled phase space.
+close as practical to the \POLDIS\ fixed-order reference. For the main
+validation presented here we use the unpolarized proton set
+\texttt{NNPDF40\_nlo\_pch\_as\_01180}, based on the NNPDF4.0 determination
+of Ref.~\cite{Ball:2022proton}, together with the polarized-difference set
+\texttt{NNPDFpol20\_nlo\_as\_01180}, based on the NNPDF~pol~2.0 determination
+of Ref.~\cite{Cruz-Martinez:2025nnpdfpol20}. This provides a natural
+NNPDF-family input combination for the LO and NLO \Herwig-vs-\POLDIS\
+implementation checks while keeping the validation setup close to the active
+\Herwig\ workflow defaults. As in the rest of the validation, we intentionally
+use the same PDF inputs at LO and NLO, since the aim is to isolate
+implementation differences rather than perform an order-matched PDF
+phenomenology study.
+This setup also provides a useful stress test of the polarized projector
+construction, since the chosen polarized PDFs can change sign across the
+relevant $x$ range. In the implementation the polarized terms enter through the
+finite combinations proportional to $P_z\,\Delta f_m/f_q$, with no separate
+division by $\Delta f_q(x_B)$, and we observe no numerical instability
+associated with polarized-PDF nodes in the validation runs.
+For comparison, we also repeated the broad-window study with the historical
+\POLDIS-oriented hybrid choice
+\texttt{PDF4LHC15\_nnlo\_100\_pdfas}~\cite{Butterworth:2015oua} and
+\texttt{BDSSV24-NNLO}~\cite{Borsa:2024mss}, which were the defaults used in our
+earlier \POLDIS\ reference workflow. The resulting integrated cross sections
+show similarly good agreement, so we interpret the remaining tiny offsets as
+compatible with residual input-level convention differences rather than with a
+substantive physics discrepancy. The polarized and unpolarized PDFs are still
+not obtained from a single simultaneous fit, so the ratio $\Delta f/f$ should
+not be interpreted as a strictly bounded event-level polarization variable
+throughout the full sampled phase space.
 
 The electroweak and coupling inputs are matched in the same spirit. For this validation setup we use the
 \texttt{alphaMZScheme} with a fixed electromagnetic coupling $\alpha_{\mathrm{EM}}=1/137 \simeq 0.00729927$ to match the \POLDIS\ conventions as closely as possible, and the photon and $Z$ fermion vertices are evaluated with the
@@ -1111,7 +1127,7 @@ the \texttt{LOAlphaS} running coupling and the \textsc{POWHEG}/NLO samples use
 There remains, however, a small convention difference in the polarized NLO
 comparison: \POLDIS\ evaluates the NLO correction with the running coupling
 associated with the active PDF set, whereas \Herwig\ uses the common model-side
-\alphaS\ choice specified in the generator setup. This effect is numerically
+$\alpha_s$ choice specified in the generator setup. This effect is numerically
 subleading in the present study, but it provides a natural interpretation for
 part of the residual offset once the dominant implementation issues are under
 control.
@@ -1121,6 +1137,9 @@ remains an NLO+Sudakov framework rather than a strict fixed-order calculation.
 The Sudakov suppression and resummation built into the hardest-emission
 generation naturally lead to residual differences, especially for
 emission-sensitive differential observables.
+The \texttt{MC\_DIS\_BREIT} analysis and the corresponding campaign-level
+combination of the correlated helicity weights are described in
+Appendix~\ref{app:rivet-workflow}.
 
 \subsubsection{Total DIS cross section}
 The total DIS cross section is validated at fixed cuts for the three neutral-current
@@ -1179,14 +1198,14 @@ directly from the extracted run summaries, with all entries expressed in pb.
     \hline
     Setup & Observable & \Herwig\ [pb] & \POLDIS\ [pb] & HW/POLDIS \\
     \hline
-    $\gamma$   & $\sigma_{0,\gamma}$              & $2952.10 \pm 0.10$        & $2952.50 \pm 0.20$        & $0.99986 \pm 0.00008$ \\
-    $\gamma$   & $\Delta\sigma_{\gamma}$          & $45.500 \pm 0.071$        & $45.4269 \pm 0.0028$      & $1.0016 \pm 0.0016$ \\
-    $Z$        & $\sigma_{0,Z}$                   & $1.211040 \pm 0.000037$   & $1.210347 \pm 0.000119$   & $1.00057 \pm 0.00010$ \\
-    $Z$        & $\Delta\sigma_{LL,Z}$            & $0.054710 \pm 0.000037$   & $0.054645 \pm 0.000010$   & $1.00119 \pm 0.00069$ \\
-    $\gamma Z$ & $\sigma_{0,\gamma Z}$            & $2965.43 \pm 0.07$        & $2965.62 \pm 0.20$        & $0.99993 \pm 0.00007$ \\
-    $\gamma Z$ & $\Delta\sigma_{LL,\gamma Z}$     & $50.025 \pm 0.066$        & $50.1405 \pm 0.0031$      & $0.9977 \pm 0.0013$ \\
-    int.       & $\sigma_{0,\mathrm{int}}$        & $12.11 \pm 0.12$          & $11.91 \pm 0.28$          & $1.017 \pm 0.026$ \\
-    int.       & $\Delta\sigma_{LL,\mathrm{int}}$ & $4.470 \pm 0.097$         & $4.659 \pm 0.004$         & $0.960 \pm 0.021$ \\
+    $\gamma$   & $\sigma_{0,\gamma}$              & $2933.65 \pm 0.04$        & $2933.78 \pm 0.14$        & $0.99996 \pm 0.00005$ \\
+    $\gamma$   & $\Delta\sigma_{\gamma}$          & $51.044 \pm 0.025$        & $51.0417 \pm 0.0021$      & $1.00004 \pm 0.00049$ \\
+    $Z$        & $\sigma_{0,Z}$                   & $1.232712 \pm 0.000008$   & $1.232776 \pm 0.000086$   & $0.99995 \pm 0.00007$ \\
+    $Z$        & $\Delta\sigma_{LL,Z}$            & $0.048296 \pm 0.000008$   & $0.048301 \pm 0.000006$   & $0.99989 \pm 0.00021$ \\
+    $\gamma Z$ & $\sigma_{0,\gamma Z}$            & $2946.34 \pm 0.02$        & $2946.46 \pm 0.14$        & $0.99996 \pm 0.00005$ \\
+    $\gamma Z$ & $\Delta\sigma_{LL,\gamma Z}$     & $56.041 \pm 0.018$        & $56.0312 \pm 0.0023$      & $1.00017 \pm 0.00032$ \\
+    int.       & $\sigma_{0,\mathrm{int}}$        & $11.46 \pm 0.04$          & $11.45 \pm 0.20$          & $1.0007 \pm 0.0177$ \\
+    int.       & $\Delta\sigma_{LL,\mathrm{int}}$ & $4.949 \pm 0.031$         & $4.9412 \pm 0.0031$       & $1.0016 \pm 0.0062$ \\
     \hline
   \end{tabular*}
   \caption{Integrated LO cross sections and ratios.  The interference entries
@@ -1203,14 +1222,14 @@ directly from the extracted run summaries, with all entries expressed in pb.
     \hline
     Setup & Observable & \Herwig\ [pb] & \POLDIS\ [pb] & HW/POLDIS \\
     \hline
-    $\gamma$   & $\sigma_{0,\gamma}$              & $2756.77 \pm 0.10$        & $2756.01 \pm 0.23$        & $1.00028 \pm 0.00009$ \\
-    $\gamma$   & $\Delta\sigma_{\gamma}$          & $43.468 \pm 0.071$        & $43.6695 \pm 0.0030$      & $0.9954 \pm 0.0016$ \\
-    $Z$        & $\sigma_{0,Z}$                   & $1.154301 \pm 0.000032$   & $1.153437 \pm 0.000118$   & $1.00075 \pm 0.00011$ \\
-    $Z$        & $\Delta\sigma_{LL,Z}$            & $0.050036 \pm 0.000032$   & $0.050139 \pm 0.000010$   & $0.99794 \pm 0.00067$ \\
-    $\gamma Z$ & $\sigma_{0,\gamma Z}$            & $2769.13 \pm 0.05$        & $2768.30 \pm 0.23$        & $1.00030 \pm 0.00008$ \\
-    $\gamma Z$ & $\Delta\sigma_{LL,\gamma Z}$     & $47.918 \pm 0.050$        & $48.2886 \pm 0.0032$      & $0.9923 \pm 0.0010$ \\
-    int.       & $\sigma_{0,\mathrm{int}}$        & $11.20 \pm 0.11$          & $11.14 \pm 0.32$          & $1.006 \pm 0.031$ \\
-    int.       & $\Delta\sigma_{LL,\mathrm{int}}$ & $4.400 \pm 0.087$         & $4.569 \pm 0.004$         & $0.963 \pm 0.019$ \\
+    $\gamma$   & $\sigma_{0,\gamma}$              & $2732.04 \pm 0.03$        & $2731.90 \pm 0.16$        & $1.00006 \pm 0.00006$ \\
+    $\gamma$   & $\Delta\sigma_{\gamma}$          & $48.642 \pm 0.024$        & $48.6255 \pm 0.0024$      & $1.00033 \pm 0.00049$ \\
+    $Z$        & $\sigma_{0,Z}$                   & $1.175951 \pm 0.000007$   & $1.175938 \pm 0.000085$   & $1.00001 \pm 0.00007$ \\
+    $Z$        & $\Delta\sigma_{LL,Z}$            & $0.044243 \pm 0.000007$   & $0.044247 \pm 0.000006$   & $0.99991 \pm 0.00021$ \\
+    $\gamma Z$ & $\sigma_{0,\gamma Z}$            & $2743.91 \pm 0.02$        & $2743.77 \pm 0.16$        & $1.00005 \pm 0.00006$ \\
+    $\gamma Z$ & $\Delta\sigma_{LL,\gamma Z}$     & $53.498 \pm 0.017$        & $53.5094 \pm 0.0025$      & $0.99978 \pm 0.00032$ \\
+    int.       & $\sigma_{0,\mathrm{int}}$        & $10.69 \pm 0.04$          & $10.70 \pm 0.23$          & $0.9996 \pm 0.0215$ \\
+    int.       & $\Delta\sigma_{LL,\mathrm{int}}$ & $4.812 \pm 0.029$         & $4.8396 \pm 0.0034$       & $0.9942 \pm 0.0060$ \\
     \hline
   \end{tabular*}
   \caption{Integrated NLO cross sections and ratios.  The NLO values are formed
@@ -1221,7 +1240,16 @@ directly from the extracted run summaries, with all entries expressed in pb.
 
 With the present high-statistics validation sample, the integrated
 fixed-order cross sections agree very well with \POLDIS\ across all
-channels. For the dominant pure-photon and full neutral-current cross sections, the ratios HW/POLDIS are consistent with unity to better than one permille at both LO and NLO. The pure-$Z$ channel, although numerically much smaller, is reproduced at the same relative precision. The polarized observables $\Delta\sigma$ show agreement at the percent level or better, with the largest relative differences appearing in the extracted interference contributions. In particular, $\Delta\sigma_{LL,\mathrm{int}}$ shows a small but persistent low bias at both LO and NLO; since this quantity is obtained as a small difference of large numbers, it is especially sensitive to convention choices, and the remaining offset is more plausibly attributed to a residual systematic input mismatch, for example in the electroweak-coupling setup, than to statistics alone.
+neutral-current channels. For the dominant pure-photon, pure-$Z$, and full
+neutral-current cross sections, the ratios HW/POLDIS are consistent with unity
+at the permille level or better at both LO and NLO, and the polarized
+combinations are likewise statistically compatible in all three setups. The
+interference contributions remain the most cancellation-sensitive observables,
+especially in the polarized channel, but even there the residual offsets are
+well within the combined statistical uncertainties of the present sample. We
+therefore interpret the remaining differences as small convention-level input
+mismatches, such as PDF or electroweak input choices, rather than as evidence
+for a remaining implementation problem.
 
 \paragraph{Charged-current cross section.}
 For the charged-current validation we use the same fixed cuts and compare the
@@ -1239,8 +1267,8 @@ and the double-spin combination
 \end{equation}
 The charged-current comparison is summarized in
 Table~\ref{tab:validation-total-cc}. The helicity-averaged and double-spin
-combinations agree within statistical errors at both LO and NLO, and the remaining
-differences to \POLDIS\ are well below the percent level.
+combinations agree with \POLDIS\ to better than permille accuracy at both LO
+and NLO.
 
 \begin{table}[!hpt]
   \centering
@@ -1250,10 +1278,10 @@ differences to \POLDIS\ are well below the percent level.
     \hline
     Order & Observable & \Herwig\ [pb] & \POLDIS\ [pb] & HW/POLDIS \\
     \hline
-    LO  & $\sigma_{0,W}$              & $9.43500 \pm 0.00559$    & $9.431494 \pm 0.003275$ & $1.00037 \pm 0.00069$ \\
-    LO  & $\Delta\sigma_{LL,W}$       & $3.16500 \pm 0.00559$    & $3.157534 \pm 0.001497$ & $1.00236 \pm 0.00183$ \\
-    NLO & $\sigma_{0,W}$              & $9.04302 \pm 0.00530$    & $9.038495 \pm 0.003235$ & $1.00050 \pm 0.00069$ \\
-    NLO & $\Delta\sigma_{LL,W}$       & $3.02874 \pm 0.00530$    & $3.035988 \pm 0.001456$ & $0.99761 \pm 0.00181$ \\
+    LO  & $\sigma_{0,W}$              & $9.489925 \pm 0.000140$  & $9.48614 \pm 0.00104$   & $1.000399 \pm 0.000111$ \\
+    LO  & $\Delta\sigma_{LL,W}$       & $3.002892 \pm 0.000140$  & $3.002497 \pm 0.000430$ & $1.000132 \pm 0.000151$ \\
+    NLO & $\sigma_{0,W}$              & $9.0962825 \pm 0.0000978$ & $9.09338 \pm 0.00103$  & $1.000319 \pm 0.000114$ \\
+    NLO & $\Delta\sigma_{LL,W}$       & $2.8945279 \pm 0.0000978$ & $2.894812 \pm 0.000419$ & $0.999902 \pm 0.000149$ \\
     \hline
   \end{tabular*}
   \caption{Integrated charged-current LO and NLO cross sections and ratios.
@@ -1462,7 +1490,7 @@ separate NLO+PS validation is needed to isolate the effect of propagating the
 spin information from the exact real-emission configuration into the polarized
 shower. For this purpose we use the same post-dijet event sample as in the
 Breit-frame dijet analysis: the event must satisfy the DIS window
-$49 \le Q^2 \le 2500~\mathrm{GeV}^2$ and $0.2 \le y \le 0.6$, and the two
+$100~\mathrm{GeV}^2 < Q^2 \le 2500~\mathrm{GeV}^2$ and $0.2 \le y \le 0.6$, and the two
 leading Breit-frame jets must pass
 $p_{T,1}^{B}>5~\mathrm{GeV}$,
 $p_{T,2}^{B}>4~\mathrm{GeV}$, and
@@ -1480,6 +1508,9 @@ The spin-correlation validation then compares three shower configurations:
 This separation allows one to disentangle the new real-emission
 spin information from the spin dependence already present in the Born-level
 DIS configuration.
+The \texttt{MC\_DIS\_PS} analysis used for these shower-level observables, and
+its relation to the same correlated-weight machinery used in the fixed-order
+validation, is summarized in Appendix~\ref{app:rivet-workflow}.
 
 The particle-level observables are constructed from visible stable particles in
 the Breit-frame current hemisphere, excluding the scattered lepton. If
@@ -1627,6 +1658,121 @@ polarized processes at hadron--hadron and lepton--hadron colliders.
 \section*{Acknowledgments}
 We would like to thank Daniel de Florian for useful discussions and for providing the \POLDIS\ code used for validation. AP acknowledges support from the US Department of Energy, Office of Science, Office of Nuclear Physics under Award Number DE-SC0025728.
 \appendix
+
+\section{Validation Analyses and Reproducibility Workflow}
+\label{app:rivet-workflow}
+
+This appendix summarizes the analysis definitions and workflow used to obtain
+the fixed-order and shower-level validation results presented in the main text.
+The analysis code is distributed with the companion repository,
+\url{https://github.com/apapaefs/herwigdispol}. The two Rivet analyses used here
+are \texttt{MC\_DIS\_BREIT} and \texttt{MC\_DIS\_PS}, whose sources are located
+under \path{analyses/rivet/dis/}. The reproducibility layer, including the
+campaign driver, conversion utilities, HepMC/Rivet-weight handling, and plotting
+post-processing scripts, is collected under \path{workflow/dispol/scripts/}.
+In particular, \path{run_validation_campaign.py} is the main campaign entry
+point, while the additional driver and helper scripts in that directory provide
+the conversion from \POLDIS\ output to YODA, the processing of raw POWHEG
+summaries, and the construction of validation plots. The compiled Rivet plugins
+are generated from the distributed sources using the standard
+\texttt{rivet-buildplugin} workflow and are not tracked as binary artifacts.
+
+\subsection{Breit-Frame Fixed-Order Analysis}
+
+The \texttt{MC\_DIS\_BREIT} analysis defines the fixed-order-like comparison to
+\POLDIS. It reconstructs the DIS kinematics with the Rivet DIS projection,
+boosts the relevant objects to the Breit frame, and clusters the partonic or
+hadronic objects specified by the analysis configuration. The \texttt{JETINPUT}
+option selects among full final-state jets, hard-parton jets, the leading hard
+partons, and the matrix-element-parton mode used in the correlated-weight
+validation. For the neutral-current correlated-weight validation the analysis is
+run as
+\begin{quote}
+\small\path{MC_DIS_BREIT:JETINPUT=MEPARTONS:RIVETWEIGHTS=YES}.
+\end{quote}
+
+The common DIS acceptance is
+$100~\mathrm{GeV}^2 < Q^2 \le 2500~\mathrm{GeV}^2$ and
+$0.2 \le y \le 0.6$. After this selection, the analysis records the inclusive
+DIS control distributions, including $Q^2$, $x_{\mathrm{Bj}}$, $y$, and the
+transverse momenta of the two leading Breit-frame jets. These preselection
+histograms are filled before the final dijet requirement; if fewer than two
+clustered jets are present, the missing leading-jet transverse momenta are
+filled with zero. The selected dijet histograms require two Breit-frame jets
+with
+$p_{T,\mathrm{jet1}}^B>5~\mathrm{GeV}$ and
+$p_{T,\mathrm{jet2}}^B>4~\mathrm{GeV}$, and both selected jets must satisfy
+$-3.5<y_{\mathrm{lab}}<3.5$ after boosting back to the laboratory frame. The
+resulting validation observables include $Q^2$, $x_{\mathrm{Bj}}$,
+$\langle p_T\rangle_2$, $M_{jj}$, $\eta^\ast$, $\zeta_2$,
+$p_{T,\mathrm{jet1}}^B$, $p_{T,\mathrm{jet2}}^B$,
+$p_{T,\mathrm{jet2}}^B/p_{T,\mathrm{jet1}}^B$, and the jet
+transverse-momentum asymmetry.
+
+In correlated-weight mode the analysis reads the named optional weights
+\path{HERWIG_DIS_SIGMA} and \path{HERWIG_DIS_DELTA_LL}. The weight lookup first
+uses the names supplied through the Rivet event handler and then falls back to
+the HepMC3 \texttt{GenEvent} weight table. Thus the same analysis can be applied
+either directly during event generation or to an intermediate HepMC file. The
+unpolarized histograms are filled with \path{HERWIG_DIS_SIGMA}; the associated
+polarized histograms are filled with \path{HERWIG_DIS_DELTA_LL}. The
+normalization is then fixed at finalization by the Rivet cross section and the
+accumulated default-event weight.
+
+\subsection{Shower-Level Analysis}
+
+\texttt{MC\_DIS\_PS} applies the same DIS acceptance and leading-dijet
+selection to observables that are sensitive to subsequent shower evolution. In
+the shower-spin validation the correlated-weight cards use
+\begin{quote}
+\small\path{MC_DIS_PS:JETINPUT=FULL:RIVETWEIGHTS=YES},
+\end{quote}
+so that the selected jets are clustered from the full final state. After the
+leading dijet is selected, the analysis constructs an accepted-jet collection
+with $p_T^B>1~\mathrm{GeV}$ and the same laboratory rapidity acceptance. It then
+measures the additional radiation through $N_{\mathrm{jets}}$, $p_{T,3}^B$,
+$p_{T,3}^B/p_{T,1}^B$, and the scalar sum of transverse momenta carried by jets
+beyond the two leading jets.
+
+The particle-level observables are also evaluated in the Breit frame. The
+analysis removes the scattered lepton from the visible final state and uses the
+current hemisphere to fill the azimuthal distribution relative to the incoming
+lepton direction, the corresponding $\cos 2\phi$ moment binned in $Q^2$, and
+the current-hemisphere broadening
+$B_C=\sum_i p_{T,i}^B/(2\sum_i |\vec{p}_i^B|)$. The third-jet azimuthal
+observable is filled only when at least three accepted jets are present. In
+\texttt{RIVETWEIGHTS} mode the unpolarized and polarized versions of these
+observables use the same \path{HERWIG_DIS_SIGMA} and
+\path{HERWIG_DIS_DELTA_LL} weights as \texttt{MC\_DIS\_BREIT}. This construction
+correlates the helicity weights with the same showered event, giving a low-noise
+validation of the hard-event spin information. It should therefore be viewed as
+a validation device rather than as a substitute for independent samples in which
+the shower is resampled for each helicity-conditioned hard event.
+
+\subsection{Correlated-Weight Combination}
+
+The campaign driver constructs the correlated-weight validation cards in two
+steps. First, it enables \path{GenerateRivetWeights} on the polarized
+neutral-current POWHEG matrix element. It then inserts the analysis string
+appropriate to the fixed-order or shower-level validation,
+\begin{quote}
+\small
+\path{MC_DIS_BREIT:JETINPUT=MEPARTONS:RIVETWEIGHTS=YES},\\
+\path{MC_DIS_PS:JETINPUT=FULL:RIVETWEIGHTS=YES}.
+\end{quote}
+For the fixed-order-like correlated validation this produces the \texttt{00}
+POSNLO and NEGNLO samples, while the four physical helicity combinations and
+their derived $\sigma$ and $\Delta\sigma$ combinations are carried as optional
+event weights.
+
+The POSNLO--NEGNLO combination is consequently different from the
+independent-helicity workflow. In correlated-weight mode the optional weights
+already contain the signed target density, and the final NLO histograms are
+obtained by adding the normalized POSNLO and NEGNLO \texttt{Estimate1D} bin
+values. The driver therefore combines these normalized bins directly, before the
+plotted asymmetries are formed. For the shower-spin comparisons the same
+machinery is used for the \texttt{RIVETPSWEIGHTS} sample families corresponding
+to the \textbf{Full}, \textbf{Born-Only}, and \textbf{None} configurations.
 
 \section{DIS One-Remnant Fallback}
 \label{app:dis-remnant-fallback}

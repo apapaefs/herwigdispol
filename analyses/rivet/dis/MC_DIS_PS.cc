@@ -1,12 +1,16 @@
 // -*- C++ -*-
 #include "Rivet/Analysis.hh"
+#include "Rivet/AnalysisHandler.hh"
 #include "Rivet/Projections/FinalState.hh"
 #include "Rivet/Projections/VisibleFinalState.hh"
 #include "Rivet/Projections/DISKinematics.hh"
 #include "Rivet/Projections/DISLepton.hh"
+#include "Rivet/Tools/RivetHepMC.hh"
+#include "HepMC3/Attribute.h"
 #include "fastjet/ClusterSequence.hh"
 #include <algorithm>
 #include <cmath>
+#include <valarray>
 
 namespace Rivet {
 
@@ -25,6 +29,12 @@ namespace Rivet {
       FourMomentum breitMom;
       FourMomentum labMom;
       int pid;
+    };
+
+    struct AnalysisWeights {
+      double sigma = 1.0;
+      double deltaLL = 0.0;
+      bool haveRivetWeights = false;
     };
 
     enum class JetInputMode {
@@ -48,6 +58,12 @@ namespace Rivet {
         MSG_WARNING("Unknown JETINPUT option " + jetinputopt + ". Defaulting to FULL.");
         _jetInputMode = JetInputMode::FULL;
       }
+      const string rivetweightsopt = toUpper(getOption("RIVETWEIGHTS", "NO"));
+      _rivetWeightsMode = (rivetweightsopt == "YES" || rivetweightsopt == "ON" ||
+                           rivetweightsopt == "TRUE" || rivetweightsopt == "1");
+      if (_rivetWeightsMode) {
+        MSG_INFO("RIVETWEIGHTS mode enabled: using HERWIG_DIS_SIGMA and HERWIG_DIS_DELTA_LL optional weights.");
+      }
 
       const string dismodeopt = toUpper(getOption("DISMODE", "NC"));
       DISMode dismode = DISMode::L2L;
@@ -67,7 +83,7 @@ namespace Rivet {
       declare(VisibleFinalState(), "VisibleFS");
 
       // Control observables inherited from MC_DIS_BREIT.
-      book(_h_Q2, "Q2", 100, 49.0, 2500.0);
+      book(_h_Q2, "Q2", 100, 100.0, 2500.0);
       book(_h_Pt, "Pt", 15, 5.0, 30.0);
       book(_h_XBj, "XBj", 20, 0.0, 1.0);
       book(_h_Mjj, "Mjj", logspace(15, 10.0, 100.0));
@@ -77,15 +93,32 @@ namespace Rivet {
       book(_h_pT2, "pT2", 15, 5.0, 30.0);
       book(_h_pT2OverpT1, "pT2OverpT1", 15, 0.0, 1.0);
       book(_h_pTAsym, "pTAsym", 15, 0.0, 1.0);
-      book(_h_Q2PreCut, "Q2PreCut", 100, 49.0, 2500.0);
+      book(_h_Q2PreCut, "Q2PreCut", 100, 100.0, 2500.0);
       book(_h_XBjPreCut, "XBjPreCut", 20, 0.0, 1.0);
       book(_h_YPreCut, "YPreCut", 40, 0.2, 0.6);
       book(_h_pT1PreCut, "pT1PreCut", 30, 0.0, 30.0);
       book(_h_pT2PreCut, "pT2PreCut", 30, 0.0, 30.0);
+      if (_rivetWeightsMode) {
+        book(_h_DQ2, "DQ2", 100, 100.0, 2500.0);
+        book(_h_DPt, "DPt", 15, 5.0, 30.0);
+        book(_h_DXBj, "DXBj", 20, 0.0, 1.0);
+        book(_h_DMjj, "DMjj", logspace(15, 10.0, 100.0));
+        book(_h_DEta, "DEta", 15, 0.0, 2.5);
+        book(_h_DZeta, "DZeta", 12, -1.75, -0.25);
+        book(_h_DpT1, "DpT1", 15, 5.0, 30.0);
+        book(_h_DpT2, "DpT2", 15, 5.0, 30.0);
+        book(_h_DpT2OverpT1, "DpT2OverpT1", 15, 0.0, 1.0);
+        book(_h_DpTAsym, "DpTAsym", 15, 0.0, 1.0);
+        book(_h_DQ2PreCut, "DQ2PreCut", 100, 100.0, 2500.0);
+        book(_h_DXBjPreCut, "DXBjPreCut", 20, 0.0, 1.0);
+        book(_h_DYPreCut, "DYPreCut", 40, 0.2, 0.6);
+        book(_h_DpT1PreCut, "DpT1PreCut", 30, 0.0, 30.0);
+        book(_h_DpT2PreCut, "DpT2PreCut", 30, 0.0, 30.0);
+      }
 
       // Shower-sensitive observables.
       const vector<double> q2MomentBins = {
-        49.0, 75.0, 100.0, 130.0, 170.0, 220.0,
+        100.0, 130.0, 170.0, 220.0,
         300.0, 450.0, 700.0, 1100.0, 1700.0, 2500.0
       };
       const vector<double> broadeningBins = {
@@ -101,18 +134,30 @@ namespace Rivet {
       book(_h_Broadening, "Broadening", broadeningBins);
       book(_h_Cos2PhiCurrentHemiNumQ2, "Cos2PhiCurrentHemiNumQ2", q2MomentBins);
       book(_h_Cos2PhiCurrentHemiDenQ2, "Cos2PhiCurrentHemiDenQ2", q2MomentBins);
+      if (_rivetWeightsMode) {
+        book(_h_DNJets, "DNJets", 7, 1.5, 8.5);
+        book(_h_DpT3, "DpT3", 15, 0.0, 30.0);
+        book(_h_DpT3OverpT1, "DpT3OverpT1", 15, 0.0, 1.0);
+        book(_h_DSumPtExtra, "DSumPtExtra", 20, 0.0, 40.0);
+        book(_h_DPhi3, "DPhi3", 16, 0.0, M_PI);
+        book(_h_DPhiCurrentHemi, "DPhiCurrentHemi", 20, 0.0, M_PI);
+        book(_h_DBroadening, "DBroadening", broadeningBins);
+        book(_h_DCos2PhiCurrentHemiNumQ2, "DCos2PhiCurrentHemiNumQ2", q2MomentBins);
+        book(_h_DCos2PhiCurrentHemiDenQ2, "DCos2PhiCurrentHemiDenQ2", q2MomentBins);
+      }
     }
 
     void analyze(const Event& event) {
       const DISKinematics& dis = apply<DISKinematics>(event, "Kinematics");
-      const auto weights = event.weights();
-      const double weight = weights.size() > 0 ? weights[0] : 1.0;
+      const AnalysisWeights analysisWeights = eventAnalysisWeights(event);
+      const double weight = analysisWeights.sigma;
+      const double deltaWeight = analysisWeights.deltaLL;
 
       const double Q2 = dis.Q2();
       const double xbj = dis.x();
       const double y = dis.y();
 
-      if (!inRange(Q2, 49*GeV2, 2500*GeV2)) vetoEvent;
+      if (!inRange(Q2, 100*GeV2, 2500*GeV2)) vetoEvent;
       if (!inRange(y, 0.2, 0.6)) vetoEvent;
 
       vector<ClusteredJet> jets;
@@ -134,6 +179,13 @@ namespace Rivet {
       _h_YPreCut->fill(y, weight);
       _h_pT1PreCut->fill(jet1PreCutPt, weight);
       _h_pT2PreCut->fill(jet2PreCutPt, weight);
+      if (_rivetWeightsMode) {
+        _h_DQ2PreCut->fill(Q2, deltaWeight);
+        _h_DXBjPreCut->fill(xbj, deltaWeight);
+        _h_DYPreCut->fill(y, deltaWeight);
+        _h_DpT1PreCut->fill(jet1PreCutPt, deltaWeight);
+        _h_DpT2PreCut->fill(jet2PreCutPt, deltaWeight);
+      }
 
       if (jets.size() < 2) vetoEvent;
 
@@ -166,6 +218,18 @@ namespace Rivet {
       _h_Zeta->fill(logZeta, weight);
       _h_pT2OverpT1->fill(pT2OverpT1, weight);
       _h_pTAsym->fill(pTAsym, weight);
+      if (_rivetWeightsMode) {
+        _h_DQ2->fill(Q2, deltaWeight);
+        _h_DpT1->fill(jet1.breitMom.pT(), deltaWeight);
+        _h_DpT2->fill(jet2.breitMom.pT(), deltaWeight);
+        _h_DXBj->fill(xbj, deltaWeight);
+        _h_DPt->fill(dijetPt, deltaWeight);
+        _h_DMjj->fill(Mjj, deltaWeight);
+        _h_DEta->fill(etastar, deltaWeight);
+        _h_DZeta->fill(logZeta, deltaWeight);
+        _h_DpT2OverpT1->fill(pT2OverpT1, deltaWeight);
+        _h_DpTAsym->fill(pTAsym, deltaWeight);
+      }
 
       vector<ClusteredJet> acceptedJets;
       acceptedJets.reserve(jets.size());
@@ -176,12 +240,18 @@ namespace Rivet {
       }
 
       _h_NJets->fill(static_cast<double>(acceptedJets.size()), weight);
+      if (_rivetWeightsMode) {
+        _h_DNJets->fill(static_cast<double>(acceptedJets.size()), deltaWeight);
+      }
 
       double sumPtExtra = 0.0;
       for (size_t index = 2; index < acceptedJets.size(); ++index) {
         sumPtExtra += acceptedJets[index].breitMom.pT();
       }
       _h_SumPtExtra->fill(sumPtExtra, weight);
+      if (_rivetWeightsMode) {
+        _h_DSumPtExtra->fill(sumPtExtra, deltaWeight);
+      }
 
       const LorentzTransform& breitBoost = dis.boostBreit();
       const FourMomentum beamLeptonBreit = breitBoost.transform(dis.beamLepton().momentum());
@@ -200,6 +270,11 @@ namespace Rivet {
         _h_PhiCurrentHemi->fill(dphi, weight);
         _h_Cos2PhiCurrentHemiNumQ2->fill(Q2, std::cos(2.0 * dphi) * weight);
         _h_Cos2PhiCurrentHemiDenQ2->fill(Q2, weight);
+        if (_rivetWeightsMode) {
+          _h_DPhiCurrentHemi->fill(dphi, deltaWeight);
+          _h_DCos2PhiCurrentHemiNumQ2->fill(Q2, std::cos(2.0 * dphi) * deltaWeight);
+          _h_DCos2PhiCurrentHemiDenQ2->fill(Q2, deltaWeight);
+        }
 
         broadeningPtSum += breitMom.pT();
         broadeningDenom += breitMom.vector3().mod();
@@ -207,6 +282,9 @@ namespace Rivet {
 
       if (broadeningDenom > 0.0) {
         _h_Broadening->fill(broadeningPtSum / (2.0 * broadeningDenom), weight);
+        if (_rivetWeightsMode) {
+          _h_DBroadening->fill(broadeningPtSum / (2.0 * broadeningDenom), deltaWeight);
+        }
       }
 
       if (acceptedJets.size() < 3) return;
@@ -216,9 +294,20 @@ namespace Rivet {
       _h_pT3OverpT1->fill(jet3.breitMom.pT() / jet1.breitMom.pT(), weight);
       const double phi3 = foldToPi(jet3.breitMom.phi() - phiLepton);
       _h_Phi3->fill(phi3, weight);
+      if (_rivetWeightsMode) {
+        _h_DpT3->fill(jet3.breitMom.pT(), deltaWeight);
+        _h_DpT3OverpT1->fill(jet3.breitMom.pT() / jet1.breitMom.pT(), deltaWeight);
+        _h_DPhi3->fill(phi3, deltaWeight);
+      }
     }
 
     void finalize() {
+      if (_rivetWeightsMode) {
+        MSG_INFO("RIVETWEIGHTS summary: events=" +
+                 std::to_string(_rivetWeightsEvents) +
+                 ", used=" + std::to_string(_rivetWeightsUsed) +
+                 ", missing=" + std::to_string(_rivetWeightsMissing));
+      }
       if (sumW() == 0.0) return;
       const double sf = crossSection() / picobarn / sumW();
       scale(_h_Q2, sf);
@@ -236,6 +325,23 @@ namespace Rivet {
       scale(_h_YPreCut, sf);
       scale(_h_pT1PreCut, sf);
       scale(_h_pT2PreCut, sf);
+      if (_rivetWeightsMode) {
+        scale(_h_DQ2, sf);
+        scale(_h_DXBj, sf);
+        scale(_h_DPt, sf);
+        scale(_h_DMjj, sf);
+        scale(_h_DEta, sf);
+        scale(_h_DZeta, sf);
+        scale(_h_DpT1, sf);
+        scale(_h_DpT2, sf);
+        scale(_h_DpT2OverpT1, sf);
+        scale(_h_DpTAsym, sf);
+        scale(_h_DQ2PreCut, sf);
+        scale(_h_DXBjPreCut, sf);
+        scale(_h_DYPreCut, sf);
+        scale(_h_DpT1PreCut, sf);
+        scale(_h_DpT2PreCut, sf);
+      }
       scale(_h_NJets, sf);
       scale(_h_pT3, sf);
       scale(_h_pT3OverpT1, sf);
@@ -245,6 +351,93 @@ namespace Rivet {
       scale(_h_Broadening, sf);
       scale(_h_Cos2PhiCurrentHemiNumQ2, sf);
       scale(_h_Cos2PhiCurrentHemiDenQ2, sf);
+      if (_rivetWeightsMode) {
+        scale(_h_DNJets, sf);
+        scale(_h_DpT3, sf);
+        scale(_h_DpT3OverpT1, sf);
+        scale(_h_DSumPtExtra, sf);
+        scale(_h_DPhi3, sf);
+        scale(_h_DPhiCurrentHemi, sf);
+        scale(_h_DBroadening, sf);
+        scale(_h_DCos2PhiCurrentHemiNumQ2, sf);
+        scale(_h_DCos2PhiCurrentHemiDenQ2, sf);
+      }
+    }
+
+    double defaultEventWeight(const Event& event) const {
+      const auto weights = event.weights();
+      const size_t defaultIndex = defaultWeightIndex();
+      if (weights.size() > defaultIndex) return weights[defaultIndex];
+      return weights.size() > 0 ? weights[0] : 1.0;
+    }
+
+    bool namedHepMCWeight(const Event& event, const string& name, double& value) const {
+      const GenEvent* ge = event.genEvent();
+      if (ge == nullptr) return false;
+
+      const vector<string> names = HepMCUtils::weightNames(*ge);
+      const std::valarray<double> weights = HepMCUtils::weights(*ge);
+      const size_t n = std::min(names.size(), weights.size());
+      for (size_t i = 0; i < n; ++i) {
+        if (names[i] == name) {
+          value = weights[i];
+          return std::isfinite(value);
+        }
+      }
+      return false;
+    }
+
+    bool namedEventWeight(const Event& event, const string& name, double& value) const {
+      const vector<string>& names = handler().weightNames();
+      const std::valarray<double> weights = event.weights();
+      const size_t n = std::min(names.size(), weights.size());
+      for (size_t i = 0; i < n; ++i) {
+        if (names[i] == name) {
+          value = weights[i];
+          return std::isfinite(value);
+        }
+      }
+      return namedHepMCWeight(event, name, value);
+    }
+
+    string availableWeightNamesSummary() const {
+      const vector<string>& names = handler().weightNames();
+      if (names.empty()) return "<none>";
+      string out;
+      const size_t n = std::min<size_t>(names.size(), 12);
+      for (size_t i = 0; i < n; ++i) {
+        if (!out.empty()) out += ", ";
+        out += names[i].empty() ? "<empty>" : names[i];
+      }
+      if (names.size() > n) out += ", ...";
+      return out;
+    }
+
+    AnalysisWeights eventAnalysisWeights(const Event& event) {
+      AnalysisWeights out;
+      const double defaultWeight = defaultEventWeight(event);
+      out.sigma = defaultWeight;
+      if (!_rivetWeightsMode) return out;
+
+      ++_rivetWeightsEvents;
+      double sigma = 0.0;
+      double delta = 0.0;
+      const bool haveSigma = namedEventWeight(event, "HERWIG_DIS_SIGMA", sigma);
+      const bool haveDelta = namedEventWeight(event, "HERWIG_DIS_DELTA_LL", delta);
+      if (haveSigma && haveDelta) {
+        ++_rivetWeightsUsed;
+        out.sigma = sigma;
+        out.deltaLL = delta;
+        out.haveRivetWeights = true;
+        return out;
+      }
+
+      ++_rivetWeightsMissing;
+      if (!_warnedMissingRivetWeights) {
+        MSG_WARNING("RIVETWEIGHTS=YES but HERWIG_DIS_SIGMA/HERWIG_DIS_DELTA_LL weights are missing. Available Rivet weight names: " + availableWeightNamesSummary() + ". Falling back to the default event weight for unpolarized histograms.");
+        _warnedMissingRivetWeights = true;
+      }
+      return out;
     }
 
     vector<ClusteredJet> clusterFullFinalStateJets(const Event& event) const {
@@ -361,10 +554,22 @@ namespace Rivet {
     Histo1DPtr _h_Q2, _h_XBj, _h_Pt, _h_Mjj, _h_Eta, _h_Zeta, _h_pT1, _h_pT2,
       _h_pT2OverpT1, _h_pTAsym;
     Histo1DPtr _h_Q2PreCut, _h_XBjPreCut, _h_YPreCut, _h_pT1PreCut, _h_pT2PreCut;
+    Histo1DPtr _h_DQ2, _h_DXBj, _h_DPt, _h_DMjj, _h_DEta, _h_DZeta,
+      _h_DpT1, _h_DpT2, _h_DpT2OverpT1, _h_DpTAsym;
+    Histo1DPtr _h_DQ2PreCut, _h_DXBjPreCut, _h_DYPreCut,
+      _h_DpT1PreCut, _h_DpT2PreCut;
     Histo1DPtr _h_NJets, _h_pT3, _h_pT3OverpT1, _h_SumPtExtra, _h_Phi3,
       _h_PhiCurrentHemi, _h_Broadening, _h_Cos2PhiCurrentHemiNumQ2,
       _h_Cos2PhiCurrentHemiDenQ2;
+    Histo1DPtr _h_DNJets, _h_DpT3, _h_DpT3OverpT1, _h_DSumPtExtra, _h_DPhi3,
+      _h_DPhiCurrentHemi, _h_DBroadening, _h_DCos2PhiCurrentHemiNumQ2,
+      _h_DCos2PhiCurrentHemiDenQ2;
     JetInputMode _jetInputMode = JetInputMode::FULL;
+    bool _rivetWeightsMode = false;
+    bool _warnedMissingRivetWeights = false;
+    size_t _rivetWeightsEvents = 0;
+    size_t _rivetWeightsUsed = 0;
+    size_t _rivetWeightsMissing = 0;
   };
 
   RIVET_DECLARE_PLUGIN(MC_DIS_PS);

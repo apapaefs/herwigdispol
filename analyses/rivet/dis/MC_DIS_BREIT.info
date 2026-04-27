@@ -17,7 +17,7 @@ Description:
   The analysis name MC_DIS_BREIT is kept for historical continuity; the plot
   titles omit an explicit "Breit frame" label, but the jet-based observables
   are still defined using Breit-frame kinematics.
-  The DIS event selection uses 49 < Q^2 < 2500 GeV^2 together with
+  The DIS event selection uses 100 < Q^2 < 2500 GeV^2 together with
   0.2 < y < 0.6.
   The DISMODE option defaults to NC and should be set to CC for charged-current
   ep scattering so that the DIS kinematics and Breit-frame final state are

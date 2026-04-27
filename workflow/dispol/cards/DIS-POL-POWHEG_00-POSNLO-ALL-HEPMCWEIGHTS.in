@@ -1,0 +1,159 @@
+# -*- ThePEG-repository -*-
+
+##################################################
+# Correlated helicity weights HepMC smoke test
+#
+# This card is based on the 00 POSNLO ALL validation setup, but writes a HepMC
+# file so the optional correlated-helicity weight names can be checked directly.
+##################################################
+
+read snippets/EPCollider.in
+read snippets/PolarizedEP.in
+
+set /Herwig/Particles/e-:PDF /Herwig/Partons/NoPDF
+set /Herwig/Particles/e+:PDF /Herwig/Partons/NoPDF
+
+##################################################
+# Polarized PDF
+##################################################
+
+create ThePEG::LHAPDF /Herwig/Partons/DiffPDF
+set /Herwig/Partons/DiffPDF:RemnantHandler /Herwig/Partons/HadronRemnants
+set /Herwig/Partons/DiffPDF:PDFName BDSSV24-NNLO
+
+set /Herwig/Partons/EPPolarizedExtractor:SecondLongitudinalDifferencePDF /Herwig/Partons/DiffPDF
+set /Herwig/Partons/EPPolarizedExtractor:FirstLongitudinalPolarization 0
+set /Herwig/Partons/EPPolarizedExtractor:SecondLongitudinalPolarization 0
+
+# Keep the smoke test lighter than the production validation cards.
+set /Herwig/Samplers/Sampler:BinSampler:InitialPoints 10000
+
+##################################################
+# Technical parameters for this run
+##################################################
+
+cd /Herwig/Generators
+set /Herwig/Shower/ShowerHandler:PDFB /Herwig/Partons/ShowerLOPDF
+set /Herwig/Partons/MPIExtractor:SecondPDF /Herwig/Partons/MPIPDF
+set /Herwig/Shower/ShowerHandler:Interactions QEDQCD
+
+create ThePEG::LHAPDF /Herwig/Partons/LHAPDF ThePEGLHAPDF.so
+set /Herwig/Partons/LHAPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+set /Herwig/Partons/HardLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+set /Herwig/Partons/ShowerNLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+set /Herwig/Partons/RemnantDecayer:AllowTop Yes
+set /Herwig/Partons/LHAPDF:RemnantHandler /Herwig/Partons/HadronRemnants
+set /Herwig/Particles/p+:PDF /Herwig/Partons/LHAPDF
+set /Herwig/Partons/EPPolarizedExtractor:SecondPDF /Herwig/Partons/LHAPDF
+set /Herwig/Partons/HardNLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+set /Herwig/Partons/ShowerLOPDF:PDFName PDF4LHC15_nnlo_100_pdfas
+
+set EventGenerator:EventHandler:BeamA /Herwig/Particles/e-
+set EventGenerator:EventHandler:LuminosityFunction:BeamEMaxA 18.*GeV
+set EventGenerator:EventHandler:BeamB /Herwig/Particles/p+
+set EventGenerator:EventHandler:LuminosityFunction:BeamEMaxB 275.*GeV
+
+set /Herwig/EventHandlers/EventHandler:Cuts:ScaleMin 0.0*GeV2
+set /Herwig/EventHandlers/EventHandler:Cuts:X1Min 1E-5
+set /Herwig/EventHandlers/EventHandler:Cuts:X2Min 1E-5
+set /Herwig/Cuts/NeutralCurrentCut:MinW2 0*GeV2
+set /Herwig/Cuts/NeutralCurrentCut:MaxW2 1E99*GeV2
+set /Herwig/Cuts/NeutralCurrentCut:MinQ2 100.*GeV2
+set /Herwig/Cuts/NeutralCurrentCut:MaxQ2 2500.*GeV2
+set /Herwig/Cuts/NeutralCurrentCut:Miny 0.2
+set /Herwig/Cuts/NeutralCurrentCut:Maxy 0.6
+set /Herwig/Cuts/Cuts:MHatMin 0.
+
+# Massless DIS comparison setup.
+set /Herwig/Particles/e-:HardProcessMass 0
+set /Herwig/Particles/e+:HardProcessMass 0
+set /Herwig/Particles/u:HardProcessMass 0*GeV
+set /Herwig/Particles/ubar:HardProcessMass 0*GeV
+set /Herwig/Particles/d:HardProcessMass 0*GeV
+set /Herwig/Particles/dbar:HardProcessMass 0*GeV
+set /Herwig/Particles/s:HardProcessMass 0*GeV
+set /Herwig/Particles/sbar:HardProcessMass 0*GeV
+set /Herwig/Particles/c:HardProcessMass 0*GeV
+set /Herwig/Particles/cbar:HardProcessMass 0*GeV
+set /Herwig/Particles/b:HardProcessMass 0*GeV
+set /Herwig/Particles/bbar:HardProcessMass 0*GeV
+
+do /Herwig/Particles/e-:AdjustNominalMass
+do /Herwig/Particles/e+:AdjustNominalMass
+do /Herwig/Particles/u:AdjustNominalMass
+do /Herwig/Particles/ubar:AdjustNominalMass
+do /Herwig/Particles/d:AdjustNominalMass
+do /Herwig/Particles/dbar:AdjustNominalMass
+do /Herwig/Particles/s:AdjustNominalMass
+do /Herwig/Particles/sbar:AdjustNominalMass
+do /Herwig/Particles/c:AdjustNominalMass
+do /Herwig/Particles/cbar:AdjustNominalMass
+do /Herwig/Particles/b:AdjustNominalMass
+do /Herwig/Particles/bbar:AdjustNominalMass
+
+##################################################
+# DIS physics parameters
+##################################################
+
+set EventGenerator:EventHandler:HadronizationHandler NULL
+set /Herwig/Analysis/Basics:CheckQuark false
+set /Herwig/EventHandlers/EventHandler:CascadeHandler NULL
+set /Herwig/EventHandlers/EventHandler:DecayHandler NULL
+
+##################################################
+# NLO in POWHEG scheme
+##################################################
+
+cd /Herwig/Shower
+set ShowerHandler:HardEmission POWHEG
+
+cd /Herwig/MatrixElements/
+
+set MEDISNC:UseNativeDISWindowGeneration Yes
+set MEDISNCPol:UseNativeDISWindowGeneration Yes
+set PowhegMEDISNC:UseNativeDISWindowGeneration Yes
+set PowhegMEDISNCPol:UseNativeDISWindowGeneration Yes
+
+set MEDISNC:UseFiniteWidthSpacelikeZPropagator Yes
+set MEDISNCPol:UseFiniteWidthSpacelikeZPropagator Yes
+set PowhegMEDISNC:UseFiniteWidthSpacelikeZPropagator Yes
+set PowhegMEDISNCPol:UseFiniteWidthSpacelikeZPropagator Yes
+
+insert SubProcess:MatrixElements[0] PowhegMEDISNCPol
+set PowhegMEDISNCPol:GammaZ All
+set PowhegMEDISNCPol:Contribution PositiveNLO
+
+# Generate HERWIG_DIS_PP/PM/MP/MM/SIGMA/DELTA_LL optional event weights.
+set /Herwig/MatrixElements/PowhegMEDISNCPol:GenerateRivetWeights Yes
+
+set /Herwig/Model:QCD/RunningAlphaS /Herwig/Couplings/NLOAlphaS
+set /Herwig/Model:QCD/AlphaS 0.118
+set /Herwig/MatrixElements/PowhegMEDISNCPol:UseFixedOrderAlphaSInPOWHEGEmission No
+set /Herwig/MatrixElements/PowhegMEDISNCPol:UseQ2ScaleInPOWHEGEmission No
+
+set /Herwig/Particles/W+:NominalMass 80.450
+set /Herwig/Particles/W-:NominalMass 80.450
+
+set /Herwig/Model:EW/Scheme alphaMZScheme
+set /Herwig/Model:EW/AlphaEMMZ 0.00729927
+set /Herwig/Model:EW/AlphaEM 0.00729927
+set /Herwig/Vertices/FFPVertex:Coupling FixedSM
+set /Herwig/Vertices/FFZVertex:Coupling FixedSM
+
+##################################################
+# HepMC output
+##################################################
+
+create ThePEG::HepMCFile /Herwig/Analysis/HepMC HepMCAnalysis.so
+set /Herwig/Analysis/HepMC:PrintEvent 100
+set /Herwig/Analysis/HepMC:Format GenEvent
+set /Herwig/Analysis/HepMC:Units GeV_mm
+set /Herwig/Analysis/HepMC:Filename DIS-POL-POWHEG_00-POSNLO-ALL-HEPMCWEIGHTS.hepmc
+insert /Herwig/Generators/EventGenerator:AnalysisHandlers 0 /Herwig/Analysis/HepMC
+
+##################################################
+# Save run
+##################################################
+
+cd /Herwig/Generators
+saverun DIS-POL-POWHEG_00-POSNLO-ALL-HEPMCWEIGHTS EventGenerator
