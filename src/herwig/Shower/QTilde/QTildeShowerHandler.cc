@@ -57,7 +57,9 @@ QTildeShowerHandler::QTildeShowerHandler() :
   interaction_(ShowerInteraction::ALL),
   darkInteraction_(false),
   _trunc_Mode(true), _hardEmission(1),
-  _softOpt(2), _hardPOWHEG(false), muPt(ZERO)
+  _softOpt(2), _hardPOWHEG(false),
+  _powhegEmissionMode(QTildeShowerHandler::POWHEGEmissionModeShowerReconstructed),
+  muPt(ZERO)
 {}
 
 IBPtr QTildeShowerHandler::clone() const {
@@ -72,6 +74,7 @@ void QTildeShowerHandler::persistentOutput(PersistentOStream & os) const {
   os << _splittingGenerator << _maxtry
      << _meCorrMode << _hardVetoReadOption
      << _limitEmissions << _softOpt << _hardPOWHEG
+     << _powhegEmissionMode
      << ounit(_iptrms,GeV) << _beta << ounit(_gamma,GeV) << ounit(_iptmax,GeV)
      << _vetoes << _fullShowerVetoes << _nReWeight << _reWeight
      << _trunc_Mode << _hardEmission << _evolutionScheme
@@ -83,6 +86,7 @@ void QTildeShowerHandler::persistentInput(PersistentIStream & is, int) {
   is >> _splittingGenerator >> _maxtry
      >> _meCorrMode >> _hardVetoReadOption
      >> _limitEmissions >> _softOpt >> _hardPOWHEG
+     >> _powhegEmissionMode
      >> iunit(_iptrms,GeV) >> _beta >> iunit(_gamma,GeV) >> iunit(_iptmax,GeV)
      >> _vetoes >> _fullShowerVetoes >> _nReWeight >> _reWeight
      >> _trunc_Mode >> _hardEmission >> _evolutionScheme
@@ -276,6 +280,23 @@ void QTildeShowerHandler::Init() {
      "POWHEG",
      "Powheg style hard emission",
      2);
+
+  static Switch<QTildeShowerHandler,unsigned int> interfacePOWHEGEmissionMode
+    ("POWHEGEmissionMode",
+     "Whether internally generated POWHEG emissions are shower-reconstructed or "
+     "inserted directly as fixed-order real-emission partons",
+     &QTildeShowerHandler::_powhegEmissionMode,
+     QTildeShowerHandler::POWHEGEmissionModeShowerReconstructed, false, false);
+  static SwitchOption interfacePOWHEGEmissionModeShowerReconstructed
+    (interfacePOWHEGEmissionMode,
+     "ShowerReconstructed",
+     "Build a hard tree and continue with the standard QTilde reconstruction and shower",
+     QTildeShowerHandler::POWHEGEmissionModeShowerReconstructed);
+  static SwitchOption interfacePOWHEGEmissionModeFixedOrderNoShower
+    (interfacePOWHEGEmissionMode,
+     "FixedOrderNoShower",
+     "Insert the POWHEG real-emission partons directly and skip QTilde reconstruction and showering",
+     QTildeShowerHandler::POWHEGEmissionModeFixedOrderNoShower);
 
   static Switch<QTildeShowerHandler,ShowerInteraction> interfaceInteractions
     ("Interactions",
@@ -997,8 +1018,13 @@ vector<ShowerProgenitorPtr> QTildeShowerHandler::setupShower(bool hard) {
     if(real&&!real->outgoing().empty()) setupMECorrection(real);
   }
   // generate POWHEG hard emission if needed
-  else if(_hardEmission==2)
+  else if(_hardEmission==2) {
+    if(fixedOrderPOWHEGNoShower()) {
+      if(insertFixedOrderPOWHEGRealEmission(hard))
+	return vector<ShowerProgenitorPtr>();
+    }
     hardestEmission(hard);
+  }
   // set the initial colour partners
   setEvolutionPartners(hard,interaction_,false);
   // get the particles to be showered
@@ -1331,6 +1357,32 @@ bool QTildeShowerHandler::spaceLikeDecayVetoed( const Branching & fb,
     }
   }
   return false;
+}
+
+bool QTildeShowerHandler::insertFixedOrderPOWHEGRealEmission(bool hard) {
+  if(!hard) {
+    throw Exception() << "QTildeShowerHandler::POWHEGEmissionMode FixedOrderNoShower "
+		      << "is only implemented for hard-process POWHEG emissions."
+		      << Exception::runerror;
+  }
+  if(_hardEmission != 2 || !_hardme || _hardme->hasPOWHEGCorrection()==0) {
+    throw Exception() << "QTildeShowerHandler::POWHEGEmissionMode FixedOrderNoShower "
+		      << "requires HardEmission POWHEG with a hard matrix element "
+		      << "that supplies a POWHEG correction."
+		      << Exception::runerror;
+  }
+
+  RealEmissionProcessPtr real =
+    _hardme->generateHardest(currentTree()->perturbativeProcess(),
+			     interaction_);
+  if(real) {
+    if(!real->outgoing().empty())
+      setupMECorrection(real);
+    currentTree()->setVetoes(real->pT(),_hardme->hasPOWHEGCorrection());
+  }
+  hardTree(HardTreePtr());
+  _currenttree->hasShowered(true);
+  return true;
 }
 
 void QTildeShowerHandler::hardestEmission(bool hard) {
@@ -2820,6 +2872,12 @@ Branching QTildeShowerHandler::selectSpaceLikeDecayBranching(tShowerParticlePtr 
 
 void QTildeShowerHandler::checkFlags() {
   string error = "Inconsistent hard emission set-up in QTildeShowerHandler::showerHardProcess(). ";
+  if(fixedOrderPOWHEGNoShower() && _hardEmission != 2) {
+    throw Exception() << error
+		      << "POWHEGEmissionMode FixedOrderNoShower requires "
+		      << "QTildeShowerHandler:HardEmission to be 'POWHEG'."
+		      << Exception::runerror;
+  }
   if ( ( currentTree()->isMCatNLOSEvent() || currentTree()->isMCatNLOHEvent() ) ) {
     if (_hardEmission ==2 )
       throw Exception() << error

@@ -38,6 +38,16 @@ class QTildeShowerHandler: public ShowerHandler {
 public:
 
   /**
+   *  Runtime handling mode for internally generated POWHEG hardest emissions.
+   */
+  enum POWHEGEmissionMode {
+    POWHEGEmissionModeShowerReconstructed = 0,
+    POWHEGEmissionModeFixedOrderNoShower = 1
+  };
+
+public:
+
+  /**
    *  Pointer to an XComb object
    */
   typedef Ptr<XComb>::pointer XCPtr;
@@ -518,6 +528,18 @@ protected:
   bool hardOnly() const {return _limitEmissions==3;}
 
   /**
+   *  Insert POWHEG real-emission partons directly and skip shower reconstruction.
+   */
+  bool fixedOrderPOWHEGNoShower() const {
+    return _powhegEmissionMode == POWHEGEmissionModeFixedOrderNoShower;
+  }
+
+  /**
+   *  Insert the raw POWHEG real-emission process into the current shower tree.
+   */
+  bool insertFixedOrderPOWHEGRealEmission(bool hard);
+
+  /**
    *  Check the flags
    */
   void checkFlags();
@@ -796,6 +818,11 @@ private :
    *  Option for hard radiation in POWHEG events
    */
   bool _hardPOWHEG;
+
+  /**
+   *  Option for handling internally generated POWHEG hardest emissions.
+   */
+  unsigned int _powhegEmissionMode;
 
   /**
    * True if no warnings about incorrect hard emission
