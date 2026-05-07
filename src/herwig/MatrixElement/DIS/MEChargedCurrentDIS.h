@@ -16,12 +16,13 @@ namespace Herwig {
 using namespace ThePEG;
 
 /**
- * The MEChargedCurrentDIS class provides the matrix elements for
- * charged current DIS.
+ * Charged-current DIS matrix element with W exchange, exact longitudinal
+ * spin-density support, charged-current chiral NLO factors, and optional
+ * spin-only POWHEG real-emission vertices.
  *
- *  By default both the incoming and outgong quarks are assumed to be massless
- *  although the mass of the outgoing quark can be included if required. This
- *  option should be used if top production is included.
+ * By default both the incoming and outgoing quarks are treated as massless.
+ * The outgoing-quark mass option is retained for heavy-flavour production,
+ * especially top channels.
  *
  * @see \ref MEChargedCurrentDISInterfaces "The interfaces"
  * defined for MEChargedCurrentDIS.
@@ -31,7 +32,7 @@ class MEChargedCurrentDIS: public DISBase {
 public:
 
   /**
-   * The default constructor.
+   * Construct with the validated charged-current defaults.
    */
   MEChargedCurrentDIS();
 
@@ -59,7 +60,7 @@ public:
   virtual double me2() const;
 
   /**
-   * Add all possible diagrams with the add() function.
+   * Add all allowed W-mediated lepton/quark Born diagrams.
    */
   virtual void getDiagrams() const;
 
@@ -84,7 +85,7 @@ public:
   colourGeometries(tcDiagPtr diag) const;
 
   /**
-   *  Construct the vertex of spin correlations.
+   *  Construct the Born spin-correlation vertex for the hard subprocess.
    */
   virtual void constructVertex(tSubProPtr);
   //@}
@@ -95,13 +96,13 @@ public:
   /** @name Functions used by the persistent I/O system. */
   //@{
   /**
-   * Function used to write out object persistently.
+   * Write the charged-current persistent state.
    * @param os the persistent output stream written to.
    */
   void persistentOutput(PersistentOStream & os) const;
 
   /**
-   * Function used to read in object persistently.
+   * Read the charged-current persistent state.
    * @param is the persistent input stream read from.
    * @param version the version number of the object when written.
    */
@@ -124,7 +125,7 @@ protected:
   virtual bool usesChargedCurrentDISWindow() const override { return true; }
 
   /**
-   * Matrix element for \f$\ell q\to W^\pm \to \ell q\f$.
+   * Coherent helicity matrix element for \f$\ell q\to W^\pm \to \ell q\f$.
    * @param rhoin Rho matrices for incoming particles
    * @param f1 Fermion on lepton line
    * @param a1 Anti-fermion on lepton line
@@ -132,7 +133,7 @@ protected:
    * @param a2 Anti-fermion on quark line
    * @param lorder The order of particles on the lepton line
    * @param qorder The order of particles on the quark line
-   * @param me  Whether or not to calculate the matrix element for spin correlations
+   * @param me Whether to cache the matrix element for spin correlations.
    */
   double helicityME(const pair<RhoDMatrix,RhoDMatrix> & rhoin,
 		    vector<SpinorWaveFunction>    & f1 ,
@@ -143,16 +144,15 @@ protected:
 		    bool me) const;
 
   /**
-   *  Calculate the coefficient A for the correlations in the hard
-   *  radiation
+   *  Charged-current analyzing coefficient for hard-radiation kernels.
    */
   virtual double A(tcPDPtr lin, tcPDPtr lout, tcPDPtr qin, tcPDPtr qout,
 		   Energy2 scale) const;
 
   /**
-   * Charged-current analysing power is independent of incoming longitudinal
-   * polarisations, so this reduces to the charge-conjugation-dependent
-   * unpolarised value.
+   * Charged-current analyzing power is independent of incoming longitudinal
+   * polarizations once the chiral hadron factor is handled separately, so this
+   * reduces to the charge-conjugation-dependent unpolarized value.
    */
   virtual double A_pol(tcPDPtr lin, tcPDPtr lout,
                        tcPDPtr qin, tcPDPtr qout,
@@ -196,6 +196,7 @@ protected:
 
   /**
    * Attach an exact spin-only HardVertex to the realised POWHEG 2->3 state.
+   * This does not alter generated kinematics or event weights.
    */
   virtual void constructRealEmissionSpinVertex(RealEmissionProcessPtr proc,
                                                bool isCompton) const override;
@@ -272,36 +273,36 @@ private:
 private:
 
   /**
-   *  Pointer to the vertex for the helicity calculations
+   *  W-fermion vertex used by Born and real-emission helicity amplitudes.
    */
   AbstractFFVVertexPtr _theFFWVertex;
 
   /**
-   *  The allowed flavours of the incoming quarks
+   *  Heaviest incoming quark flavour allowed in charged-current diagrams.
    */
   unsigned int _maxflavour;
 
   /**
-   *  Option for the mass of the outgoing quarks
+   *  Option controlling whether outgoing quark masses are retained.
    */
   unsigned int _massopt;
 
   /**
-   * Matrix element for spin correlations
+   * Born production matrix element cached for spin correlations.
    */
   ProductionMatrixElement _me;
 
   /**
-   *  Pointers to the intermediates resonances
+   *  Intermediate charged-current boson data.
    */
   //@{
   /**
-   *  Pointer to the \f$W^+\f$
+   *  W+ ParticleData object.
    */
   tcPDPtr _wp;
 
   /**
-   *  Pointer to the \f$W^-\f$
+   *  W- ParticleData object.
    */
   tcPDPtr _wm;
   //@}

@@ -16,10 +16,12 @@ namespace Herwig {
 using namespace ThePEG;
 
 /**
- * The MENeutralCurrentDIS class provides the matrix elements for
- * neutral current DIS.
+ * Neutral-current DIS matrix element with coherent photon/Z exchange,
+ * exact longitudinal spin-density support, neutral-current NLO response
+ * coefficients, and optional spin-only POWHEG real-emission vertices.
  *
- *  For consistency both the incoming and outgoing quarks are assumed to be massless.
+ * For consistency both the incoming and outgoing quarks are assumed to be
+ * massless, matching the analytic DIS NLO and real-emission kernels.
  *
  * @see \ref MENeutralCurrentDISInterfaces "The interfaces"
  * defined for MENeutralCurrentDIS.
@@ -29,7 +31,7 @@ class MENeutralCurrentDIS: public DISBase {
 public:
 
   /**
-   * The default constructor.
+   * Construct with the validated neutral-current defaults.
    */
   MENeutralCurrentDIS();
 
@@ -57,7 +59,7 @@ public:
   virtual double me2() const;
 
   /**
-   * Add all possible diagrams with the add() function.
+   * Add all allowed lepton/quark photon and Z Born diagrams.
    */
   virtual void getDiagrams() const;
 
@@ -82,7 +84,7 @@ public:
   colourGeometries(tcDiagPtr diag) const;
 
   /**
-   *  Construct the vertex of spin correlations.
+   *  Construct the Born spin-correlation vertex for the hard subprocess.
    */
   virtual void constructVertex(tSubProPtr);
   //@}
@@ -92,13 +94,13 @@ public:
   /** @name Functions used by the persistent I/O system. */
   //@{
   /**
-   * Function used to write out object persistently.
+   * Write the neutral-current persistent state.
    * @param os the persistent output stream written to.
    */
   void persistentOutput(PersistentOStream & os) const;
 
   /**
-   * Function used to read in object persistently.
+   * Read the neutral-current persistent state.
    * @param is the persistent input stream read from.
    * @param version the version number of the object when written.
    */
@@ -121,7 +123,7 @@ protected:
   virtual bool usesChargedCurrentDISWindow() const override { return false; }
 
   /**
-   * Matrix element for \f$\ell q\to \gamma/Z \to \ell q\f$.
+   * Coherent helicity matrix element for \f$\ell q\to \gamma/Z \to \ell q\f$.
    * @param rhoin Rho matrices for incoming particles
    * @param f1 Fermion on lepton line
    * @param a1 Anti-fermion on lepton line
@@ -129,7 +131,7 @@ protected:
    * @param a2 Anti-fermion on quark line
    * @param lorder The order of particles on the lepton line
    * @param qorder The order of particles on the quark line
-   * @param me  Whether or not to calculate the matrix element for spin correlations
+   * @param me Whether to cache the matrix element for spin correlations.
    */
   double helicityME(const pair<RhoDMatrix,RhoDMatrix> & rhoin ,
                     vector<SpinorWaveFunction>    & f1 ,
@@ -141,21 +143,20 @@ protected:
 
 
   /**
-   *  Option for treatment of \f$\gamma/Z\f$ terms
+   *  Option for treatment of \f$\gamma/Z\f$ terms.
    */
   inline unsigned int gammaZOption() const {return _gammaZ;}
 
   /**
-   *  Calculate the coefficient A for the correlations in the hard
-   *  radiation
+   *  Unpolarized analyzing coefficient for the neutral-current MEC kernels.
    */
   virtual double A(tcPDPtr lin, tcPDPtr lout, tcPDPtr qin, tcPDPtr qout,
 		   Energy2 scale) const;
 
    /**
-    * Exact analysing power for longitudinally polarised beams (NC DIS).
-    * Implements the polarised expression (cf. eqs. 4.50–4.58 of the note).
-    * Falls back to the unpolarised A(...) when both Pl and Pq are zero.
+    * Exact analyzing power for longitudinally polarized beams in NC DIS.
+    * Implements the retained gamma/Z parity structure and falls back to
+    * the photon-only expression when only photon exchange is selected.
     *
     * @param lin   incoming lepton PD
     * @param lout  outgoing lepton PD
@@ -172,6 +173,7 @@ protected:
 
   /**
    * Attach an exact spin-only HardVertex to the realised POWHEG 2->3 state.
+   * This does not change the generated kinematics or event weight.
    */
   virtual void constructRealEmissionSpinVertex(RealEmissionProcessPtr proc,
                                                bool isCompton) const override;
@@ -216,6 +218,7 @@ protected:
 
   /**
    * Neutral-current response coefficients used by the polarized NLO assembly.
+   * Returning false indicates that the base photon-like expression applies.
    */
   virtual bool neutralCurrentResponse(tcPDPtr lin, tcPDPtr lout,
                                       tcPDPtr qin, tcPDPtr qout,
@@ -257,7 +260,7 @@ private:
 
   /**
    * Neutral-current coupling coefficients entering the exact Born angular
-   * structure and analysing powers, including the finite-width Z propagator.
+   * structure and analyzing powers, including the finite-width Z propagator.
    */
   struct NCCoefficients {
     double N0, Nl, Nq, Nlq;
@@ -272,26 +275,26 @@ private:
 
   /**
    * Evaluate the Born ME with the current kinematics but custom incoming
-   * lepton and quark longitudinal polarisations.
+   * lepton and quark longitudinal polarizations.
    */
   virtual double rivetWeightBornME2(double Pl, double Pq) const override;
 
   /**
    * Evaluate the Born ME with the current kinematics but custom incoming
-   * lepton and quark longitudinal polarisations.
+   * lepton and quark longitudinal polarizations.
    */
   double me2ForPolarizations(double Pl, double Pq) const;
 
   /**
    * Evaluate the Born ME with the current kinematics but a custom incoming
-   * quark longitudinal polarisation and the current incoming lepton
-   * polarisation.
+   * quark longitudinal polarization and the current incoming lepton
+   * polarization.
    */
   double me2ForPartonPolarization(double Pq) const;
 
   /**
    * Exact Born spin factor Sigma_B for the current NC couplings and a given
-   * incoming quark polarisation.
+   * incoming quark polarization.
    */
   double sigmaBornFactor(tcPDPtr lin, tcPDPtr qin, Energy2 q2,
                          double Pl, double Pq, double ell) const;
@@ -329,56 +332,56 @@ private:
 private:
 
   /**
-   *  Pointer to the vertices for the helicity calculations
+   *  Vertices used by the Born and real-emission helicity amplitudes.
    */
   //@{
   /**
-   *  Pointer to the Z vertex
+   *  Z-fermion vertex.
    */
   AbstractFFVVertexPtr _theFFZVertex;
 
   /**
-   *  Pointer to the photon vertex
+   *  Photon-fermion vertex.
    */
   AbstractFFVVertexPtr _theFFPVertex;
 
   /**
-   *  Pointer to the gluon vertex
+   *  Gluon-fermion vertex for real-emission spin amplitudes.
    */
   AbstractFFVVertexPtr _theFFGVertex;
   //@}
 
   /**
-   *  Pointers to the intermediate resonances
+   *  Intermediate neutral-current boson data.
    */
   //@{
   /**
-   *  Pointer to the Z ParticleData object
+   *  Z ParticleData object.
    */
   tcPDPtr _z0;
 
   /**
-   *  Pointer to the photon ParticleData object
+   *  Photon ParticleData object.
    */
   tcPDPtr _gamma;
   //@}
 
   /**
-   *  Switches to control the particles in the hard process
+   *  Switches controlling flavour coverage and exchanged bosons.
    */
   //@{
   /**
-   *  Minimumflavour of the incoming quarks
+   *  Minimum incoming quark flavour.
    */
   int _minflavour;
 
   /**
-   *  Maximum flavour of the incoming quarks
+   *  Maximum incoming quark flavour.
    */
   int _maxflavour;
 
   /**
-   *  Whether to include both \f$Z^0\f$ and \f$\gamma\f$ or only one
+   *  Whether to include both \f$Z^0\f$ and \f$\gamma\f$ or only one.
    */
   unsigned int _gammaZ;
 
@@ -390,12 +393,12 @@ private:
   //@}
 
   /**
-   * Matrix element for spin correlations
+   * Born production matrix element cached for spin correlations.
    */
   ProductionMatrixElement _me;
 
   /**
-   *  Electroweak parameters
+   *  Cached electroweak parameters.
    */
   //@{
   /**

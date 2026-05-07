@@ -25,13 +25,14 @@
 #include "Herwig/Models/StandardModel/StandardModel.h"
 #include "ThePEG/Cuts/Cuts.h"
 #include "ThePEG/Handlers/StandardXComb.h"
-// #include "ThePEG/PDF/PolarizedBeamParticleData.h"
 
 using namespace Herwig;
 using namespace ThePEG::Helicity;
 
 namespace {
 
+// Ensure realised POWHEG 2->3 legs carry spin information before the
+// spin-correlation HardVertex is attached.
 void ensureRealEmissionSpinInfo(const PPtr & part, bool incomingLeg) {
   if (!part || part->spinInfo()) return;
 
@@ -80,6 +81,8 @@ struct FermionLineWaves {
   bool incomingIsFermion;
 };
 
+// Build helicity bases for a fermion line, independent of whether the incoming
+// particle is the fermion or antifermion end of the line.
 FermionLineWaves buildFermionLineWaves(const PPtr & incomingPart,
                                        const PPtr & outgoingPart) {
   FermionLineWaves line;
@@ -110,6 +113,7 @@ FermionLineWaves buildFermionLineWaves(const PPtr & incomingPart,
   return line;
 }
 
+// Construct the two physical helicity states for an external massless vector.
 vector<VectorWaveFunction> buildMasslessVectorWaves(const PPtr & part,
                                                     ThePEG::Helicity::Direction dir) {
   vector<VectorWaveFunction> waves;
@@ -132,6 +136,8 @@ struct RealEmissionLegs {
   std::string out2Role;
 };
 
+// Extract the lepton, incoming coloured parton, and outgoing coloured legs from
+// a realised POWHEG event in the ordering expected by the exact spin ME.
 bool collectRealEmissionLegs(const RealEmissionProcessPtr & proc,
                              bool isCompton,
                              RealEmissionLegs & legs) {
@@ -178,6 +184,8 @@ bool collectRealEmissionLegs(const RealEmissionProcessPtr & proc,
 
 }
 
+// Configure charged-current defaults. The outgoing-quark mass option is kept
+// configurable for heavy-flavour channels such as top production.
 MEChargedCurrentDIS::MEChargedCurrentDIS() 
   : _maxflavour(5), _massopt(0) {
   vector<unsigned int> mopt(2,1);
@@ -185,19 +193,20 @@ MEChargedCurrentDIS::MEChargedCurrentDIS()
   massOption(mopt);
 }
 
+// Resolve the charged-current particle data and the W vertex after repository
+// setup, when the StandardModel instance is available.
 void MEChargedCurrentDIS::doinit() {
   DISBase::doinit();
   _wp = getParticleData(ThePEG::ParticleID::Wplus );
   _wm = getParticleData(ThePEG::ParticleID::Wminus);
-  // cast the SM pointer to the Herwig SM pointer
   tcHwSMPtr hwsm=ThePEG::dynamic_ptr_cast<tcHwSMPtr>(standardModel());
   if(!hwsm) throw InitException() 
     << "Must be the Herwig StandardModel class in "
     << "MEChargedCurrentDIS::doinit" << Exception::abortnow;
-  // vertices
   _theFFWVertex = hwsm->vertexFFW();
 }
 
+// Lazily access the QCD quark-gluon vertex used only by exact 2->3 spin MEs.
 AbstractFFVVertexPtr MEChargedCurrentDIS::gluonVertex() const {
   tcHwSMPtr hwsm = ThePEG::dynamic_ptr_cast<tcHwSMPtr>(standardModel());
   if (!hwsm) {
@@ -209,12 +218,13 @@ AbstractFFVVertexPtr MEChargedCurrentDIS::gluonVertex() const {
 }
 
 
+// Register charged-current quark transitions allowed by MaxFlavour, including
+// charge-conjugate channels for W+ and W- exchange.
 void MEChargedCurrentDIS::getDiagrams() const {
-  // possible quarks
   typedef std::vector<pair<long,long> > Pairvector;
   Pairvector quarkpair;
   quarkpair.reserve(6);
-  // don't even think of putting 'break' in here!
+  // Intentional fall-through accumulates all lighter quark doublets.
   switch(_maxflavour) {
   case 6:
     quarkpair.push_back(make_pair(ParticleID::s, ParticleID::t));
@@ -238,7 +248,6 @@ void MEChargedCurrentDIS::getDiagrams() const {
   default:
     ;
   }
-  // create the diagrams
   for(int il1=11;il1<=14;++il1) {
     int il2 = il1%2==0 ? il1-1 : il1+1;
     for(unsigned int iz=0;iz<2;++iz) {
@@ -265,14 +274,17 @@ void MEChargedCurrentDIS::getDiagrams() const {
   }
 }
 
+// The Born charged-current hard process has no explicit powers of alphaS.
 unsigned int MEChargedCurrentDIS::orderInAlphaS() const {
   return 0;
 }
 
+// Charged-current DIS is an electroweak 2->2 process at Born level.
 unsigned int MEChargedCurrentDIS::orderInAlphaEW() const {
   return 2;
 }
 
+// Provide the colour flow for quark or antiquark charged-current scattering.
 Selector<const ColourLines *>
 MEChargedCurrentDIS::colourGeometries(tcDiagPtr diag) const {
   static ColourLines c1("3 5");
@@ -285,10 +297,12 @@ MEChargedCurrentDIS::colourGeometries(tcDiagPtr diag) const {
   return sel;
 }
 
+// Persist the charged-current vertex, flavour bound, W data, and mass option.
 void MEChargedCurrentDIS::persistentOutput(PersistentOStream & os) const {
   os << _theFFWVertex << _maxflavour << _wp << _wm << _massopt;
 }
 
+// Read the charged-current persistent state.
 void MEChargedCurrentDIS::persistentInput(PersistentIStream & is, int) {
   is >> _theFFWVertex >> _maxflavour >> _wp >> _wm >> _massopt;
 }
@@ -298,6 +312,7 @@ void MEChargedCurrentDIS::persistentInput(PersistentIStream & is, int) {
 DescribeClass<MEChargedCurrentDIS,DISBase>
 describeHerwigMEChargedCurrentDIS("Herwig::MEChargedCurrentDIS", "HwMEDIS.so");
 
+// Register user-facing charged-current controls.
 void MEChargedCurrentDIS::Init() {
 
   static ClassDocumentation<MEChargedCurrentDIS> documentation
@@ -327,6 +342,7 @@ void MEChargedCurrentDIS::Init() {
 
 }
 
+// All charged-current diagrams have equal selector weight once kinematics pass.
 Selector<MEBase::DiagramIndex>
 MEChargedCurrentDIS::diagrams(const DiagramVector & diags) const {
   Selector<DiagramIndex> sel;
@@ -334,30 +350,26 @@ MEChargedCurrentDIS::diagrams(const DiagramVector & diags) const {
   return sel;
 }
 
+// Build the W-exchange helicity amplitude for the current Born point, using
+// the supplied incoming spin-density matrices for longitudinal polarization.
 double MEChargedCurrentDIS::helicityME(const pair<RhoDMatrix,RhoDMatrix> & rhoin,
 				       vector<SpinorWaveFunction>    & f1,
 				       vector<SpinorWaveFunction>    & f2,
 				       vector<SpinorBarWaveFunction> & a1,
 				       vector<SpinorBarWaveFunction> & a2,
 				       bool lorder, bool qorder, bool calc) const {
-  // scale
   Energy2 mb2(scale());
-  // matrix element to be stored
   ProductionMatrixElement menew(PDT::Spin1Half,PDT::Spin1Half,
 				PDT::Spin1Half,PDT::Spin1Half);
-  // pick a W boson
   tcPDPtr ipart = (mePartonData()[0]->iCharge()-mePartonData()[1]->iCharge())==3 ?
     _wp : _wm;
-  // declare the variables we need
   VectorWaveFunction inter;
   double me(0.);
   Complex diag;
-  // sum over helicities to get the matrix element
   unsigned int hel[4];
   unsigned int lhel1,lhel2,qhel1,qhel2;
   for(lhel1=0;lhel1<2;++lhel1) {
     for(lhel2=0;lhel2<2;++lhel2) {
-      // intermediate W
       inter = _theFFWVertex->evaluate(mb2,3,ipart,f1[lhel1],a1[lhel2]);
       for(qhel1=0;qhel1<2;++qhel1) {
 	for(qhel2=0;qhel2<2;++qhel2) {
@@ -373,33 +385,25 @@ double MEChargedCurrentDIS::helicityME(const pair<RhoDMatrix,RhoDMatrix> & rhoin
       }
     }
   }
-  // Average over the incoming spin density matrices.
   me = menew.average(rhoin.first,rhoin.second);
-  // tcPolarizedBeamPDPtr beam[2] = 
-  //   {dynamic_ptr_cast<tcPolarizedBeamPDPtr>(mePartonData()[0]),
-  //    dynamic_ptr_cast<tcPolarizedBeamPDPtr>(mePartonData()[1])};
-  // if( beam[0] || beam[1] ) {
-  //   RhoDMatrix rho[2] = {beam[0] ? beam[0]->rhoMatrix() : RhoDMatrix(mePartonData()[0]->iSpin()),
-  //       		 beam[1] ? beam[1]->rhoMatrix() : RhoDMatrix(mePartonData()[1]->iSpin())};
-  //   me = menew.average(rho[0],rho[1]);
-  // }
   if(calc) _me.reset(menew);
   return me;
 }
 
+// Standard Born ME entry point using the corrected event-local rho matrices.
 double MEChargedCurrentDIS::me2() const {
   const pair<RhoDMatrix,RhoDMatrix> rhoin = correctedLongitudinalRhoMatrices();
   return me2ForPolarizations(longPol(rhoin.first), longPol(rhoin.second));
 }
 
+// Attach the Born spin-correlation vertex to the hard subprocess after
+// normalizing the event-record ordering to lepton/quark fermion lines.
 void MEChargedCurrentDIS::constructVertex(tSubProPtr sub) {
-  // extract the particles in the hard process
   ParticleVector hard;
   hard.push_back(sub->incoming().first);
   hard.push_back(sub->incoming().second);
   hard.push_back(sub->outgoing()[0]);
   hard.push_back(sub->outgoing()[1]);
-  // sort out the ordering
   unsigned int order[4]={0,1,2,3};
   bool lorder(true),qorder(true);
   if(abs(hard[0]->id())<6) swap(hard[0],hard[1]);
@@ -420,17 +424,19 @@ void MEChargedCurrentDIS::constructVertex(tSubProPtr sub) {
   SpinorBarWaveFunction(a2,hard[order[3]], qorder ? outgoing : incoming,  qorder,true);
   const pair<RhoDMatrix,RhoDMatrix> rhoin = correctedLongitudinalRhoMatrices();
   helicityME(rhoin,f1,f2,a1,a2,lorder,qorder,true);
-  // construct the vertex
   HardVertexPtr hardvertex=new_ptr(HardVertex());
-  // set the matrix element for the vertex
   hardvertex->ME(_me);
-  // set the pointers and to and from the vertex
+  // Store the rho matrices used in the amplitude and point all hard legs at
+  // the shared production vertex.
   hard[order[0]]->spinInfo()->rhoMatrix(rhoin.first );
   hard[order[1]]->spinInfo()->rhoMatrix(rhoin.second);
   for(unsigned int ix=0;ix<4;++ix)
     hard[ix]->spinInfo()->productionVertex(hardvertex);
 }
 
+// Build the exact spin-only HardVertex for a realised POWHEG real emission.
+// Generation and weighting are already complete; this hook only records spin
+// correlations on the accepted 2->3 event.
 void MEChargedCurrentDIS::constructRealEmissionSpinVertex(RealEmissionProcessPtr proc,
                                                           bool isCompton) const {
   RealEmissionLegs legs;
@@ -487,6 +493,8 @@ void MEChargedCurrentDIS::constructRealEmissionSpinVertex(RealEmissionProcessPtr
   legs.out2->spinInfo()->productionVertex(hardvertex);
 }
 
+// Exact W-exchange QCDC real-emission helicity amplitude for the POWHEG
+// spin-correlation vertex, including both quark-line gluon-emission orderings.
 ProductionMatrixElement MEChargedCurrentDIS::qcdcRealEmissionME(PPtr lin, PPtr qin,
                                                                 PPtr lout, PPtr qout,
                                                                 PPtr gout,
@@ -543,6 +551,8 @@ ProductionMatrixElement MEChargedCurrentDIS::qcdcRealEmissionME(PPtr lin, PPtr q
   return prodme;
 }
 
+// Exact W-exchange BGF real-emission helicity amplitude for the POWHEG
+// spin-correlation vertex, with the incoming gluon in physical helicity states.
 ProductionMatrixElement MEChargedCurrentDIS::bgfRealEmissionME(PPtr lin, PPtr gin,
                                                                PPtr lout, PPtr qout,
                                                                PPtr qbout,
@@ -604,6 +614,8 @@ ProductionMatrixElement MEChargedCurrentDIS::bgfRealEmissionME(PPtr lin, PPtr gi
   return prodme;
 }
 
+// Charged-current analyzing coefficient from the chiral W coupling and the
+// lepton/quark charge-conjugation signs.
 double MEChargedCurrentDIS::A(tcPDPtr lin, tcPDPtr,
 			      tcPDPtr qin, tcPDPtr, Energy2) const {
   double output = 2.;
@@ -612,12 +624,16 @@ double MEChargedCurrentDIS::A(tcPDPtr lin, tcPDPtr,
   return output;
 }
 
+// The charged-current analyzing coefficient is independent of the incoming
+// longitudinal polarization values once the chiral prefactor is handled.
 double MEChargedCurrentDIS::A_pol(tcPDPtr lin, tcPDPtr lout,
                                   tcPDPtr qin, tcPDPtr qout,
                                   Energy2 scale, double, double) const {
   return A(lin,lout,qin,qout,scale);
 }
 
+// Split the charged-current hadron-side chiral prefactor into the pieces
+// multiplying unpolarized and polarized NLO kernels.
 DISBase::CollinearBlendWeights
 MEChargedCurrentDIS::collinearBlendWeights(tcPDPtr, tcPDPtr,
                                            tcPDPtr qin, tcPDPtr,
@@ -634,6 +650,8 @@ MEChargedCurrentDIS::collinearBlendWeights(tcPDPtr, tcPDPtr,
   return {unpolarized, polarized, unpolarized, polarized};
 }
 
+// Correct QCDC denominators when the mapped incoming-parton polarization differs
+// from the Born value.
 double MEChargedCurrentDIS::qcdcMappedDenominatorRatio(tcPDPtr, tcPDPtr,
                                                        tcPDPtr qin, tcPDPtr,
                                                        Energy2, double,
@@ -645,6 +663,8 @@ double MEChargedCurrentDIS::qcdcMappedDenominatorRatio(tcPDPtr, tcPDPtr,
   return mapped / born;
 }
 
+// Return the charged-current chiral prefactor for the mapped real-emission
+// denominator.
 double MEChargedCurrentDIS::realEmissionDenominatorFactor(tcPDPtr, tcPDPtr,
                                                           tcPDPtr qin, tcPDPtr,
                                                           Energy2, double,
@@ -652,21 +672,28 @@ double MEChargedCurrentDIS::realEmissionDenominatorFactor(tcPDPtr, tcPDPtr,
   return ccHadronSpinFactor(qin, Pq);
 }
 
+// Charged-current real-emission kernels follow the mapped x_B/x_p polarization
+// because the chiral prefactor depends directly on the incoming parton spin.
 bool MEChargedCurrentDIS::useMappedPolarizedEmissionKernel() const {
   return true;
 }
 
+// Hadron-side spin factor for V-A charged-current scattering.
 double MEChargedCurrentDIS::ccHadronSpinFactor(tcPDPtr qin, double Pq) const {
   const double etaQ = (qin->id() < 0) ? -1.0 : 1.0;
   return 1.0 - etaQ * Pq;
 }
 
+// Re-evaluate the Born ME with explicit incoming lepton and parton
+// polarizations for correlated weights and spin-factor checks.
 double MEChargedCurrentDIS::me2ForPolarizations(double Pl, double Pq) const {
   vector<SpinorWaveFunction>    f1,f2;
   vector<SpinorBarWaveFunction> a1,a2;
   bool lorder,qorder;
   SpinorWaveFunction    l1,q1;
   SpinorBarWaveFunction l2,q2;
+  // Normalize incoming/outgoing leptons and quarks to the fermion/antifermion
+  // order expected by the helicity vertices.
   if(mePartonData()[0]->id()>0) {
     lorder=true;
     l1 = SpinorWaveFunction   (meMomenta()[0],mePartonData()[0],incoming);

@@ -39,10 +39,12 @@ using namespace ThePEG::Helicity;
 
 namespace {
 
+// Evaluate the compact azimuthal kernel c0 + c1 cos(phi) + c2 cos^2(phi).
 double azimuthalKernelValue(double c0, double c1, double c2, double cphi) {
   return c0 + c1 * cphi + c2 * cphi * cphi;
 }
 
+// Find a safe rejection-sampling envelope for the quadratic azimuthal kernel.
 double azimuthalKernelMaximum(double c0, double c1, double c2) {
   double phimax = std::max(azimuthalKernelValue(c0, c1, c2, -1.0),
                            azimuthalKernelValue(c0, c1, c2,  1.0));
@@ -55,6 +57,9 @@ double azimuthalKernelMaximum(double c0, double c1, double c2) {
   return phimax;
 }
 
+// Compute the PDF ratio used by POWHEG/MEC emission generation. The signed
+// ratio is optional because the veto algorithm must sample with a positive
+// probability but some callers still need the physical sign.
 bool powhegEmissionPDFRatioForGeneration(tcPDFPtr pdf, tcBeamPtr beam,
                                          tcPDPtr numeratorParton,
                                          tcPDPtr denominatorParton,
@@ -115,12 +120,14 @@ bool powhegPositiveRatioIsSafe(double numerator,
   return true;
 }
 
+// Parse scalar cut-interface values returned as strings by ThePEG interfaces.
 bool parseDoubleValue(const std::string & text, double & value) {
   std::istringstream is(text);
   is >> value;
   return bool(is);
 }
 
+// Extract the active switch option name from a ThePEG switch-interface string.
 bool parseSwitchOptionName(const std::string & text, std::string & option) {
   const std::string::size_type begin = text.find('[');
   const std::string::size_type end = text.find(']', begin);
@@ -133,6 +140,8 @@ bool parseSwitchOptionName(const std::string & text, std::string & option) {
 }
 
 
+// Set the release defaults for the shared DIS NLO, MEC, POWHEG and
+// correlated-weight controls.
 DISBase::DISBase()  : initial_(6.), final_(3.),
 		      procProb_(0.35),
 		      comptonInt_(0.), bgfInt_(0.),
@@ -158,6 +167,8 @@ DISBase::DISBase()  : initial_(6.), final_(3.),
 
 DISBase::~DISBase() {}
 
+// Persist only the current release-facing fields. Retired validation-only
+// fields were intentionally dropped with class version 14.
 void DISBase::persistentOutput(PersistentOStream & os) const {
   os << comptonInt_ << bgfInt_ << procProb_ << initial_ << final_ << alpha_
      << ounit(pTmin_,GeV) << comptonWeight_ << BGFWeight_ << gluon_
@@ -171,11 +182,13 @@ void DISBase::persistentOutput(PersistentOStream & os) const {
      << generateRivetWeights_ << power_;
 }
 
+// Read the current persistent layout. Older .run files are rejected explicitly
+// so they cannot be silently misread after the release interface cleanup.
 void DISBase::persistentInput(PersistentIStream & is, int version) {
   if(version != 14) {
     throw Exception()
       << "DISBase persistent input version " << version
-      << " is no longer supported after the release diagnostic cleanup. "
+      << " is no longer supported after the release interface cleanup. "
       << "Regenerate .run files from the source cards."
       << Exception::runerror;
   }
@@ -216,6 +229,8 @@ double DISBase::longPol(const ThePEG::RhoDMatrix& rho) const {
   return (rhoPP - rhoMM) / norm;
 }
 
+// Build a diagonal longitudinal spin-density matrix for the particle type used
+// by the DIS spin paths.
 RhoDMatrix DISBase::longitudinalRhoMatrix(tcPDPtr data, double pol) const {
   if (!data) return RhoDMatrix();
 
@@ -241,6 +256,8 @@ RhoDMatrix DISBase::longitudinalRhoMatrix(tcPDPtr data, double pol) const {
   return rho;
 }
 
+// Convert a beam-level longitudinal polarization and polarized-PDF ratio into
+// an event-local incoming-parton rho matrix at the requested mapped x.
 DISBase::MappedIncomingSpinDensity
 DISBase::mappedIncomingSpinDensity(tcPDPtr parton,
 	                                   double x,
@@ -285,6 +302,9 @@ DISBase::mappedIncomingSpinDensity(tcPDPtr parton,
   return out;
 }
 
+// Rebuild the incoming hadron-side rho matrix from the polarized extractor for
+// NLO points, where reconstructed parton bins may not retain the correct
+// polarized PDF information.
 pair<RhoDMatrix,RhoDMatrix> DISBase::correctedLongitudinalRhoMatrices() const {
   pair<RhoDMatrix,RhoDMatrix> rho = getRhoMatrices();
 
@@ -325,6 +345,8 @@ pair<RhoDMatrix,RhoDMatrix> DISBase::correctedLongitudinalRhoMatrices() const {
   return rho;
 }
 
+// Default collinear projector: the legacy scalar blend used by photon-like
+// channels. Neutral/charged current implementations override where needed.
 DISBase::CollinearBlendWeights
 DISBase::collinearBlendWeights(tcPDPtr lin, tcPDPtr lout,
                                tcPDPtr qin, tcPDPtr qout,
@@ -336,6 +358,7 @@ DISBase::collinearBlendWeights(tcPDPtr lin, tcPDPtr lout,
   return {1.0 - f, f, 1.0 - f, f};
 }
 
+// Default mapped-denominator correction for QCDC real emission.
 double DISBase::qcdcMappedDenominatorRatio(tcPDPtr, tcPDPtr,
                                            tcPDPtr, tcPDPtr,
                                            Energy2,
@@ -345,6 +368,8 @@ double DISBase::qcdcMappedDenominatorRatio(tcPDPtr, tcPDPtr,
   return 1.0;
 }
 
+// Default real-emission denominator factor used when no current-specific
+// parity decomposition is required.
 double DISBase::realEmissionDenominatorFactor(tcPDPtr, tcPDPtr,
                                               tcPDPtr, tcPDPtr,
                                               Energy2,
@@ -353,10 +378,14 @@ double DISBase::realEmissionDenominatorFactor(tcPDPtr, tcPDPtr,
   return 1.0;
 }
 
+// The base class keeps real-emission spin kernels on the Born polarization
+// unless a current-specific implementation opts into mapped polarizations.
 bool DISBase::useMappedPolarizedEmissionKernel() const {
   return false;
 }
 
+// Default neutral-current response hook. Returning false tells the common NLO
+// assembly to use the photon-like fallback projectors.
 bool DISBase::neutralCurrentResponse(tcPDPtr, tcPDPtr,
                                      tcPDPtr, tcPDPtr,
                                      Energy2,
@@ -368,14 +397,20 @@ bool DISBase::neutralCurrentResponse(tcPDPtr, tcPDPtr,
   return false;
 }
 
+// Optional spin-only POWHEG real-emission vertex hook. Current-specific classes
+// attach an exact 2->3 HardVertex when the interface switch enables it.
 void DISBase::constructRealEmissionSpinVertex(RealEmissionProcessPtr, bool) const {}
 
+// Convenience wrapper for callers that only need the mapped longitudinal
+// polarization rather than the full rho matrix.
 double DISBase::mappedIncomingLongitudinalPolarization(tcPDPtr parton,
                                                        double x,
                                                        Energy2 mu2) const {
   return mappedIncomingSpinDensity(parton, x, mu2, "powheg-map").clampedPolarization;
 }
 
+// Locate the unique SimpleDISCut window that matches the current charged- or
+// neutral-current matrix element, and cache it for Born generation.
 bool DISBase::resolveNativeDISWindow() const {
   if (nativeDISWindow_.resolutionAttempted) return nativeDISWindow_.available;
 
@@ -453,6 +488,8 @@ bool DISBase::resolveNativeDISWindow() const {
   return true;
 }
 
+// Identify which incoming Born particle is the hadron-side beam and return the
+// Bjorken x attached to that beam.
 bool DISBase::determineBornHadronAndXB(tcBeamPtr & hadron, double & xB) const {
   hadron = tcBeamPtr();
   xB = 0.0;
@@ -474,6 +511,8 @@ bool DISBase::determineBornHadronAndXB(tcBeamPtr & hadron, double & xB) const {
   return false;
 }
 
+// Convert the active DIS window in Q2, y, and W2 into tighter Born cos(theta)
+// limits for the already-sampled xB point.
 bool DISBase::tightenBornCosThetaWithNativeDISWindow(const HwMEBase::TwoToTwoKinematicsSetup & setup,
                                                      double xB,
                                                      double & ctmin,
@@ -513,6 +552,9 @@ bool DISBase::tightenBornCosThetaWithNativeDISWindow(const HwMEBase::TwoToTwoKin
   return ctmin < ctmax;
 }
 
+// Register the public DIS interfaces retained for production generation,
+// fixed-order comparisons, real-emission spin vertices, and correlated Rivet
+// helicity weights.
 void DISBase::Init() {
   
   static ClassDocumentation<DISBase> documentation
@@ -701,6 +743,8 @@ void DISBase::Init() {
 
 }
 
+// Complete setup after the repository phase. The analytic Compton/BGF
+// integrals are overestimate normalizations used by the emission samplers.
 void DISBase::doinit() {
   HwMEBase::doinit();
   nativeDISWindow_ = NativeDISWindowDefinition();
@@ -710,23 +754,26 @@ void DISBase::doinit() {
       << " corrections are enabled."
       << Exception::abortnow;
   }
-  // integrals of me over phase space
+  // Analytic channel integrals provide the normalization for rejection
+  // sampling in the legacy MEC path.
   double r5=sqrt(5.),darg((r5-1.)/(r5+1.)),ath(0.5*log((1.+1./r5)/(1.-1./r5)));
   comptonInt_ = 2.*(-21./20.-6./(5.*r5)*ath+sqr(Constants::pi)/3.
 		    -2.*Math::ReLi2(1.-darg)-2.*Math::ReLi2(1.-1./darg));
   bgfInt_ = 121./9.-56./r5*ath;
-  // extract the gluon ParticleData objects
   gluon_ = getParticleData(ParticleID::g);
 }
 
+// Choose the alphaS scale for accepted real-emission generation.
 Energy2 DISBase::powhegEmissionAlphaSScale(Energy2 q2, double xT) const {
   return useQ2ScaleInPOWHEGEmission_ ? q2 : 0.25*q2*sqr(xT);
 }
 
+// Choose the PDF numerator scale for emission PDF ratios.
 Energy2 DISBase::powhegEmissionPDFScale(Energy2 q2, Energy2 mappedScale) const {
   return useQ2ScaleInPOWHEGEmission_ ? q2 : mappedScale;
 }
 
+// Fixed-order alphaS source used by release comparison modes when requested.
 double DISBase::powhegEmissionFixedOrderAlphaSValue(Energy2 scale) const {
   if (pdf_) {
     const ThePEG::LHAPDF *lhaPdf = dynamic_cast<const ThePEG::LHAPDF *>(pdf_.operator->());
@@ -735,22 +782,27 @@ double DISBase::powhegEmissionFixedOrderAlphaSValue(Energy2 scale) const {
   return SM().alphaS(scale);
 }
 
+// AlphaS value entering the emission weight.
 double DISBase::powhegEmissionAlphaSValue(Energy2 scale) const {
   return useFixedOrderAlphaSInPOWHEGEmission_ ? powhegEmissionFixedOrderAlphaSValue(scale)
                                               : alpha_->value(scale);
 }
 
+// Coupling overestimate used to generate trial emissions.
 double DISBase::powhegEmissionAlphaSOverestimate(Energy2 referenceScale) const {
   return useFixedOrderAlphaSInPOWHEGEmission_ ? powhegEmissionFixedOrderAlphaSValue(referenceScale) :
     alpha_->overestimateValue();
 }
 
+// Ratio of the emission coupling to its overestimate for veto acceptance.
 double DISBase::powhegEmissionAlphaSRatio(Energy2 scale, Energy2 referenceScale) const {
   if(!useFixedOrderAlphaSInPOWHEGEmission_) return alpha_->ratio(scale);
   const double alphaRef = powhegEmissionFixedOrderAlphaSValue(referenceScale);
   return alphaRef > 0.0 ? powhegEmissionFixedOrderAlphaSValue(scale)/alphaRef : 0.0;
 }
 
+// Extract the Born DIS legs, PDFs, Breit-frame rotation, and polarization state
+// needed by the native POWHEG hardest-emission samplers.
 void DISBase::initializePOWHEGEmissionState(RealEmissionProcessPtr born,
 					    PPtr quark[2], PPtr lepton[2],
 					    PPtr & hadron,
@@ -831,6 +883,8 @@ void DISBase::initializePOWHEGEmissionState(RealEmissionProcessPtr born,
   if(lepton[0]) leptonPolarization_ = longPol(lepton[0]->spinInfo()->rhoMatrix());
 }
 
+// Generate the native POWHEG hardest QCD emission, choosing the larger-pT
+// candidate between QCDC/Compton and BGF and rebuilding the event record.
 RealEmissionProcessPtr DISBase::generateNativePOWHEGHardest(RealEmissionProcessPtr born,
 								    bool allowBornFallback) {
   PPtr quark[2],lepton[2];
@@ -914,6 +968,8 @@ RealEmissionProcessPtr DISBase::generateNativePOWHEGHardest(RealEmissionProcessP
   return born;
 }
 
+// RealOnly comparison mode: repeatedly request a genuine real emission and
+// veto the event rather than falling back to Born kinematics.
 RealEmissionProcessPtr
 DISBase::generateComparisonModePOWHEGHardest(RealEmissionProcessPtr born) {
   const unsigned long maxAttempts =
@@ -927,6 +983,8 @@ DISBase::generateComparisonModePOWHEGHardest(RealEmissionProcessPtr born) {
   throw Veto();
 }
 
+// Prepare the Born kinematic state used by the older matrix-element correction
+// path. This mirrors the POWHEG setup but does not generate a real emission.
 void DISBase::initializeMECorrection(RealEmissionProcessPtr born, double & initial,
 				     double & final) {
   initial = initial_;
@@ -963,13 +1021,16 @@ void DISBase::initializeMECorrection(RealEmissionProcessPtr born, double & initi
       pl_[1] = born->bornOutgoing()[ix]->momentum();
     }
   }
-  // extract the born variables
+  // The Breit-frame DIS invariants drive both the MEC kernels and the
+  // longitudinal spin factors.
   q_ =pl_[0]-pl_[1];
   q2_ = -q_.m2();
   double  yB = (q_*pq_[0])/(pl_[0]*pq_[0]); 
   l_ = 2./yB-1.;
 }
 
+// Apply the hard matrix-element correction by sampling one local DIS real
+// emission and accepting it against the exact Compton/BGF kernel.
 RealEmissionProcessPtr DISBase::applyHardMatrixElementCorrection(RealEmissionProcessPtr born) {
   static const double eps=1e-6;
   leptonPolarization_ = 0.0;
@@ -1201,6 +1262,8 @@ RealEmissionProcessPtr DISBase::applyHardMatrixElementCorrection(RealEmissionPro
   return born;
 }
 
+// Veto soft shower branchings with the DIS matrix-element correction weight so
+// the shower reproduces the hard-emission limit in both ISR and FSR regions.
 bool DISBase::softMatrixElementVeto(PPtr parent,
 				    PPtr progenitor,
 				    const bool & fs,
@@ -1268,6 +1331,8 @@ bool DISBase::softMatrixElementVeto(PPtr parent,
   return !UseRandom::rndbool(wgt);
 }
 
+// Sample the xp,zp variables for a QCDC/Compton real-emission point and return
+// the analytic integral normalization used by the MEC path.
 double DISBase::generateComptonPoint(double &xp, double & zp) {
   static const double maxwgt = 1.;
   double wgt;
@@ -1292,6 +1357,8 @@ double DISBase::generateComptonPoint(double &xp, double & zp) {
   return comptonInt_;
 }
 
+// Sample the xp,zp variables for a BGF real-emission point and return the
+// analytic integral normalization used by the MEC path.
 double DISBase::generateBGFPoint(double &xp, double & zp) {
   static const double maxwgt = 25.;
   double wgt;
@@ -1316,36 +1383,10 @@ double DISBase::generateBGFPoint(double &xp, double & zp) {
   }
   while(wgt<UseRandom::rnd()*maxwgt);
   return bgfInt_;
-//   static const double maxwgt = 2.,npow=0.34,ac=1.0;
-//   double wgt;
-//   do {
-//     double rho = UseRandom::rnd();
-//     xp = 1.-pow(rho,1./(1.-npow));
-//     wgt = (sqr(xp)+ac+sqr(1.-xp));
-//     if(wgt>1.+ac) cerr << "testing violates BGF maxA " << wgt << "\n";
-//   }
-//   while(wgt<UseRandom::rnd()*(1.+ac));
-//   double xpwgt = -((6.-5.*npow+sqr(npow))*ac-3.*npow+sqr(npow)+4) 
-//     /(sqr(npow)*(npow-6.)+11.*npow-6.);
-//   xpwgt *= pow(1.-xp,npow)/wgt;
-//   double xp2(sqr(xp)),lxp(log(xp)),xp4(sqr(xp2)),lxp1(log(1.-xp));
-//   double zpwgt = (2.*xp4*(lxp+lxp1-3.)+4.*xp*xp2*(3.-lxp-lxp1)
-// 		  +xp2*(-13.+lxp+lxp1)+xp*(+7.+lxp+lxp1)-lxp-lxp1-1.)/(1.+xp-xp2);
-//   do {
-//     double zpmax = 1./(1.+xp*(1.-xp)), zpmin = 1.-zpmax;
-//     zp = 1.-pow((1.-zpmin)/(1.-zpmax),UseRandom::rnd())*(1.-zpmax);
-//     wgt = log((1.-zpmin)/(1.-zpmax))*(1.-zp);
-//     double x1 = -1./xp;
-//     double x2 = 1.-(1.-zp)/xp;
-//     double x3 = 2.+x1-x2;
-//     double xperp2 = 4.*(1.-xp)*(1.-zp)*zp/xp;
-//     wgt *= sqr(xp)/(1.-zp)*(sqr(x3)+sqr(x2)+3.*xperp2);
-//     if(wgt>maxwgt*zpwgt) cerr << "testing violates BGF maxB " << wgt/xpwgt << "\n";
-//   }
-//   while(wgt<UseRandom::rnd()*maxwgt);
-//   return zpwgt*xpwgt;
 }
 
+// Return the normalized azimuthal kernel for the QCDC/Compton channel. The
+// kernel is expressed as c0+c1*cos(phi)+c2*cos^2(phi) for efficient sampling.
 DISBase::AzimuthalKernelCoefficients
 DISBase::ComptonME(double xp, double x2, double xperp,
 		   bool norm) const {
@@ -1402,6 +1443,8 @@ DISBase::ComptonME(double xp, double x2, double xperp,
   return output;
 }
 
+// Return the normalized azimuthal kernel for the BGF channel. The two final
+// quark lines get separate mapped spin projectors in full polarized DIS.
 DISBase::AzimuthalKernelCoefficients
 DISBase::BGFME(double xp, double x2, double x3,
 	       double xperp, bool norm) const {
@@ -1485,6 +1528,8 @@ DISBase::BGFME(double xp, double x2, double x3,
   return output;
 }
 
+// Entry point used by the POWHEG shower machinery. Non-QCD interactions are
+// ignored; comparison modes replace Born fallback with an explicit veto.
 RealEmissionProcessPtr DISBase::generateHardest(RealEmissionProcessPtr born,
 						ShowerInteraction inter) {
   // check if generating QCD radiation
@@ -1497,6 +1542,9 @@ RealEmissionProcessPtr DISBase::generateHardest(RealEmissionProcessPtr born,
   return generateNativePOWHEGHardest(born, true);
 }
 
+// Generate a candidate QCDC/Compton POWHEG emission and cache its Breit-frame
+// momenta. A negative pT marks that no emission above the current threshold was
+// accepted.
 void DISBase::generateCompton() {
   comptonRawXP_ = 0.0;
   comptonRawZP_ = 0.0;
@@ -1604,6 +1652,9 @@ void DISBase::generateCompton() {
   ComptonISFS_ = zp>xp;
 }
 
+// Generate a candidate BGF POWHEG emission and cache its Breit-frame momenta.
+// The lower pT bound starts from the accepted Compton candidate so the final
+// winner is the hardest of the two channels.
 void DISBase::generateBGF() {
   bgfRawXP_ = 0.0;
   bgfRawZP_ = 0.0;
@@ -1712,10 +1763,14 @@ void DISBase::generateBGF() {
   BGFMomenta_[2]=p2;
 }
 
+// Add one integration dimension for the NLO xp variable when POS/NEG NLO
+// contributions are being generated.
 int DISBase::nDim() const {
   return HwMEBase::nDim() + (contrib_>0 ? 1 : 0 );
 }
 
+// Generate the Born DIS kinematics and, for NLO contributions, sample xp with
+// the production power-law mapping used by NLOWeightRaw().
 bool DISBase::generateKinematics(const double * r) {
   xpSamplingRandom_ = 0.0;
   xpSamplingRho_ = 0.0;
@@ -1779,16 +1834,22 @@ bool DISBase::generateKinematics(const double * r) {
   return true; 
 }
 
+// Factorization/renormalization scale used by the Born and NLO weights.
 Energy2 DISBase::scale() const {
   return scaleOpt_ == 1 ? 
     -sqr(scaleFact_)*tHat() : sqr(scaleFact_*muF_);
 }
 
+// Return the signed-order differential cross section. POS/NEG NLO samples use
+// the clipped NLO/Born ratio from NLOWeight().
 CrossSection DISBase::dSigHatDR() const {
   const CrossSection sigmaHat = HwMEBase::dSigHatDR();
   return contrib_ == 0 ? sigmaHat : NLOWeight()*sigmaHat;
 }
 
+// Assemble the validated NLO/Born ratio for arbitrary longitudinal beam
+// polarizations. The common form keeps unpolarized PDFs in the flux and uses
+// polarized PDFs only through effective parton polarizations and delta ratios.
 double DISBase::NLOWeightRaw(double overrideLeptonPolarization,
                              double overrideHadronPolarization,
                              bool overridePolarizations) const {
@@ -2078,15 +2139,21 @@ double DISBase::NLOWeightRaw(double overrideLeptonPolarization,
   return wgt;
 }
 
+// Convert the signed NLO/Born ratio into the positive or negative event stream
+// selected by the Contribution interface.
 double DISBase::NLOWeight() const {
   const double wgt = NLOWeightRaw(0.0, 0.0, false);
   return contrib_ == 1 ? max(0., wgt) : max(0., -wgt);
 }
 
+// ThePEG hook for optional HepMC weights; DIS currently provides the correlated
+// Rivet helicity-weight set when enabled.
 std::map<std::string,double> DISBase::generateOptionalWeights() {
   return generateRivetWeights();
 }
 
+// Build the Born-side parton polarization for a requested hadron polarization
+// using the same polarized-PDF ratio as the NLO weight.
 double DISBase::rivetWeightBornPartonPolarization(double hadronPolarization) const {
   if (!hadron_ || mePartonData().size() < 2 || xB_ <= 0.0) return 0.0;
   if (std::abs(hadronPolarization) <= 1e-12) return 0.0;
@@ -2115,10 +2182,14 @@ double DISBase::rivetWeightBornPartonPolarization(double hadronPolarization) con
   return std::max(-1.0, std::min(1.0, polarization));
 }
 
+// Default Born matrix element for correlated weights. Neutral/charged current
+// classes override when explicit helicity polarizations are required.
 double DISBase::rivetWeightBornME2(double, double) const {
   return me2();
 }
 
+// Produce correlated PP/PM/MP/MM/SIGMA/DELTA_LL weights on the sampled event so
+// Rivet can fill helicity combinations without independent statistical noise.
 std::map<std::string,double> DISBase::generateRivetWeights() const {
   std::map<std::string,double> weights;
   if (!generateRivetWeights_) return weights;

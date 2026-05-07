@@ -16,9 +16,11 @@ namespace Herwig {
 using namespace ThePEG;
 
 /**
- * The DISBase class is the base class for the implementation
- * of DIS type processes including corrections in both the old
- * fashioned matrix element and POWHEG approaches
+ * Common base for DIS matrix elements. It owns the shared Born/NLO
+ * kinematics, the legacy hard/soft matrix-element correction, the
+ * POWHEG hardest-emission path, fixed-order comparison controls, and
+ * correlated helicity weights. Neutral- and charged-current subclasses
+ * provide the current-specific Born and real-emission response factors.
  *
  * @see \ref DISBaseInterfaces "The interfaces"
  * defined for DISBase.
@@ -28,32 +30,32 @@ class DISBase: public HwMEBase {
 public:
 
   /**
-   * The default constructor.
+   * Construct with the validated release defaults for DIS generation.
    */
   DISBase();
 
   /**
-   * The default constructor.
+   * Virtual destructor for the polymorphic matrix-element base.
    */
   virtual ~DISBase();
 
   /**
-   *  Members for the old-fashioned matrix element correction
+   *  Members for the legacy shower matrix-element correction.
    */
   //@{
   /**
-   *  Has an old fashioned ME correction
+   *  This matrix element supplies the legacy DIS hard/soft MEC hooks.
    */
   virtual bool hasMECorrection() {return true;}
 
   /**
-   *  Initialize the ME correction
+   *  Extract the Born DIS state needed by the legacy MEC sampler.
    */
   virtual void initializeMECorrection(RealEmissionProcessPtr, double &,
 				      double & );
 
   /**
-   *  Apply the hard matrix element correction to a given hard process or decay
+   *  Try to replace the Born DIS process by one accepted hard real emission.
    */
   virtual RealEmissionProcessPtr applyHardMatrixElementCorrection(RealEmissionProcessPtr);
 
@@ -80,16 +82,16 @@ public:
   //@}
 
   /**
-   *  Members for the POWHEG stype correction
+   *  Members for the POWHEG-style correction.
    */
   //@{
   /**
-   *  Has a POWHEG style correction
+   *  DIS can generate both initial- and final-state POWHEG emissions.
    */
   virtual POWHEGType hasPOWHEGCorrection() {return Both;}
 
   /**
-   *  Apply the POWHEG style correction
+   *  Generate the hardest POWHEG emission or return/veto according to mode.
    */
   virtual RealEmissionProcessPtr generateHardest(RealEmissionProcessPtr,
 						 ShowerInteraction);
@@ -138,13 +140,13 @@ public:
   /** @name Functions used by the persistent I/O system. */
   //@{
   /**
-   * Function used to write out object persistently.
+   * Write the current release-facing persistent layout.
    * @param os the persistent output stream written to.
    */
   void persistentOutput(PersistentOStream & os) const;
 
   /**
-   * Function used to read in object persistently.
+   * Read the current release-facing persistent layout.
    * @param is the persistent input stream read from.
    * @param version the version number of the object when written.
    */
@@ -391,7 +393,7 @@ protected:
 
 
   /**
-   *  The NLO weight
+   * Positive POS/NEG contribution weight derived from NLOWeightRaw().
    */
   double NLOWeight() const;
 
@@ -422,15 +424,15 @@ protected:
   std::map<std::string,double> generateRivetWeights() const;
 
   /**
-   *  Calculate the coefficient A for the correlations
+   * Born-level longitudinal analyzing coefficient for the current.
    */
   virtual double A(tcPDPtr lin, tcPDPtr lout, tcPDPtr qin, tcPDPtr qout,
 		   Energy2 scale) const =0;
 
   /**
-    * Exact analysing power for longitudinally polarised beams.
-    * Implemented in neutral-current ME to follow eq. (4.50); default
-    * falls back to the unpolarised A(...).
+    * Exact analyzing power for longitudinally polarized beams. Subclasses
+    * override when the current carries nontrivial parity structure; the base
+    * fallback preserves the historical unpolarized A(...) behaviour.
     * @param lin   incoming lepton PD
     * @param lout  outgoing lepton PD
     * @param qin   incoming quark  PD
@@ -446,18 +448,18 @@ protected:
     }
 
   /**
-   *  Members for the matrix element correction
+   *  Members for the matrix-element correction.
    */
   //@{
   /**
-   *  Generate the values of \f$x_p\f$ and \f$z_p\f$
+   * Sample the QCDC/Compton real-emission variables for the MEC path.
    * @param xp The value of xp, output
    * @param zp The value of zp, output
    */
   double generateComptonPoint(double &xp, double & zp);
 
   /**
-   *  Generate the values of \f$x_p\f$ and \f$z_p\f$
+   * Sample the BGF real-emission variables for the MEC path.
    * @param xp The value of xp, output
    * @param zp The value of zp, output
    */
@@ -478,10 +480,7 @@ protected:
   };
 
   /**
-   *  Return the coefficients for the matrix element piece for
-   *  the QCD compton case. The output is the \f$a_i\f$ coefficients to 
-   *  give the function as 
-   *  \f$a_0+a_1\cos\phi+a_2\sin\phi+a_3\cos^2\phi+a_4\sin^2\phi\f$
+   * Return the compact azimuthal kernel for QCDC/Compton real emission.
    * @param xp \f$x_p\f$
    * @param x2 \f$x_2\f$
    * @param xperp \f$x_\perp\f$
@@ -491,10 +490,7 @@ protected:
 			                bool norm) const;
   
   /**
-   *  Return the coefficients for the matrix element piece for
-   *  the QCD compton case. The output is the \f$a_i\f$ coefficients to 
-   *  give the function as 
-   *  \f$a_0+a_1\cos\phi+a_2\sin\phi+a_3\cos^2\phi+a_4\sin^2\phi\f$
+   * Return the compact azimuthal kernel for BGF real emission.
    * @param xp \f$x_p\f$
    * @param x2 \f$x_3\f$
    * @param x3 \f$x_2\f$
@@ -506,16 +502,16 @@ protected:
   //@}
 
   /**
-   *  Members for the POWHEG correction
+   *  Members for the POWHEG correction.
    */
   //@{
   /**
-   *  Generate a Compton process
+   *  Generate and cache a candidate QCDC/Compton POWHEG emission.
    */
   void generateCompton();
 
   /**
-   *  Generate a BGF process
+   *  Generate and cache a candidate BGF POWHEG emission.
    */
   void generateBGF();
 
@@ -525,8 +521,7 @@ protected:
   };
 
   /**
-   * Prepare the common Born-level state used by the comparison-mode emission
-   * samplers.
+   * Prepare the common Born-level state used by the POWHEG emission samplers.
    */
   void initializePOWHEGEmissionState(RealEmissionProcessPtr born,
                                      PPtr quark[2], PPtr lepton[2],
@@ -541,62 +536,62 @@ protected:
                                                      bool allowBornFallback);
 
   /**
-   * Generate the configured comparison-mode hardest emission.
+   * Generate the configured RealOnly comparison-mode hardest emission.
    */
   RealEmissionProcessPtr generateComparisonModePOWHEGHardest(RealEmissionProcessPtr born);
 
   /**
-   *  Parameters for the matrix element correction
+   *  Parameters for the matrix-element correction.
    */
   //@{
   /**
-   *  Enchancement factor for ISR
+   *  Enhancement factor for the ISR overestimate.
    */
   double initial_;
 
   /**
-   *  Enchancement factor for FSR
+   *  Enhancement factor for the FSR overestimate.
    */
   double final_;
 
   /**
-   *   Relative fraction of compton and BGF processes to generate
+   *   Relative sampling fraction for QCDC/Compton versus BGF processes.
    */
   double procProb_;
 
   /**
-   *  Integral for compton process
+   *  Analytic sampling integral for the QCDC/Compton channel.
    */
   double comptonInt_;
 
   /**
-   *  Integral for BGF process
+   *  Analytic sampling integral for the BGF channel.
    */
   double bgfInt_;
   //@}
 
   /**
-   *  Parameters for the POWHEG correction
+   *  Parameters for the POWHEG correction.
    */
   //@{
   /**
-   *  Weight for the compton channel
+   *  Overestimate weight for the QCDC/Compton channel.
    */
   double comptonWeight_;
 
   /**
-   *  Weight for the BGF channel
+   *  Overestimate weight for the BGF channel.
    */
   double BGFWeight_;
 
   /**
-   *  Minimum value of \f$p_T\f$
+   *  Minimum transverse momentum for generated real emissions.
    */
   Energy pTmin_;
   //@}
 
   /**
-   *  Parameters for the point being generated
+   *  Cached state for the point being generated.
    */
   //@{
   /**
@@ -605,32 +600,32 @@ protected:
   Energy2 q2_;
 
   /**
-   *  
+   * Born DIS angular variable ell = 2/y - 1.
    */
   double l_;
 
   /**
-   *  Borm momentum fraction
+   *  Born Bjorken momentum fraction.
    */
   double xB_;
 
   /**
-   *  Beam particle
+   *  Hadron beam particle for the current DIS point.
    */
   tcBeamPtr beam_;
 
   /**
-   *  Partons
+   *  Incoming and outgoing Born-side parton data.
    */
   tcPDPtr partons_[2];
 
   /**
-   *  Leptons
+   *  Incoming and outgoing Born-side lepton data.
    */
   tcPDPtr leptons_[2];
 
   /**
-   *  PDF object
+   *  Unpolarized beam PDF object used for flux and emission ratios.
    */
   tcPDFPtr pdf_;
   /**
@@ -639,46 +634,46 @@ protected:
   LorentzRotation rot_;
 
   /**
-   *  Lepton momenta
+   *  Born lepton momenta in the Breit-frame construction.
    */
   Lorentz5Momentum pl_[2];
 
   /**
-   *  Quark momenta
+   *  Born parton momenta in the Breit-frame construction.
    */
   Lorentz5Momentum pq_[2];
 
   /**
-   *  q
+   *  Exchanged-current momentum.
    */
   Lorentz5Momentum q_;
 
   /**
-   *  Compton parameters
+   *  Cached QCDC/Compton candidate from POWHEG generation.
    */
   Energy pTCompton_;
   bool ComptonISFS_;
   vector<Lorentz5Momentum> ComptonMomenta_;
 
   /**
-   *  BGF parameters
+   *  Cached BGF candidate from POWHEG generation.
    */
   Energy pTBGF_;
   vector<Lorentz5Momentum> BGFMomenta_;
   //@}
 
   /**
-   *  The coefficient for the correlations
+   *  Born analyzing coefficient cached for legacy MEC kernels.
    */
   double acoeff_;
 
   /**
-   *  Coupling
+   *  Shower alphaS object used by the default emission kernels.
    */
   ShowerAlphaPtr alpha_;
 
   /**
-   *  Gluon particle data object
+   *  Gluon particle data object.
    */
   PDPtr gluon_;
 
@@ -715,7 +710,7 @@ private:
   bool determineBornHadronAndXB(tcBeamPtr & hadron, double & xB) const;
 
   /**
-   * Tighten the Born cos(theta) interval with the native DIS window.
+   * Convert the cached DIS window into tighter Born cos(theta) limits.
    */
   bool tightenBornCosThetaWithNativeDISWindow(const HwMEBase::TwoToTwoKinematicsSetup & setup,
                                               double xB,
@@ -723,37 +718,37 @@ private:
                                               double & ctmax) const;
 
   /**
-   *  The radiative variables
+   *  NLO radiative variables.
    */
   //@{
   /**
-   *  The \f$x_p\f$ or \f$z\f$ real integration variable
+   *  The \f$x_p\f$ real integration variable for NLO contributions.
    */
   double xp_;
   //@}
 
   /**
-   *  The hadron
+   *  Hadron beam cached for the NLO and correlated-weight paths.
    */
   tcBeamPtr hadron_;
 
   /**
-   * Selects a dynamic or fixed factorization scale
+   * Selects a dynamic or fixed factorization scale.
    */
   unsigned int scaleOpt_;
 
   /**
-   * The factorization scale 
+   * The fixed factorization scale.
    */
   Energy muF_;
 
   /**
-   *  Prefactor if variable scale used
+   *  Multiplicative factor for the dynamic scale option.
    */
   double scaleFact_;
 
   /**
-   *  Whether to generate the positive, negative or leading order contribution
+   *  Whether to generate the leading, positive NLO, or negative NLO stream.
    */
   unsigned int contrib_;
 
@@ -810,7 +805,7 @@ private:
   double comptonRawXP_, comptonRawZP_, bgfRawXP_, bgfRawZP_;
 
   /**
-   *  Sampling state for the mapped xp variable.
+   *  Sampling state for the mapped NLO xp variable.
    */
   double xpSamplingRandom_, xpSamplingRho_, xpSamplingRhomin_;
 

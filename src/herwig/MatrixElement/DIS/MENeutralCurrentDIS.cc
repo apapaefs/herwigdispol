@@ -25,13 +25,14 @@
 #include "Herwig/Models/StandardModel/StandardModel.h"
 #include "ThePEG/Cuts/Cuts.h"
 #include "ThePEG/Handlers/StandardXComb.h"
-// #include "ThePEG/PDF/PolarizedBeamParticleData.h"
 
 using namespace Herwig;
 using namespace ThePEG::Helicity;
 
 namespace {
 
+// Ensure that realised POWHEG real-emission legs carry spin information before
+// attaching the exact spin-correlation HardVertex.
 void ensureRealEmissionSpinInfo(const PPtr & part, bool incomingLeg) {
   if (!part || part->spinInfo()) return;
 
@@ -80,6 +81,8 @@ struct FermionLineWaves {
   bool incomingIsFermion;
 };
 
+// Build the two helicity wave-function bases for a fermion line, keeping track
+// of whether the incoming particle is the fermion or antifermion end.
 FermionLineWaves buildFermionLineWaves(const PPtr & incomingPart,
                                        const PPtr & outgoingPart) {
   FermionLineWaves line;
@@ -110,6 +113,7 @@ FermionLineWaves buildFermionLineWaves(const PPtr & incomingPart,
   return line;
 }
 
+// Construct the two physical helicity states for an external massless vector.
 vector<VectorWaveFunction> buildMasslessVectorWaves(const PPtr & part,
                                                     ThePEG::Helicity::Direction dir) {
   vector<VectorWaveFunction> waves;
@@ -132,6 +136,8 @@ struct RealEmissionLegs {
   std::string out2Role;
 };
 
+// Extract the lepton line and coloured legs from a realised 2->3 POWHEG event.
+// The returned roles define the ordering used by the spin-correlation ME.
 bool collectRealEmissionLegs(const RealEmissionProcessPtr & proc,
                              bool isCompton,
                              RealEmissionLegs & legs) {
@@ -178,6 +184,8 @@ bool collectRealEmissionLegs(const RealEmissionProcessPtr & proc,
 
 }
 
+// Configure neutral-current defaults and force massless incoming/outgoing quarks
+// to match the analytic DIS expressions used by the NLO and MEC paths.
 MENeutralCurrentDIS::MENeutralCurrentDIS() 
   : _minflavour(1), _maxflavour(5), _gammaZ(0),
     _useFiniteWidthSpacelikeZPropagator(false),
@@ -187,43 +195,42 @@ MENeutralCurrentDIS::MENeutralCurrentDIS()
   massOption(mopt);
 }
 
+// Resolve StandardModel vertices and electroweak constants after repository
+// setup, when particle data and model objects are available.
 void MENeutralCurrentDIS::doinit() {
   DISBase::doinit();
   _z0    = getParticleData(ThePEG::ParticleID::Z0);
   _gamma = getParticleData(ThePEG::ParticleID::gamma);
-  // cast the SM pointer to the Herwig SM pointer
   tcHwSMPtr hwsm=ThePEG::dynamic_ptr_cast<tcHwSMPtr>(standardModel());
   if(!hwsm) throw InitException() 
     << "Must be the Herwig StandardModel class in "
     << "MENeutralCurrentDIS::doinit" << Exception::abortnow;
-  // vertices
   _theFFZVertex = hwsm->vertexFFZ();
   _theFFPVertex = hwsm->vertexFFP();
   _theFFGVertex = hwsm->vertexFFG();
-  // electroweak parameters
   _sinW = generator()->standardModel()->sin2ThetaW();
   _cosW = sqrt(1.-_sinW);
   _sinW = sqrt(_sinW);
   _mz2 = sqr(_z0->mass());
 }
 
+// Register the allowed lepton/quark neutral-current Born diagrams. Photon and
+// Z exchange remain separate diagram entries so diagram selection can expose
+// their individual weights while helicityME() keeps the coherent amplitude.
 void MENeutralCurrentDIS::getDiagrams() const {
-  // which intermediates to include
   bool gamma = _gammaZ==0 || _gammaZ==1;
   bool Z0    = _gammaZ==0 || _gammaZ==2;
-  // create the diagrams
   for(int ix=11;ix<=14;++ix) {
     for(unsigned int iz=0;iz<2;++iz) {
       tPDPtr lep = getParticleData(ix);
       if(iz==1) lep = lep->CC();
       for(int iy=_minflavour;iy<=_maxflavour;++iy) {
 	tPDPtr quark = getParticleData(iy);
-	// lepton quark scattering via gamma and Z
+	// Quark and antiquark diagrams use different colour-line ids.
 	if(gamma) add(new_ptr((Tree2toNDiagram(3), lep, _gamma, quark,
 			       1, lep, 2, quark, -1)));
 	if(Z0)    add(new_ptr((Tree2toNDiagram(3), lep, _z0   , quark,
 			       1, lep, 2, quark, -2)));
-	// lepton antiquark scattering via gamma and Z
 	quark = quark->CC();
 	if(gamma) add(new_ptr((Tree2toNDiagram(3), lep, _gamma, quark,
 			       1, lep, 2, quark, -3)));
@@ -234,14 +241,17 @@ void MENeutralCurrentDIS::getDiagrams() const {
   }
 }
 
+// The Born neutral-current hard process has no explicit powers of alphaS.
 unsigned int MENeutralCurrentDIS::orderInAlphaS() const {
   return 0;
 }
 
+// Neutral-current DIS is an electroweak 2->2 process at Born level.
 unsigned int MENeutralCurrentDIS::orderInAlphaEW() const {
   return 2;
 }
 
+// Provide the colour flow for quark or antiquark scattering.
 Selector<const ColourLines *>
 MENeutralCurrentDIS::colourGeometries(tcDiagPtr diag) const {
   static ColourLines c1("3 5");
@@ -254,6 +264,8 @@ MENeutralCurrentDIS::colourGeometries(tcDiagPtr diag) const {
   return sel;
 }
 
+// Persist the neutral-current flavour range, exchange selector, vertices, and
+// finite-width Z option used by the helicity-amplitude path.
 void MENeutralCurrentDIS::persistentOutput(PersistentOStream & os) const {
   os << _minflavour << _maxflavour << _gammaZ << _theFFZVertex << _theFFPVertex
      << _theFFGVertex
@@ -261,6 +273,8 @@ void MENeutralCurrentDIS::persistentOutput(PersistentOStream & os) const {
      << _useFiniteWidthSpacelikeZPropagator;
 }
 
+// Read the neutral-current persistent state, defaulting the finite-width Z
+// switch for files written before that release field existed.
 void MENeutralCurrentDIS::persistentInput(PersistentIStream & is, int version) {
   is >> _minflavour >> _maxflavour >> _gammaZ >> _theFFZVertex >> _theFFPVertex
      >> _theFFGVertex
@@ -274,6 +288,7 @@ void MENeutralCurrentDIS::persistentInput(PersistentIStream & is, int version) {
 DescribeClass<MENeutralCurrentDIS,DISBase>
 describeHerwigMENeutralCurrentDIS("Herwig::MENeutralCurrentDIS", "HwMEDIS.so", 1);
 
+// Register user-facing neutral-current controls.
 void MENeutralCurrentDIS::Init() {
 
   static ClassDocumentation<MENeutralCurrentDIS> documentation
@@ -334,6 +349,8 @@ void MENeutralCurrentDIS::Init() {
      false);
 }
 
+// Weight the stored photon and Z diagrams using the separately averaged pieces
+// cached by helicityME().
 Selector<MEBase::DiagramIndex>
 MENeutralCurrentDIS::diagrams(const DiagramVector & diags) const {
   Selector<DiagramIndex> sel;
@@ -344,6 +361,8 @@ MENeutralCurrentDIS::diagrams(const DiagramVector & diags) const {
   return sel;
 }
 
+// Build the coherent gamma/Z helicity amplitude for the current Born point,
+// preserving separate photon and Z averages for diagram selection.
 double MENeutralCurrentDIS::helicityME(const pair<RhoDMatrix,RhoDMatrix> & rhoin ,
                                        vector<SpinorWaveFunction>    & f1,
 				       vector<SpinorWaveFunction>    & f2,
@@ -351,29 +370,22 @@ double MENeutralCurrentDIS::helicityME(const pair<RhoDMatrix,RhoDMatrix> & rhoin
 				       vector<SpinorBarWaveFunction> & a2,
 				       bool lorder, bool qorder,
 				       bool calc) const {
-  // scale
   Energy2 mb2(scale());
-  // matrix element to be stored
   ProductionMatrixElement menew (PDT::Spin1Half,PDT::Spin1Half,
 				 PDT::Spin1Half,PDT::Spin1Half);
   ProductionMatrixElement gamma (PDT::Spin1Half,PDT::Spin1Half,
 				 PDT::Spin1Half,PDT::Spin1Half);
   ProductionMatrixElement Zboson(PDT::Spin1Half,PDT::Spin1Half,
 				 PDT::Spin1Half,PDT::Spin1Half);
-  // which intermediates to include
   bool gam = _gammaZ==0 || _gammaZ==1;
   bool Z0  = _gammaZ==0 || _gammaZ==2;
-  // declare the variables we need
   VectorWaveFunction inter[2];
   Complex diag1,diag2;
-  // sum over helicities to get the matrix element
   unsigned int hel[4];
   unsigned int lhel1,lhel2,qhel1,qhel2;
   for(lhel1=0;lhel1<2;++lhel1) {
     for(lhel2=0;lhel2<2;++lhel2) {
-      // intermediate for photon
       if(gam) inter[0]=_theFFPVertex->evaluate(mb2,1,_gamma,f1[lhel1],a1[lhel2]);
-      // intermediate for Z
       if(Z0)    inter[1]=_theFFZVertex->evaluate(mb2,zHelicityPropagatorOption(),
                                                  _z0,f1[lhel1],a1[lhel2]);
       for(qhel1=0;qhel1<2;++qhel1) {
@@ -384,46 +396,40 @@ double MENeutralCurrentDIS::helicityME(const pair<RhoDMatrix,RhoDMatrix> & rhoin
 	  hel[3] = qhel2;
 	  if(!lorder) swap(hel[0],hel[2]);
 	  if(!qorder) swap(hel[1],hel[3]);
-	  // first the photon exchange diagram
 	  diag1 = gam ?
 	    _theFFPVertex->evaluate(mb2,f2[qhel1],a2[qhel2],inter[0]) : 0.;
-	  // then the Z exchange diagram
 	  diag2 = Z0 ?
 	    _theFFZVertex->evaluate(mb2,f2[qhel1],a2[qhel2],inter[1]) : 0.;
-	  // add up squares of individual terms
 	  gamma (hel[0],hel[1],hel[2],hel[3]) = diag1;
 	  Zboson(hel[0],hel[1],hel[2],hel[3]) = diag2;
-	  // the full thing including interference
 	  menew(hel[0],hel[1],hel[2],hel[3]) = diag1+diag2;
 	}
       }
     }
   }
-  // spin and colour factor (=1)
+  // The full matrix element keeps gamma/Z interference; the component averages
+  // remain available only to weight the diagram selector.
   double me[3]={menew .average(rhoin.first,rhoin.second),
                 gamma .average(rhoin.first,rhoin.second),
                 Zboson.average(rhoin.first,rhoin.second)};
-  // info for diagram selection
   DVector save;
   save.push_back(me[1]);
   save.push_back(me[2]);
   meInfo(save);
   if(calc) _me.reset(menew);
-  // analytic expression for testing
-//   double test = 8.*sqr(4.*Constants::pi*generator()->standardModel()->alphaEM(mb2))*
-//     sqr(double(mePartonData()[1]->iCharge())/3.)/sqr(tHat())
-//     *(sqr(sHat())+sqr(uHat())+4.*sqr(mePartonData()[0]->mass())*tHat())/4.;
-//   cerr << "testing me " << me[0]/test << "\n";
   return me[0];
 }
 
+// Re-evaluate the Born ME with explicit incoming lepton and quark longitudinal
+// polarizations. Correlated Rivet weights use this to avoid resampling events.
 double MENeutralCurrentDIS::me2ForPolarizations(double Pl, double Pq) const {
   vector<SpinorWaveFunction>    f1,f2;
   vector<SpinorBarWaveFunction> a1,a2;
   bool lorder,qorder;
   SpinorWaveFunction    l1,q1;
   SpinorBarWaveFunction l2,q2;
-  // lepton wave functions
+  // Normalize incoming/outgoing leptons and quarks to the fermion/antifermion
+  // order expected by the helicity vertices.
   if(mePartonData()[0]->id()>0) {
     lorder=true;
     l1 = SpinorWaveFunction   (meMomenta()[0],mePartonData()[0],incoming);
@@ -445,7 +451,6 @@ double MENeutralCurrentDIS::me2ForPolarizations(double Pl, double Pq) const {
     q1 = SpinorWaveFunction   (meMomenta()[3],mePartonData()[3],outgoing);
     q2 = SpinorBarWaveFunction(meMomenta()[1],mePartonData()[1],incoming);
   }
-  // wavefunctions for various helicities
   for(unsigned int ix=0;ix<2;++ix) {
     l1.reset(ix); f1.push_back(l1);
     l2.reset(ix); a1.push_back(l2);
@@ -472,28 +477,32 @@ double MENeutralCurrentDIS::me2ForPolarizations(double Pl, double Pq) const {
   return helicityME(rhoin,f1,f2,a1,a2,lorder,qorder,false);
 }
 
+// Convenience helper for one-sided parton-polarization scans.
 double MENeutralCurrentDIS::me2ForPartonPolarization(double Pq) const {
   const std::pair<RhoDMatrix,RhoDMatrix> rhoin = correctedLongitudinalRhoMatrices();
   return me2ForPolarizations(longPol(rhoin.first), Pq);
 }
 
+// Hook used by DISBase::generateRivetWeights().
 double MENeutralCurrentDIS::rivetWeightBornME2(double Pl, double Pq) const {
   return me2ForPolarizations(Pl, Pq);
 }
 
+// Standard Born ME entry point using the corrected event-local rho matrices.
 double MENeutralCurrentDIS::me2() const {
   const std::pair<RhoDMatrix,RhoDMatrix> rhoin = correctedLongitudinalRhoMatrices();
   return me2ForPolarizations(longPol(rhoin.first), longPol(rhoin.second));
 }
 
+// Attach the Born spin-correlation vertex to the hard subprocess. The event
+// record ordering is normalized to lepton/quark fermion-line order before the
+// production matrix element is constructed.
 void MENeutralCurrentDIS::constructVertex(tSubProPtr sub) {
-  // extract the particles in the hard process
   ParticleVector hard;
   hard.push_back(sub->incoming().first);
   hard.push_back(sub->incoming().second);
   hard.push_back(sub->outgoing()[0]);
   hard.push_back(sub->outgoing()[1]);
-  // sort out the ordering
   unsigned int order[4]={0,1,2,3};
   bool lorder(true),qorder(true);
   if(abs(hard[0]->id())<6) swap(hard[0],hard[1]);
@@ -514,17 +523,19 @@ void MENeutralCurrentDIS::constructVertex(tSubProPtr sub) {
   SpinorBarWaveFunction(a2,hard[order[3]], qorder ? outgoing : incoming,  qorder,true);
   pair<RhoDMatrix,RhoDMatrix> rhoin = correctedLongitudinalRhoMatrices();
   helicityME(rhoin,f1,f2,a1,a2,lorder,qorder,true);
-  // construct the vertex
   HardVertexPtr hardvertex=new_ptr(HardVertex());
-  // set the matrix element for the vertex
   hardvertex->ME(_me);
-  // set the pointers and to and from the vertex
+  // Store the rho matrices that were used in the amplitude and point every
+  // external hard leg at the shared production vertex.
   hard[order[0]]->spinInfo()->rhoMatrix(rhoin.first );
   hard[order[1]]->spinInfo()->rhoMatrix(rhoin.second);
   for(unsigned int ix=0;ix<4;++ix)
     hard[ix]->spinInfo()->productionVertex(hardvertex);
 }
 
+// Build the exact spin-only HardVertex for a realised POWHEG real emission.
+// Generation has already selected and accepted the 2->3 kinematics; this hook
+// only supplies spin correlations for subsequent decays/analysis.
 void MENeutralCurrentDIS::constructRealEmissionSpinVertex(RealEmissionProcessPtr proc,
                                                           bool isCompton) const {
   RealEmissionLegs legs;
@@ -581,6 +592,8 @@ void MENeutralCurrentDIS::constructRealEmissionSpinVertex(RealEmissionProcessPtr
   legs.out2->spinInfo()->productionVertex(hardvertex);
 }
 
+// Exact gamma/Z QCDC real-emission helicity amplitude for the spin-correlation
+// vertex. Both gluon-emission orderings on the quark line are included.
 ProductionMatrixElement MENeutralCurrentDIS::qcdcRealEmissionME(PPtr lin, PPtr qin,
                                                                 PPtr lout, PPtr qout,
                                                                 PPtr gout,
@@ -654,6 +667,8 @@ ProductionMatrixElement MENeutralCurrentDIS::qcdcRealEmissionME(PPtr lin, PPtr q
   return prodme;
 }
 
+// Exact gamma/Z BGF real-emission helicity amplitude for the spin-correlation
+// vertex, with the incoming gluon represented by its two physical helicities.
 ProductionMatrixElement MENeutralCurrentDIS::bgfRealEmissionME(PPtr lin, PPtr gin,
                                                                PPtr lout, PPtr qout,
                                                                PPtr qbout,
@@ -733,15 +748,16 @@ ProductionMatrixElement MENeutralCurrentDIS::bgfRealEmissionME(PPtr lin, PPtr gi
   return prodme;
 }
 
+// Legacy unpolarized analyzing coefficient used by the MEC kernels.
 double MENeutralCurrentDIS::A(tcPDPtr lin, tcPDPtr,
 			      tcPDPtr qin, tcPDPtr, Energy2 q2) const {
-  // photon only 
   if(_gammaZ==1) return 0.;
   const NCCoefficients coeff = ncCoefficients(lin, qin, q2);
   if (coeff.D0 == 0.0) return 0.0;
   return coeff.N0 / coeff.D0;
 }
 
+// Polarized analyzing coefficient for the retained NLO/MEC expressions.
 double MENeutralCurrentDIS::A_pol(tcPDPtr lin, tcPDPtr,
                                   tcPDPtr qin, tcPDPtr,
                                   Energy2 q2, double Pl, double Pq) const {
@@ -761,6 +777,8 @@ double MENeutralCurrentDIS::A_pol(tcPDPtr lin, tcPDPtr,
   return num / den;
 }
 
+// Split the neutral-current Born angular response into the pieces multiplying
+// the quark and gluon collinear kernels in the common NLO assembly.
 DISBase::CollinearBlendWeights
 MENeutralCurrentDIS::collinearBlendWeights(tcPDPtr lin, tcPDPtr,
                                            tcPDPtr qin, tcPDPtr,
@@ -800,6 +818,8 @@ MENeutralCurrentDIS::collinearBlendWeights(tcPDPtr lin, tcPDPtr,
   return {qUnpolarized, qPolarized, gUnpolarized, gPolarized};
 }
 
+// Correct the QCDC denominator when the emission kernel uses the mapped
+// incoming-parton polarization rather than the Born one.
 double MENeutralCurrentDIS::qcdcMappedDenominatorRatio(tcPDPtr lin, tcPDPtr,
                                                        tcPDPtr qin, tcPDPtr,
                                                        Energy2 q2, double Pl,
@@ -816,6 +836,7 @@ double MENeutralCurrentDIS::qcdcMappedDenominatorRatio(tcPDPtr lin, tcPDPtr,
   return dMapped / dBorn;
 }
 
+// Return the parity-even denominator entering the mapped real-emission kernel.
 double MENeutralCurrentDIS::realEmissionDenominatorFactor(tcPDPtr lin, tcPDPtr,
                                                           tcPDPtr qin, tcPDPtr,
                                                           Energy2 q2, double Pl,
@@ -827,10 +848,13 @@ double MENeutralCurrentDIS::realEmissionDenominatorFactor(tcPDPtr lin, tcPDPtr,
        + Pl * mappedPartonPol * coeff.Dlq;
 }
 
+// Neutral-current real-emission kernels need the mapped incoming polarization
+// because the parity structure depends on the parton polarization at mapped x.
 bool MENeutralCurrentDIS::useMappedPolarizedEmissionKernel() const {
   return true;
 }
 
+// Born angular factor for the requested lepton/quark polarizations.
 double MENeutralCurrentDIS::sigmaBornFactor(tcPDPtr lin, tcPDPtr qin, Energy2 q2,
                                             double Pl, double Pq,
                                             double ell) const {
@@ -846,6 +870,8 @@ double MENeutralCurrentDIS::sigmaBornFactor(tcPDPtr lin, tcPDPtr qin, Energy2 q2
   return (1.0 + sqr(ell)) * (D_even + D_spin) + ell * (N_even + N_spin);
 }
 
+// Assemble the neutral-current gamma/Z coefficient basis. The eta factors keep
+// lepton and quark versus antiparticle signs explicit for parity-odd terms.
 MENeutralCurrentDIS::NCCoefficients
 MENeutralCurrentDIS::ncCoefficients(tcPDPtr lin, tcPDPtr qin, Energy2 q2) const {
   NCCoefficients out{};
@@ -912,6 +938,8 @@ MENeutralCurrentDIS::ncCoefficients(tcPDPtr lin, tcPDPtr qin, Energy2 q2) const 
   return out;
 }
 
+// Provide the parity-odd response needed by DISBase::NLOWeightRaw(). Returning
+// false lets photon-only running use the base photon-like expression.
 bool MENeutralCurrentDIS::neutralCurrentResponse(tcPDPtr lin, tcPDPtr,
                                                  tcPDPtr qin, tcPDPtr,
                                                  Energy2 q2,
