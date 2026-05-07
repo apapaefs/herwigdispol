@@ -2,7 +2,7 @@
 
 ##################################################
 # Photon-only NLO DIS — unpolarized (00)
-# Diagnostic: baseline for photon-only NLO comparison
+# Photon-only NLO DIS setup
 ##################################################
 
 read snippets/EPCollider.in
@@ -153,9 +153,6 @@ set PowhegMEDISNCPol:GammaZ All
 set PowhegMEDISNCPol:Contribution NegativeNLO
 set /Herwig/MatrixElements/PowhegMEDISNCPol:UsePOWHEGRealSpinVertex Yes
 set /Herwig/Shower/ShowerHandler:SpinCorrelations Yes
-set /Herwig/MatrixElements/PowhegMEDISNCPol:DISDiagnostics On
-set /Herwig/MatrixElements/PowhegMEDISNCPol:DiagnosePOWHEGRealSpinVertex Yes
-set /Herwig/MatrixElements/PowhegMEDISNCPol:POWHEGRealSpinDiagMax 200
 # Use NLOAlphaS (2-loop) with α_s(MZ)=0.118
 set /Herwig/Model:QCD/RunningAlphaS /Herwig/Couplings/NLOAlphaS
 set /Herwig/Model:QCD/AlphaS 0.118

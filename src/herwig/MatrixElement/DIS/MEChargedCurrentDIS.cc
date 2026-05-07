@@ -74,26 +74,6 @@ void ensureRealEmissionSpinInfo(const PPtr & part, bool incomingLeg) {
   }
 }
 
-RhoDMatrix longitudinalRhoMatrix(tcPDPtr data, double pol) {
-  pol = std::max(-1.0, std::min(1.0, pol));
-  RhoDMatrix rho(data->iSpin());
-  if (data->iSpin() == PDT::Spin1Half) {
-    const unsigned int imax = rho.iSpin() - 1;
-    rho(0,0) = 0.5 * (1.0 - pol);
-    rho(imax,imax) = 0.5 * (1.0 + pol);
-    rho(0,imax) = 0.0;
-    rho(imax,0) = 0.0;
-  } else if (data->iSpin() == PDT::Spin1) {
-    rho(0,0) = 0.5 * (1.0 - pol);
-    rho(1,1) = 0.0;
-    rho(2,2) = 0.5 * (1.0 + pol);
-    rho(0,1) = rho(1,0) = 0.0;
-    rho(0,2) = rho(2,0) = 0.0;
-    rho(1,2) = rho(2,1) = 0.0;
-  }
-  return rho;
-}
-
 struct FermionLineWaves {
   vector<SpinorWaveFunction> fermion;
   vector<SpinorBarWaveFunction> antifermion;
@@ -194,69 +174,6 @@ bool collectRealEmissionLegs(const RealEmissionProcessPtr & proc,
     legs.out2Role = "qbout";
   }
   return true;
-}
-
-struct MatrixDiagnostics {
-  double traceRe;
-  double traceIm;
-  double maxAntiHerm;
-  double minDiag;
-  double maxDiag;
-  double maxDiagIm;
-  double d0;
-  double d1;
-  double d2;
-  bool finite;
-  bool normalized;
-  bool hermitian;
-  bool sensible;
-};
-
-MatrixDiagnostics inspectMatrix(const RhoDMatrix & rho) {
-  const double nan = std::numeric_limits<double>::quiet_NaN();
-  MatrixDiagnostics out{nan, nan, nan, nan, nan, nan, nan, nan, nan,
-                        true, false, false, false};
-  const unsigned int dim = std::abs(int(rho.iSpin()));
-  if (dim == 0) {
-    out.finite = false;
-    return out;
-  }
-
-  Complex trace = 0.;
-  out.maxAntiHerm = 0.0;
-  out.minDiag = std::numeric_limits<double>::infinity();
-  out.maxDiag = -std::numeric_limits<double>::infinity();
-  out.maxDiagIm = 0.0;
-
-  for (unsigned int i = 0; i < dim; ++i) {
-    const Complex diag = rho(i, i);
-    if (!std::isfinite(diag.real()) || !std::isfinite(diag.imag())) out.finite = false;
-    trace += diag;
-    out.minDiag = std::min(out.minDiag, diag.real());
-    out.maxDiag = std::max(out.maxDiag, diag.real());
-    out.maxDiagIm = std::max(out.maxDiagIm, std::abs(diag.imag()));
-    if (i == 0) out.d0 = diag.real();
-    else if (i == 1) out.d1 = diag.real();
-    else if (i == 2) out.d2 = diag.real();
-    for (unsigned int j = i + 1; j < dim; ++j) {
-      const Complex aij = rho(i, j);
-      const Complex aji = rho(j, i);
-      if (!std::isfinite(aij.real()) || !std::isfinite(aij.imag()) ||
-          !std::isfinite(aji.real()) || !std::isfinite(aji.imag())) {
-        out.finite = false;
-      }
-      out.maxAntiHerm = std::max(out.maxAntiHerm, std::abs(aij - conj(aji)));
-    }
-  }
-
-  out.traceRe = trace.real();
-  out.traceIm = trace.imag();
-  out.normalized = out.finite && std::abs(out.traceRe - 1.0) < 1e-8 &&
-                   std::abs(out.traceIm) < 1e-8;
-  out.hermitian = out.finite && out.maxAntiHerm < 1e-8 && out.maxDiagIm < 1e-8;
-  out.sensible = out.normalized && out.hermitian &&
-                 out.minDiag > -1e-8 && out.maxDiag < 1.0 + 1e-8;
-  return out;
 }
 
 }
@@ -471,42 +388,8 @@ double MEChargedCurrentDIS::helicityME(const pair<RhoDMatrix,RhoDMatrix> & rhoin
 }
 
 double MEChargedCurrentDIS::me2() const {
-  vector<SpinorWaveFunction>    f1,f2;
-  vector<SpinorBarWaveFunction> a1,a2;
-  bool lorder,qorder;
-  SpinorWaveFunction    l1,q1;
-  SpinorBarWaveFunction l2,q2;
-  // lepton wave functions
-  if(mePartonData()[0]->id()>0) {
-    lorder=true;
-    l1 = SpinorWaveFunction   (meMomenta()[0],mePartonData()[0],incoming);
-    l2 = SpinorBarWaveFunction(meMomenta()[2],mePartonData()[2],outgoing);
-  }
-  else {
-    lorder=false;
-    l1 = SpinorWaveFunction   (meMomenta()[2],mePartonData()[2],outgoing);
-    l2 = SpinorBarWaveFunction(meMomenta()[0],mePartonData()[0],incoming);
-  }
-  // quark wave functions
-  if(mePartonData()[1]->id()>0) {
-    qorder = true;
-    q1 = SpinorWaveFunction   (meMomenta()[1],mePartonData()[1],incoming);
-    q2 = SpinorBarWaveFunction(meMomenta()[3],mePartonData()[3],outgoing);
-  }
-  else {
-    qorder = false;
-    q1 = SpinorWaveFunction   (meMomenta()[3],mePartonData()[3],outgoing);
-    q2 = SpinorBarWaveFunction(meMomenta()[1],mePartonData()[1],incoming);
-  }
-  // wavefunctions for various helicities
-  for(unsigned int ix=0;ix<2;++ix) {
-    l1.reset(ix); f1.push_back(l1);
-    l2.reset(ix); a1.push_back(l2);
-    q1.reset(ix); f2.push_back(q1);
-    q2.reset(ix); a2.push_back(q2);
-  }
   const pair<RhoDMatrix,RhoDMatrix> rhoin = correctedLongitudinalRhoMatrices();
-  return helicityME(rhoin,f1,f2,a1,a2,lorder,qorder,false);
+  return me2ForPolarizations(longPol(rhoin.first), longPol(rhoin.second));
 }
 
 void MEChargedCurrentDIS::constructVertex(tSubProPtr sub) {
@@ -588,11 +471,11 @@ void MEChargedCurrentDIS::constructRealEmissionSpinVertex(RealEmissionProcessPtr
   if (proc->incoming().size() == 2) {
     xMapped = (proc->incoming()[0] == legs.pin) ? proc->x().first : proc->x().second;
   }
-  const double mappedPol =
-    mappedIncomingLongitudinalPolarization(legs.pin->dataPtr(), xMapped, q2);
+  const MappedIncomingSpinDensity mappedSpin =
+    mappedIncomingSpinDensity(legs.pin->dataPtr(), xMapped, q2, "powheg-vertex");
 
   legs.lin->spinInfo()->rhoMatrix(leptonRho);
-  legs.pin->spinInfo()->rhoMatrix(longitudinalRhoMatrix(legs.pin->dataPtr(), mappedPol));
+  legs.pin->spinInfo()->rhoMatrix(mappedSpin.rho);
 
   HardVertexPtr hardvertex = new_ptr(HardVertex());
   hardvertex->ME(prodme);
@@ -602,98 +485,6 @@ void MEChargedCurrentDIS::constructRealEmissionSpinVertex(RealEmissionProcessPtr
   legs.lout->spinInfo()->productionVertex(hardvertex);
   legs.out1->spinInfo()->productionVertex(hardvertex);
   legs.out2->spinInfo()->productionVertex(hardvertex);
-}
-
-void MEChargedCurrentDIS::diagnoseRealEmissionSpinState(RealEmissionProcessPtr proc,
-                                                        bool isCompton) const {
-  unsigned long diagIndex = 0;
-  if (!nextPOWHEGRealSpinDiagnosticSlot(diagIndex)) return;
-
-  RealEmissionLegs legs;
-  if (!collectRealEmissionLegs(proc, isCompton, legs)) {
-    generator()->log() << "POWHEG_SPIN_EVENT"
-                       << " event=" << diagIndex
-                       << " proc=" << (isCompton ? "QCDC" : "BGF")
-                       << " enabled=" << (usePOWHEGRealSpinVertex() ? 1 : 0)
-                       << " parsed=0\n";
-    return;
-  }
-
-  struct LegView {
-    const char * role;
-    PPtr part;
-    bool incoming;
-  };
-  const LegView views[] = {
-    {"lin",  legs.lin,  true},
-    {"pin",  legs.pin,  true},
-    {"lout", legs.lout, false},
-    {legs.out1Role.c_str(), legs.out1, false},
-    {legs.out2Role.c_str(), legs.out2, false}
-  };
-
-  bool allSpin = true;
-  bool allVertex = true;
-  bool allHardVertex = true;
-  bool allSensible = true;
-
-  for (const auto & view : views) {
-    const tSpinPtr spin = view.part ? view.part->spinInfo() : tSpinPtr();
-    const bool hasSpin = bool(spin);
-    const tcVertexPtr vertex = hasSpin ? spin->productionVertex() : tcVertexPtr();
-    const bool hasVertex = bool(vertex);
-    const bool vertexIsHard = bool(ThePEG::dynamic_ptr_cast<tcHardVertexPtr>(vertex));
-    const int prodLoc = hasSpin ? spin->productionLocation() : -1;
-
-    allSpin = allSpin && hasSpin;
-    allVertex = allVertex && hasVertex;
-    allHardVertex = allHardVertex && vertexIsHard;
-
-    RhoDMatrix rho;
-    if (hasSpin) {
-      if (view.incoming) rho = spin->rhoMatrix();
-      else if (hasVertex && prodLoc >= 0) rho = vertex->getRhoMatrix(prodLoc, true);
-    }
-    MatrixDiagnostics md = inspectMatrix(rho);
-    allSensible = allSensible && md.sensible;
-
-    generator()->log() << "POWHEG_SPIN_LEG"
-                       << " event=" << diagIndex
-                       << " proc=" << legs.process
-                       << " role=" << view.role
-                       << " incoming=" << (view.incoming ? 1 : 0)
-                       << " id=" << (view.part ? view.part->id() : 0)
-                       << " hasSpin=" << (hasSpin ? 1 : 0)
-                       << " hasVertex=" << (hasVertex ? 1 : 0)
-                       << " vertexHard=" << (vertexIsHard ? 1 : 0)
-                       << " loc=" << prodLoc
-                       << " source=" << (view.incoming ? "stored" : "vertex")
-                       << " trace=" << md.traceRe
-                       << " traceIm=" << md.traceIm
-                       << " antiHerm=" << md.maxAntiHerm
-                       << " minDiag=" << md.minDiag
-                       << " maxDiag=" << md.maxDiag
-                       << " maxDiagIm=" << md.maxDiagIm
-                       << " d0=" << md.d0
-                       << " d1=" << md.d1
-                       << " d2=" << md.d2
-                       << " finite=" << (md.finite ? 1 : 0)
-                       << " normalized=" << (md.normalized ? 1 : 0)
-                       << " hermitian=" << (md.hermitian ? 1 : 0)
-                       << " sensible=" << (md.sensible ? 1 : 0)
-                       << "\n";
-  }
-
-  generator()->log() << "POWHEG_SPIN_EVENT"
-                     << " event=" << diagIndex
-                     << " proc=" << legs.process
-                     << " enabled=" << (usePOWHEGRealSpinVertex() ? 1 : 0)
-                     << " parsed=1"
-                     << " allSpin=" << (allSpin ? 1 : 0)
-                     << " allVertex=" << (allVertex ? 1 : 0)
-                     << " allHardVertex=" << (allHardVertex ? 1 : 0)
-                     << " allSensible=" << (allSensible ? 1 : 0)
-                     << "\n";
 }
 
 ProductionMatrixElement MEChargedCurrentDIS::qcdcRealEmissionME(PPtr lin, PPtr qin,
@@ -868,4 +659,42 @@ bool MEChargedCurrentDIS::useMappedPolarizedEmissionKernel() const {
 double MEChargedCurrentDIS::ccHadronSpinFactor(tcPDPtr qin, double Pq) const {
   const double etaQ = (qin->id() < 0) ? -1.0 : 1.0;
   return 1.0 - etaQ * Pq;
+}
+
+double MEChargedCurrentDIS::me2ForPolarizations(double Pl, double Pq) const {
+  vector<SpinorWaveFunction>    f1,f2;
+  vector<SpinorBarWaveFunction> a1,a2;
+  bool lorder,qorder;
+  SpinorWaveFunction    l1,q1;
+  SpinorBarWaveFunction l2,q2;
+  if(mePartonData()[0]->id()>0) {
+    lorder=true;
+    l1 = SpinorWaveFunction   (meMomenta()[0],mePartonData()[0],incoming);
+    l2 = SpinorBarWaveFunction(meMomenta()[2],mePartonData()[2],outgoing);
+  }
+  else {
+    lorder=false;
+    l1 = SpinorWaveFunction   (meMomenta()[2],mePartonData()[2],outgoing);
+    l2 = SpinorBarWaveFunction(meMomenta()[0],mePartonData()[0],incoming);
+  }
+  if(mePartonData()[1]->id()>0) {
+    qorder = true;
+    q1 = SpinorWaveFunction   (meMomenta()[1],mePartonData()[1],incoming);
+    q2 = SpinorBarWaveFunction(meMomenta()[3],mePartonData()[3],outgoing);
+  }
+  else {
+    qorder = false;
+    q1 = SpinorWaveFunction   (meMomenta()[3],mePartonData()[3],outgoing);
+    q2 = SpinorBarWaveFunction(meMomenta()[1],mePartonData()[1],incoming);
+  }
+  for(unsigned int ix=0;ix<2;++ix) {
+    l1.reset(ix); f1.push_back(l1);
+    l2.reset(ix); a1.push_back(l2);
+    q1.reset(ix); f2.push_back(q1);
+    q2.reset(ix); a2.push_back(q2);
+  }
+  const pair<RhoDMatrix,RhoDMatrix> rhoin =
+    make_pair(longitudinalRhoMatrix(mePartonData()[0], Pl),
+              longitudinalRhoMatrix(mePartonData()[1], Pq));
+  return helicityME(rhoin,f1,f2,a1,a2,lorder,qorder,false);
 }

@@ -105,7 +105,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--audit-qid",
         type=int,
         default=None,
-        help="Optional single-flavor PDG id for the LO_GAMMA_POINT-style audit summary in point mode.",
+        help="Optional single-flavor PDG id for the point-mode LO summary.",
     )
     parser.add_argument(
         "--audit-jacobian",

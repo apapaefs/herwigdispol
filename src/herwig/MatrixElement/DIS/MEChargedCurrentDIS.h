@@ -194,19 +194,11 @@ protected:
    */
   virtual bool useMappedPolarizedEmissionKernel() const override;
 
-protected:
-
   /**
    * Attach an exact spin-only HardVertex to the realised POWHEG 2->3 state.
    */
   virtual void constructRealEmissionSpinVertex(RealEmissionProcessPtr proc,
                                                bool isCompton) const override;
-
-  /**
-   * Emit a dedicated diagnostic for the realised POWHEG 2->3 spin state.
-   */
-  virtual void diagnoseRealEmissionSpinState(RealEmissionProcessPtr proc,
-                                             bool isCompton) const override;
 
 protected:
 
@@ -264,6 +256,12 @@ private:
    * Charged-current quark-line chiral prefactor on the hadron side.
    */
   double ccHadronSpinFactor(tcPDPtr qin, double Pq) const;
+
+  /**
+   * Evaluate the Born matrix element for explicit longitudinal beam and
+   * parton polarizations.
+   */
+  double me2ForPolarizations(double Pl, double Pq) const;
 
   /**
    * The assignment operator is private and must never be called.

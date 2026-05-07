@@ -148,6 +148,9 @@ SUPPORTED_SETUPS = DEFAULT_SETUPS + ("CC",)
 TOTAL_RE = re.compile(
     r"Total\s+\(from generated events\):\s+(\S+)\s+(\S+)\s+([0-9.]+)\((\d+)\)e([+-]?\d+)"
 )
+ATTEMPTED_TOTAL_RE = re.compile(
+    r"Total\s+\(from attempted events\):\s+including vetoed events\s+([0-9.]+)\((\d+)\)e([+-]?\d+)"
+)
 UNIT_RE = re.compile(r"Cross-section\s*\(([^)]+)\)")
 
 LO_NAME_RE = re.compile(
@@ -158,10 +161,8 @@ NLO_NAME_RE = re.compile(
     r"^DIS-POL-POWHEG_(?P<hel>PP|PM|MP|MM|00)-(?P<part>POSNLO|NEGNLO)-(?P<ew>ALL|GAMMA|Z|CC)"
     r"(?:-(?P<analysis>RIVETFOFIXED|RIVETWEIGHTS|RIVETFO|RIVET))?(?:-(?P<variant>[^.]+))?\.out$"
 )
-# Support both plain shard variants like
-#   S700560-plain48-z-termdiag-s001
-# and prefixed variants like
-#   TERMDIAG-SP040-S710000-plain49-gamma-termdiag-power-s001
+# Support seeded shard variants such as
+#   S700560-plain48-gamma-interior-s001
 SEEDED_VARIANT_RE = re.compile(r"(?:^|-)S\d+-(?P<tag>.+)$")
 
 
@@ -445,9 +446,28 @@ def value_with_paren_error(mantissa_text: str, err_digits_text: str, exponent_te
     return value, error
 
 
-def parse_measurement(text: str) -> Tuple[Optional[Measurement], Optional[str]]:
+def _measurement_from_raw(value_raw: float, error_raw: float, unit: Optional[str]) -> Measurement:
+    if unit is None or unit.lower() == "nb":
+        return Measurement(nb_to_pb(value_raw), nb_to_pb(error_raw))
+    if unit.lower() == "pb":
+        return Measurement(value_raw, error_raw)
+    raise ValueError(f"Unsupported cross-section unit {unit!r}")
+
+
+def parse_measurement(text: str, prefer_attempted: bool = False) -> Tuple[Optional[Measurement], Optional[str]]:
     unit_match = UNIT_RE.search(text)
     unit = unit_match.group(1).strip() if unit_match else None
+
+    if prefer_attempted:
+        attempted_matches = list(ATTEMPTED_TOTAL_RE.finditer(text))
+        if attempted_matches:
+            attempted = attempted_matches[-1]
+            value_raw, error_raw = value_with_paren_error(
+                attempted.group(1),
+                attempted.group(2),
+                attempted.group(3),
+            )
+            return _measurement_from_raw(value_raw, error_raw, unit), unit or "nb"
 
     matches = list(TOTAL_RE.finditer(text))
     if not matches:
@@ -456,12 +476,7 @@ def parse_measurement(text: str) -> Tuple[Optional[Measurement], Optional[str]]:
     last = matches[-1]
     value_raw, error_raw = value_with_paren_error(last.group(3), last.group(4), last.group(5))
 
-    if unit is None or unit.lower() == "nb":
-        return Measurement(nb_to_pb(value_raw), nb_to_pb(error_raw)), unit or "nb"
-    if unit.lower() == "pb":
-        return Measurement(value_raw, error_raw), unit
-
-    raise ValueError(f"Unsupported cross-section unit {unit!r}")
+    return _measurement_from_raw(value_raw, error_raw, unit), unit or "nb"
 
 
 def parse_generated_event_count(text: str) -> Optional[int]:
@@ -470,6 +485,16 @@ def parse_generated_event_count(text: str) -> Optional[int]:
         return None
     try:
         return int(matches[-1].group(1))
+    except ValueError:
+        return None
+
+
+def parse_attempted_event_count(text: str) -> Optional[int]:
+    matches = list(TOTAL_RE.finditer(text))
+    if not matches:
+        return None
+    try:
+        return int(matches[-1].group(2))
     except ValueError:
         return None
 
@@ -644,7 +669,7 @@ def load_run(base_dir: Path, requested_name: str, preferred_tag: str, strict_tag
     units: List[str] = []
     for path in paths:
         text = path.read_text()
-        measurement, unit = parse_measurement(text)
+        measurement, unit = parse_measurement(text, prefer_attempted=False)
         if measurement is not None:
             measurements.append(measurement)
             generated_events.append(parse_generated_event_count(text))

@@ -363,7 +363,7 @@ def estimate_file_completion(
 def format_extract_status(extract_status: object) -> str:
     if not isinstance(extract_status, dict) or not extract_status:
         return "n/a"
-    ordered_keys = ("raw_powheg", "yoda_merge", "yoda_nlo", "results", "diagnostic", "spin_diagnostic")
+    ordered_keys = ("yoda_merge", "yoda_nlo", "results", "diagnostic", "spin_diagnostic")
     parts = []
     for key in ordered_keys:
         if key in extract_status:
@@ -1044,7 +1044,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--negnlo-events", type=int, default=10_000_000, help="Events per NEGNLO run.")
     parser.add_argument("--rivet", action="store_true", help="Campaign uses --rivet.")
     parser.add_argument("--rivetfo", action="store_true", help="Campaign uses --rivetfo.")
-    parser.add_argument("--raw-powheg", action="store_true", help="Campaign uses --raw-powheg.")
     parser.add_argument("--include-lo", action="store_true", default=None, help="Campaign uses --include-lo.")
     parser.add_argument("--diagnostics", action="store_true", default=None, help="Campaign uses --diagnostics.")
     parser.add_argument("--scale-variations", action="store_true", default=None, help="Campaign uses --scale-variations.")

@@ -170,24 +170,11 @@ protected:
                         tcPDPtr qin, tcPDPtr qout,
                         Energy2 scale, double Pl, double Pq) const override;
 
-protected:
-
-  /**
-   * True when the configured neutral-current mode is pure gamma exchange.
-   */
-  virtual bool pureLOGammaPointAuditChannel() const override;
-
   /**
    * Attach an exact spin-only HardVertex to the realised POWHEG 2->3 state.
    */
   virtual void constructRealEmissionSpinVertex(RealEmissionProcessPtr proc,
                                                bool isCompton) const override;
-
-  /**
-   * Emit a dedicated diagnostic for the realised POWHEG 2->3 spin state.
-   */
-  virtual void diagnoseRealEmissionSpinState(RealEmissionProcessPtr proc,
-                                             bool isCompton) const override;
 
   /**
    * Exact collinear projectors for NC DIS. These separate the Born pieces
@@ -213,14 +200,31 @@ protected:
                                             double PqMapped) const override;
 
   /**
-   * Event-local closure diagnostic comparing me2(P_q) and me2(P_{q,m})
-   * against the exact sigma_B factors implied by the NC coefficients.
+   * Exact parity-even denominator for the mapped NC real-emission kernel.
    */
-  virtual bool bornClosureDiagnostics(double Pl,
+  virtual double realEmissionDenominatorFactor(tcPDPtr lin, tcPDPtr lout,
+                                               tcPDPtr qin, tcPDPtr qout,
+                                               Energy2 scale,
+                                               double Pl,
+                                               double mappedPartonPol) const override;
+
+  /**
+   * Neutral-current accepted-emission kernels should use the mapped
+   * x_B/x_p polarization consistently with the NLO weight.
+   */
+  virtual bool useMappedPolarizedEmissionKernel() const override;
+
+  /**
+   * Neutral-current response coefficients used by the polarized NLO assembly.
+   */
+  virtual bool neutralCurrentResponse(tcPDPtr lin, tcPDPtr lout,
+                                      tcPDPtr qin, tcPDPtr qout,
+                                      Energy2 scale,
+                                      double Pl,
                                       double PqBorn,
                                       double PqMapped,
                                       double ell,
-                                      BornClosureDiagnostics &out) const override;
+                                      NeutralCurrentResponse &out) const override;
 
   /** @name Standard Interfaced functions. */
   //@{
@@ -265,6 +269,12 @@ private:
    * and quark species at momentum transfer q2.
    */
   NCCoefficients ncCoefficients(tcPDPtr lin, tcPDPtr qin, Energy2 q2) const;
+
+  /**
+   * Evaluate the Born ME with the current kinematics but custom incoming
+   * lepton and quark longitudinal polarisations.
+   */
+  virtual double rivetWeightBornME2(double Pl, double Pq) const override;
 
   /**
    * Evaluate the Born ME with the current kinematics but custom incoming

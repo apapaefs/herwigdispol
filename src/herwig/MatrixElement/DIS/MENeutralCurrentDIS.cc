@@ -74,26 +74,6 @@ void ensureRealEmissionSpinInfo(const PPtr & part, bool incomingLeg) {
   }
 }
 
-RhoDMatrix longitudinalRhoMatrix(tcPDPtr data, double pol) {
-  pol = std::max(-1.0, std::min(1.0, pol));
-  RhoDMatrix rho(data->iSpin());
-  if (data->iSpin() == PDT::Spin1Half) {
-    const unsigned int imax = rho.iSpin() - 1;
-    rho(0,0) = 0.5 * (1.0 - pol);
-    rho(imax,imax) = 0.5 * (1.0 + pol);
-    rho(0,imax) = 0.0;
-    rho(imax,0) = 0.0;
-  } else if (data->iSpin() == PDT::Spin1) {
-    rho(0,0) = 0.5 * (1.0 - pol);
-    rho(1,1) = 0.0;
-    rho(2,2) = 0.5 * (1.0 + pol);
-    rho(0,1) = rho(1,0) = 0.0;
-    rho(0,2) = rho(2,0) = 0.0;
-    rho(1,2) = rho(2,1) = 0.0;
-  }
-  return rho;
-}
-
 struct FermionLineWaves {
   vector<SpinorWaveFunction> fermion;
   vector<SpinorBarWaveFunction> antifermion;
@@ -196,69 +176,6 @@ bool collectRealEmissionLegs(const RealEmissionProcessPtr & proc,
   return true;
 }
 
-struct MatrixDiagnostics {
-  double traceRe;
-  double traceIm;
-  double maxAntiHerm;
-  double minDiag;
-  double maxDiag;
-  double maxDiagIm;
-  double d0;
-  double d1;
-  double d2;
-  bool finite;
-  bool normalized;
-  bool hermitian;
-  bool sensible;
-};
-
-MatrixDiagnostics inspectMatrix(const RhoDMatrix & rho) {
-  const double nan = std::numeric_limits<double>::quiet_NaN();
-  MatrixDiagnostics out{nan, nan, nan, nan, nan, nan, nan, nan, nan,
-                        true, false, false, false};
-  const unsigned int dim = std::abs(int(rho.iSpin()));
-  if (dim == 0) {
-    out.finite = false;
-    return out;
-  }
-
-  Complex trace = 0.;
-  out.maxAntiHerm = 0.0;
-  out.minDiag = std::numeric_limits<double>::infinity();
-  out.maxDiag = -std::numeric_limits<double>::infinity();
-  out.maxDiagIm = 0.0;
-
-  for (unsigned int i = 0; i < dim; ++i) {
-    const Complex diag = rho(i, i);
-    if (!std::isfinite(diag.real()) || !std::isfinite(diag.imag())) out.finite = false;
-    trace += diag;
-    out.minDiag = std::min(out.minDiag, diag.real());
-    out.maxDiag = std::max(out.maxDiag, diag.real());
-    out.maxDiagIm = std::max(out.maxDiagIm, std::abs(diag.imag()));
-    if (i == 0) out.d0 = diag.real();
-    else if (i == 1) out.d1 = diag.real();
-    else if (i == 2) out.d2 = diag.real();
-    for (unsigned int j = i + 1; j < dim; ++j) {
-      const Complex aij = rho(i, j);
-      const Complex aji = rho(j, i);
-      if (!std::isfinite(aij.real()) || !std::isfinite(aij.imag()) ||
-          !std::isfinite(aji.real()) || !std::isfinite(aji.imag())) {
-        out.finite = false;
-      }
-      out.maxAntiHerm = std::max(out.maxAntiHerm, std::abs(aij - conj(aji)));
-    }
-  }
-
-  out.traceRe = trace.real();
-  out.traceIm = trace.imag();
-  out.normalized = out.finite && std::abs(out.traceRe - 1.0) < 1e-8 &&
-                   std::abs(out.traceIm) < 1e-8;
-  out.hermitian = out.finite && out.maxAntiHerm < 1e-8 && out.maxDiagIm < 1e-8;
-  out.sensible = out.normalized && out.hermitian &&
-                 out.minDiag > -1e-8 && out.maxDiag < 1.0 + 1e-8;
-  return out;
-}
-
 }
 
 MENeutralCurrentDIS::MENeutralCurrentDIS() 
@@ -288,13 +205,6 @@ void MENeutralCurrentDIS::doinit() {
   _cosW = sqrt(1.-_sinW);
   _sinW = sqrt(_sinW);
   _mz2 = sqr(_z0->mass());
-#if 0
-  // Debug: print coupling values during initialization.
-  double alphaEM_val = generator()->standardModel()->alphaEM();
-  generator()->log() << "MENeutralCurrentDIS: alphaEM (fixed) = " << alphaEM_val << "\n";
-  double alphaS_val = generator()->standardModel()->alphaS();
-  generator()->log() << "MENeutralCurrentDIS: alphaS (fixed) = " << alphaS_val << "\n";
-#endif
 }
 
 void MENeutralCurrentDIS::getDiagrams() const {
@@ -567,13 +477,13 @@ double MENeutralCurrentDIS::me2ForPartonPolarization(double Pq) const {
   return me2ForPolarizations(longPol(rhoin.first), Pq);
 }
 
+double MENeutralCurrentDIS::rivetWeightBornME2(double Pl, double Pq) const {
+  return me2ForPolarizations(Pl, Pq);
+}
+
 double MENeutralCurrentDIS::me2() const {
   const std::pair<RhoDMatrix,RhoDMatrix> rhoin = correctedLongitudinalRhoMatrices();
   return me2ForPolarizations(longPol(rhoin.first), longPol(rhoin.second));
-}
-
-bool MENeutralCurrentDIS::pureLOGammaPointAuditChannel() const {
-  return gammaZOption() == 1;
 }
 
 void MENeutralCurrentDIS::constructVertex(tSubProPtr sub) {
@@ -655,11 +565,11 @@ void MENeutralCurrentDIS::constructRealEmissionSpinVertex(RealEmissionProcessPtr
   if (proc->incoming().size() == 2) {
     xMapped = (proc->incoming()[0] == legs.pin) ? proc->x().first : proc->x().second;
   }
-  const double mappedPol =
-    mappedIncomingLongitudinalPolarization(legs.pin->dataPtr(), xMapped, q2);
+  const MappedIncomingSpinDensity mappedSpin =
+    mappedIncomingSpinDensity(legs.pin->dataPtr(), xMapped, q2, "powheg-vertex");
 
   legs.lin->spinInfo()->rhoMatrix(leptonRho);
-  legs.pin->spinInfo()->rhoMatrix(longitudinalRhoMatrix(legs.pin->dataPtr(), mappedPol));
+  legs.pin->spinInfo()->rhoMatrix(mappedSpin.rho);
 
   HardVertexPtr hardvertex = new_ptr(HardVertex());
   hardvertex->ME(prodme);
@@ -669,98 +579,6 @@ void MENeutralCurrentDIS::constructRealEmissionSpinVertex(RealEmissionProcessPtr
   legs.lout->spinInfo()->productionVertex(hardvertex);
   legs.out1->spinInfo()->productionVertex(hardvertex);
   legs.out2->spinInfo()->productionVertex(hardvertex);
-}
-
-void MENeutralCurrentDIS::diagnoseRealEmissionSpinState(RealEmissionProcessPtr proc,
-                                                        bool isCompton) const {
-  unsigned long diagIndex = 0;
-  if (!nextPOWHEGRealSpinDiagnosticSlot(diagIndex)) return;
-
-  RealEmissionLegs legs;
-  if (!collectRealEmissionLegs(proc, isCompton, legs)) {
-    generator()->log() << "POWHEG_SPIN_EVENT"
-                       << " event=" << diagIndex
-                       << " proc=" << (isCompton ? "QCDC" : "BGF")
-                       << " enabled=" << (usePOWHEGRealSpinVertex() ? 1 : 0)
-                       << " parsed=0\n";
-    return;
-  }
-
-  struct LegView {
-    const char * role;
-    PPtr part;
-    bool incoming;
-  };
-  const LegView views[] = {
-    {"lin",  legs.lin,  true},
-    {"pin",  legs.pin,  true},
-    {"lout", legs.lout, false},
-    {legs.out1Role.c_str(), legs.out1, false},
-    {legs.out2Role.c_str(), legs.out2, false}
-  };
-
-  bool allSpin = true;
-  bool allVertex = true;
-  bool allHardVertex = true;
-  bool allSensible = true;
-
-  for (const auto & view : views) {
-    const tSpinPtr spin = view.part ? view.part->spinInfo() : tSpinPtr();
-    const bool hasSpin = bool(spin);
-    const tcVertexPtr vertex = hasSpin ? spin->productionVertex() : tcVertexPtr();
-    const bool hasVertex = bool(vertex);
-    const bool vertexIsHard = bool(ThePEG::dynamic_ptr_cast<tcHardVertexPtr>(vertex));
-    const int prodLoc = hasSpin ? spin->productionLocation() : -1;
-
-    allSpin = allSpin && hasSpin;
-    allVertex = allVertex && hasVertex;
-    allHardVertex = allHardVertex && vertexIsHard;
-
-    RhoDMatrix rho;
-    if (hasSpin) {
-      if (view.incoming) rho = spin->rhoMatrix();
-      else if (hasVertex && prodLoc >= 0) rho = vertex->getRhoMatrix(prodLoc, true);
-    }
-    MatrixDiagnostics md = inspectMatrix(rho);
-    allSensible = allSensible && md.sensible;
-
-    generator()->log() << "POWHEG_SPIN_LEG"
-                       << " event=" << diagIndex
-                       << " proc=" << legs.process
-                       << " role=" << view.role
-                       << " incoming=" << (view.incoming ? 1 : 0)
-                       << " id=" << (view.part ? view.part->id() : 0)
-                       << " hasSpin=" << (hasSpin ? 1 : 0)
-                       << " hasVertex=" << (hasVertex ? 1 : 0)
-                       << " vertexHard=" << (vertexIsHard ? 1 : 0)
-                       << " loc=" << prodLoc
-                       << " source=" << (view.incoming ? "stored" : "vertex")
-                       << " trace=" << md.traceRe
-                       << " traceIm=" << md.traceIm
-                       << " antiHerm=" << md.maxAntiHerm
-                       << " minDiag=" << md.minDiag
-                       << " maxDiag=" << md.maxDiag
-                       << " maxDiagIm=" << md.maxDiagIm
-                       << " d0=" << md.d0
-                       << " d1=" << md.d1
-                       << " d2=" << md.d2
-                       << " finite=" << (md.finite ? 1 : 0)
-                       << " normalized=" << (md.normalized ? 1 : 0)
-                       << " hermitian=" << (md.hermitian ? 1 : 0)
-                       << " sensible=" << (md.sensible ? 1 : 0)
-                       << "\n";
-  }
-
-  generator()->log() << "POWHEG_SPIN_EVENT"
-                     << " event=" << diagIndex
-                     << " proc=" << legs.process
-                     << " enabled=" << (usePOWHEGRealSpinVertex() ? 1 : 0)
-                     << " parsed=1"
-                     << " allSpin=" << (allSpin ? 1 : 0)
-                     << " allVertex=" << (allVertex ? 1 : 0)
-                     << " allHardVertex=" << (allHardVertex ? 1 : 0)
-                     << " allSensible=" << (allSensible ? 1 : 0)
-                     << "\n";
 }
 
 ProductionMatrixElement MENeutralCurrentDIS::qcdcRealEmissionME(PPtr lin, PPtr qin,
@@ -998,6 +816,21 @@ double MENeutralCurrentDIS::qcdcMappedDenominatorRatio(tcPDPtr lin, tcPDPtr,
   return dMapped / dBorn;
 }
 
+double MENeutralCurrentDIS::realEmissionDenominatorFactor(tcPDPtr lin, tcPDPtr,
+                                                          tcPDPtr qin, tcPDPtr,
+                                                          Energy2 q2, double Pl,
+                                                          double mappedPartonPol) const {
+  if (_gammaZ == 1) return 1.0;
+  const NCCoefficients coeff = ncCoefficients(lin, qin, q2);
+  return coeff.D0 + Pl * coeff.Dl
+       + mappedPartonPol * coeff.Dq
+       + Pl * mappedPartonPol * coeff.Dlq;
+}
+
+bool MENeutralCurrentDIS::useMappedPolarizedEmissionKernel() const {
+  return true;
+}
+
 double MENeutralCurrentDIS::sigmaBornFactor(tcPDPtr lin, tcPDPtr qin, Energy2 q2,
                                             double Pl, double Pq,
                                             double ell) const {
@@ -1079,47 +912,34 @@ MENeutralCurrentDIS::ncCoefficients(tcPDPtr lin, tcPDPtr qin, Energy2 q2) const 
   return out;
 }
 
-bool MENeutralCurrentDIS::bornClosureDiagnostics(double Pl,
+bool MENeutralCurrentDIS::neutralCurrentResponse(tcPDPtr lin, tcPDPtr,
+                                                 tcPDPtr qin, tcPDPtr,
+                                                 Energy2 q2,
+                                                 double Pl,
                                                  double PqBorn,
-                                                 double PqMapped,
+                                                 double,
                                                  double ell,
-                                                 BornClosureDiagnostics &out) const {
-  if (!mePartonData()[0] || !mePartonData()[1]) return false;
-  const Energy2 q2 = -(meMomenta()[0] - meMomenta()[2]).m2();
-  out = BornClosureDiagnostics{};
+                                                 NeutralCurrentResponse &out) const {
+  if (!lin || !qin || _gammaZ == 1) return false;
 
-  out.sigmaBorn = sigmaBornFactor(mePartonData()[0], mePartonData()[1], q2,
-                                  Pl, PqBorn, ell);
-  out.sigmaZero = sigmaBornFactor(mePartonData()[0], mePartonData()[1], q2,
-                                  Pl, 0.0, ell);
-  out.sigmaMapped = sigmaBornFactor(mePartonData()[0], mePartonData()[1], q2,
-                                    Pl, PqMapped, ell);
-  out.me2Born = me2ForPartonPolarization(PqBorn);
-  out.me2Zero = me2ForPartonPolarization(0.0);
-  out.me2Mapped = me2ForPartonPolarization(PqMapped);
+  const NCCoefficients coeff = ncCoefficients(lin, qin, q2);
+  const double D_even = coeff.D0 + Pl * coeff.Dl;
+  const double D_spin = PqBorn * (coeff.Dq + Pl * coeff.Dlq);
+  const double N_even = coeff.N0 + Pl * coeff.Nl;
+  const double N_spin = PqBorn * (coeff.Nq + Pl * coeff.Nlq);
+  const double bornFactor =
+    (1.0 + sqr(ell)) * (D_even + D_spin) + ell * (N_even + N_spin);
 
-  const double me00 = me2ForPolarizations(0.0, 0.0);
-  const double me10 = me2ForPolarizations(1.0, 0.0);
-  const double me01 = me2ForPolarizations(0.0, 1.0);
-  const double me11 = me2ForPolarizations(1.0, 1.0);
+  if (!std::isfinite(bornFactor) || std::abs(bornFactor) <= 1e-30) return false;
 
-  const NCCoefficients coeff = ncCoefficients(mePartonData()[0], mePartonData()[1], q2);
-  const double pred00 = (1.0 + sqr(ell)) * coeff.D0 + ell * coeff.N0;
-  const double pred10 = pred00 + (1.0 + sqr(ell)) * coeff.Dl + ell * coeff.Nl;
-  const double pred01 = pred00 + (1.0 + sqr(ell)) * coeff.Dq + ell * coeff.Nq;
-  const double pred11 = pred00
-                      + (1.0 + sqr(ell)) * (coeff.Dl + coeff.Dq + coeff.Dlq)
-                      + ell * (coeff.Nl + coeff.Nq + coeff.Nlq);
+  const double qPolarized =
+    ((1.0 + sqr(ell)) * D_spin + ell * N_spin) / bornFactor;
+  const double gPolarized =
+    (ell * N_spin) / bornFactor;
 
-  if (std::abs(me00) > 1e-30 && std::abs(pred00) > 1e-30) {
-    out.coeffScale = me00 / pred00;
-    out.coeffPlMe = (me10 - me00) / me00;
-    out.coeffPqMe = (me01 - me00) / me00;
-    out.coeffPlPqMe = (me11 - me10 - me01 + me00) / me00;
-
-    out.coeffPlPred = (pred10 - pred00) / pred00;
-    out.coeffPqPred = (pred01 - pred00) / pred00;
-    out.coeffPlPqPred = (pred11 - pred10 - pred01 + pred00) / pred00;
-  }
+  out = NeutralCurrentResponse{
+    (std::abs(PqBorn) > 1e-30) ? (qPolarized / PqBorn) : 0.0,
+    (std::abs(PqBorn) > 1e-30) ? (gPolarized / PqBorn) : 0.0
+  };
   return true;
 }

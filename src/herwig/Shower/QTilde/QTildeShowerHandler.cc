@@ -74,6 +74,9 @@ void QTildeShowerHandler::persistentOutput(PersistentOStream & os) const {
   os << _splittingGenerator << _maxtry
      << _meCorrMode << _hardVetoReadOption
      << _limitEmissions << _softOpt << _hardPOWHEG
+     // Persist the POWHEG emission mode so saved runs preserve whether the
+     // internally generated real emission is shower-reconstructed or inserted
+     // directly for fixed-order no-shower studies.
      << _powhegEmissionMode
      << ounit(_iptrms,GeV) << _beta << ounit(_gamma,GeV) << ounit(_iptmax,GeV)
      << _vetoes << _fullShowerVetoes << _nReWeight << _reWeight
@@ -86,6 +89,8 @@ void QTildeShowerHandler::persistentInput(PersistentIStream & is, int) {
   is >> _splittingGenerator >> _maxtry
      >> _meCorrMode >> _hardVetoReadOption
      >> _limitEmissions >> _softOpt >> _hardPOWHEG
+     // Keep the read order matched to persistentOutput. Existing release
+     // validation should regenerate .run files after changing this interface.
      >> _powhegEmissionMode
      >> iunit(_iptrms,GeV) >> _beta >> iunit(_gamma,GeV) >> iunit(_iptmax,GeV)
      >> _vetoes >> _fullShowerVetoes >> _nReWeight >> _reWeight
@@ -1020,6 +1025,8 @@ vector<ShowerProgenitorPtr> QTildeShowerHandler::setupShower(bool hard) {
   // generate POWHEG hard emission if needed
   else if(_hardEmission==2) {
     if(fixedOrderPOWHEGNoShower()) {
+      // Fixed-order mode inserts the generated real-emission particles into
+      // the event record and returns before constructing shower progenitors.
       if(insertFixedOrderPOWHEGRealEmission(hard))
 	return vector<ShowerProgenitorPtr>();
     }
@@ -1376,10 +1383,16 @@ bool QTildeShowerHandler::insertFixedOrderPOWHEGRealEmission(bool hard) {
     _hardme->generateHardest(currentTree()->perturbativeProcess(),
 			     interaction_);
   if(real) {
+    // Preserve the normal POWHEG MEC bookkeeping for the generated real
+    // process, but do not let QTilde reconstruct or shower it afterwards.
     if(!real->outgoing().empty())
       setupMECorrection(real);
+    // Store the POWHEG veto scale on the tree so downstream code sees the same
+    // accepted-emission state as in the shower-reconstructed mode.
     currentTree()->setVetoes(real->pT(),_hardme->hasPOWHEGCorrection());
   }
+  // A direct fixed-order insertion has no separate HardTree to connect, and the
+  // tree is marked showered to suppress subsequent QTilde evolution.
   hardTree(HardTreePtr());
   _currenttree->hasShowered(true);
   return true;

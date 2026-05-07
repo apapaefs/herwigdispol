@@ -2,7 +2,7 @@
 
 ##################################################
 # Photon-only NLO DIS — PM polarization (Positive NLO)
-# Diagnostic: isolate NLO polarized machinery from γ+Z complications
+# Polarized DIS validation setup
 ##################################################
 
 read snippets/EPCollider.in

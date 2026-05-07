@@ -2,7 +2,7 @@
 
 ##################################################
 # Charged-current NLO DIS — PP polarization
-# Diagnostic: charged-current polarized machinery
+# Charged-current polarized NLO DIS setup
 ##################################################
 
 read snippets/EPCollider.in

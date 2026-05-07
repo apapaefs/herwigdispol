@@ -323,8 +323,6 @@ def resolve_analysis_configuration(args: argparse.Namespace) -> tuple[str, bool,
     if contains_ps_setups(requested_setups):
         if analysis_variant == "RIVETFO":
             raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetfo.")
-        if args.raw_powheg:
-            raise ValueError("--raw-powheg is not supported for SPINVAL/SPINCOMP/SPINHAD.")
         if args.include_lo:
             raise ValueError("SPINVAL/SPINCOMP/SPINHAD are NLO-only workflows; do not use --include-lo.")
         analysis_variant = "RIVETPS"
@@ -469,7 +467,6 @@ def build_manifest(args: argparse.Namespace) -> tuple[Dict[str, object], Dict[st
         "seed_base": args.seed_base,
         "merge_yoda": not args.no_merge_yoda,
         "force_prepare": bool(args.force_prepare),
-        "raw_powheg": bool(args.raw_powheg),
         "include_lo": include_lo,
         "extract_diagnostics": diagnostics_enabled,
         "scale_variations": bool(args.scale_variations),
@@ -534,8 +531,6 @@ def resume_command(args: argparse.Namespace) -> str:
         cmd.append("--rivetfo")
     if args.scale_variations:
         cmd.append("--scale-variations")
-    if args.raw_powheg:
-        cmd.append("--raw-powheg")
     if args.diagnostics:
         cmd.append("--diagnostics")
     if args.keep_going:
@@ -565,7 +560,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--negnlo-events", type=int, default=10_000_000, help="Events per NEGNLO run.")
     parser.add_argument("--rivet", action="store_true", help="Recover a --rivet campaign.")
     parser.add_argument("--rivetfo", action="store_true", help="Recover a --rivetfo campaign.")
-    parser.add_argument("--raw-powheg", action="store_true", help="Campaign used --raw-powheg.")
     parser.add_argument("--include-lo", action="store_true", default=None, help="Campaign used --include-lo.")
     parser.add_argument("--diagnostics", action="store_true", default=None, help="Campaign used --diagnostics.")
     parser.add_argument("--scale-variations", action="store_true", default=None, help="Campaign used --scale-variations.")

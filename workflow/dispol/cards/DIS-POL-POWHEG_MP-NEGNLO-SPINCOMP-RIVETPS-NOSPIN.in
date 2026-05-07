@@ -2,7 +2,7 @@
 
 ##################################################
 # Photon-only NLO DIS — PM polarization
-# Diagnostic: isolate NLO polarized machinery from γ+Z complications
+# Polarized DIS validation setup
 ##################################################
 
 read snippets/EPCollider.in
@@ -157,9 +157,6 @@ set PowhegMEDISNCPol:GammaZ All
 set PowhegMEDISNCPol:Contribution NegativeNLO
 set /Herwig/MatrixElements/PowhegMEDISNCPol:UsePOWHEGRealSpinVertex No
 set /Herwig/Shower/ShowerHandler:SpinCorrelations Yes
-set /Herwig/MatrixElements/PowhegMEDISNCPol:DISDiagnostics Off
-set /Herwig/MatrixElements/PowhegMEDISNCPol:DiagnosePOWHEGRealSpinVertex No
-set /Herwig/MatrixElements/PowhegMEDISNCPol:POWHEGRealSpinDiagMax 0
 # Use NLOAlphaS (2-loop) with α_s(MZ)=0.118
 set /Herwig/Model:QCD/RunningAlphaS /Herwig/Couplings/NLOAlphaS
 set /Herwig/Model:QCD/AlphaS 0.118

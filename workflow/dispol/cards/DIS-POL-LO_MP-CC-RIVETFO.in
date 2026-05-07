@@ -163,15 +163,10 @@ set /Herwig/Model:QCD/RunningAlphaS /Herwig/Couplings/LOAlphaS
 set /Herwig/Model:QCD/AlphaS 0.118
 set /Herwig/MatrixElements/PowhegMEDISCC:UseFixedOrderAlphaSInPOWHEGEmission No
 set /Herwig/MatrixElements/PowhegMEDISCC:UseQ2ScaleInPOWHEGEmission No
-set /Herwig/MatrixElements/PowhegMEDISCC:DISDiagnostics Off
-set /Herwig/MatrixElements/PowhegMEDISCC:DumpNLOTermDiagnostics No
-set /Herwig/MatrixElements/PowhegMEDISCC:DumpPOWHEGRawMomenta No
 set /Herwig/MatrixElements/PowhegMEDISCC:POWHEGEmissionComparisonMode Default
 set /Herwig/MatrixElements/PowhegMEDISCC:POWHEGEmissionComparisonMaxAttempts 100
 set /Herwig/MatrixElements/MEDISCC:UsePOWHEGRealSpinVertex No
-set /Herwig/MatrixElements/MEDISCC:DiagnosePOWHEGRealSpinVertex No
 set /Herwig/MatrixElements/PowhegMEDISCC:UsePOWHEGRealSpinVertex No
-set /Herwig/MatrixElements/PowhegMEDISCC:DiagnosePOWHEGRealSpinVertex No
 
 # ---- Match POLDIS EW parameters ----
 set /Herwig/Model:EW/Scheme alphaMZScheme

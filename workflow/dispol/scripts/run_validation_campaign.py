@@ -54,7 +54,11 @@ from analyze_DIS_polarized import (
     sanitize_plot_yoda,
     write_yoda_gz as write_analysis_yoda_gz,
 )
-from extract_dis_out_results import parse_measurement
+from extract_dis_out_results import (
+    parse_attempted_event_count,
+    parse_generated_event_count,
+    parse_measurement,
+)
 from poldis_top_to_yoda import convert_topdrawer_to_yoda, set_bin_val_err
 from rivet_scale_plot_postprocess import (
     rewrite_no_scale_ratio_plot_scripts,
@@ -131,6 +135,7 @@ PS_SETUP_FAMILIES = {
 PS_WEIGHTED_ANALYSIS_VARIANT = "RIVETPSWEIGHTS"
 PS_WEIGHTED_FAMILY_PREFIX = "RIVETPSWEIGHTS-"
 PS_FAMILY_PREFIX = "RIVETPS-"
+NC_CORRELATED_WEIGHT_VARIANTS = {"RIVETWEIGHTS"}
 PS_FAMILY_LABELS = {
     "RIVETPS-SPIN": "Full",
     "RIVETPS-NOSPIN": "Born-Only",
@@ -448,7 +453,11 @@ def is_ps_family_variant(analysis_variant: str) -> bool:
 
 
 def is_correlated_weight_variant(analysis_variant: str) -> bool:
-    return analysis_variant == "RIVETWEIGHTS" or is_ps_weighted_family(analysis_variant)
+    return analysis_variant in NC_CORRELATED_WEIGHT_VARIANTS or is_ps_weighted_family(analysis_variant)
+
+
+def is_nc_correlated_weight_variant(analysis_variant: str) -> bool:
+    return analysis_variant in NC_CORRELATED_WEIGHT_VARIANTS
 
 
 def ps_manifest_uses_rivetweights(manifest: Mapping[str, object]) -> bool:
@@ -480,7 +489,7 @@ def use_lo_runtime(analysis_variant: str) -> bool:
 
 
 def use_raw_powheg_runtime(analysis_variant: str, enabled: bool) -> bool:
-    return enabled and analysis_variant == "RIVETFO"
+    return False
 
 
 def resolve_fixed_order_powheg_no_shower_requested(
@@ -859,20 +868,21 @@ def rewrite_rivetweights_card_text(source_text: str, target_stem: str) -> str:
     if anchor is None:
         raise RuntimeError("Could not locate PowhegMEDISNCPol settings in RIVETFO source card")
 
-    rivetweights_setting = "set /Herwig/MatrixElements/PowhegMEDISNCPol:GenerateRivetWeights Yes"
-    text, setting_count = re.subn(
-        r"^set\s+(?:/Herwig/MatrixElements/)?PowhegMEDISNCPol:GenerateRivetWeights\s+\S+\s*$",
-        rivetweights_setting,
-        text,
-        flags=re.MULTILINE,
-    )
-    if setting_count == 0:
-        text, _ = set_or_insert_card_setting(
-            text,
-            "/Herwig/MatrixElements/PowhegMEDISNCPol:GenerateRivetWeights",
-            "Yes",
-            anchor,
-        )
+    def set_powheg_nc_setting(card_text: str, option: str, value: str, insert_after: str) -> tuple[str, str]:
+        setting = f"/Herwig/MatrixElements/PowhegMEDISNCPol:{option}"
+        replacement = f"set {setting} {value}"
+        pattern = rf"^set\s+(?:/Herwig/MatrixElements/)?PowhegMEDISNCPol:{re.escape(option)}\s+\S+\s*(?:#.*)?$"
+        new_text, count = re.subn(pattern, replacement, card_text, flags=re.MULTILINE)
+        if count == 0:
+            new_text = card_text.replace(insert_after, insert_after + "\n" + replacement, 1)
+        return new_text, replacement if replacement in new_text else insert_after
+
+    for option, value in (
+        ("UseFixedOrderAlphaSInPOWHEGEmission", "No"),
+        ("UseQ2ScaleInPOWHEGEmission", "No"),
+        ("GenerateRivetWeights", "Yes"),
+    ):
+        text, anchor = set_powheg_nc_setting(text, option, value, anchor)
 
     analysis_line = (
         "insert /Herwig/Analysis/Rivet:Analyses 0 "
@@ -1241,13 +1251,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Setup(s) to operate on. May be given multiple times. In campaign/full, omitting this runs GAMMA, Z, and ALL; CC is available when requested explicitly. In analysis/postprocess/plotting, omitting this defaults to ALL.",
     )
 
-    raw_powheg_parent = argparse.ArgumentParser(add_help=False)
-    raw_powheg_parent.add_argument(
-        "--raw-powheg",
-        action="store_true",
-        help="For RIVETFO, dump raw POWHEG momenta and build raw-POWHEG YODAs for side-by-side plotting.",
-    )
-
     scale_variations_parent = argparse.ArgumentParser(add_help=False)
     scale_variations_parent.add_argument(
         "--scale-variations",
@@ -1422,16 +1425,16 @@ def build_parser() -> argparse.ArgumentParser:
     plot_parent.add_argument("--reflabel-prefix", default="POLDIS", help="Reference label prefix.")
     plot_parent.add_argument("--plot-dir", type=Path, help="Optional output plot directory (single-setup only).")
 
-    subparsers.add_parser("campaign", parents=[base_parent, tag_parent, setup_parent, raw_powheg_parent, scale_variations_parent, include_lo_parent, diagnostics_parent, poldis_error_mode_parent, campaign_parent], help="Run the full validation campaign.")
-    subparsers.add_parser("postprocess", parents=[base_parent, tag_parent, analysis_name_parent, setup_parent, raw_powheg_parent, scale_variations_parent, include_lo_parent, diagnostics_parent, poldis_error_mode_parent, postrun_jobs_parent, analyze_parent, postprocess_parent], help="Rebuild merged YODAs and summaries for an existing campaign tag without rerunning Herwig.")
-    subparsers.add_parser("analyze-herwig", parents=[base_parent, tag_parent, analysis_name_parent, setup_parent, raw_powheg_parent, scale_variations_parent, include_lo_parent, postrun_jobs_parent, analyze_parent, analyze_io_parent], help="Build Herwig DIS polarized YODAs from campaign NLO outputs.")
+    subparsers.add_parser("campaign", parents=[base_parent, tag_parent, setup_parent, scale_variations_parent, include_lo_parent, diagnostics_parent, poldis_error_mode_parent, campaign_parent], help="Run the full validation campaign.")
+    subparsers.add_parser("postprocess", parents=[base_parent, tag_parent, analysis_name_parent, setup_parent, scale_variations_parent, include_lo_parent, diagnostics_parent, poldis_error_mode_parent, postrun_jobs_parent, analyze_parent, postprocess_parent], help="Rebuild merged YODAs and summaries for an existing campaign tag without rerunning Herwig.")
+    subparsers.add_parser("analyze-herwig", parents=[base_parent, tag_parent, analysis_name_parent, setup_parent, scale_variations_parent, include_lo_parent, postrun_jobs_parent, analyze_parent, analyze_io_parent], help="Build Herwig DIS polarized YODAs from campaign NLO outputs.")
     subparsers.add_parser("poldis-top", parents=[base_parent, analysis_name_parent, setup_parent, poldis_parent, analyze_io_parent], help="Convert POLDIS .top files into reference YODA.")
-    rivetplot_parser = subparsers.add_parser("rivetplot", parents=[base_parent, tag_parent, analysis_name_parent, setup_parent, raw_powheg_parent, scale_variations_parent, include_lo_parent, poldis_error_mode_parent, postrun_jobs_parent, analyze_parent, analyze_io_parent, poldis_parent, plot_parent], help="Run rivet-mkhtml comparing analyzed Herwig YODAs to the POLDIS reference.")
+    rivetplot_parser = subparsers.add_parser("rivetplot", parents=[base_parent, tag_parent, analysis_name_parent, setup_parent, scale_variations_parent, include_lo_parent, poldis_error_mode_parent, postrun_jobs_parent, analyze_parent, analyze_io_parent, poldis_parent, plot_parent], help="Run rivet-mkhtml comparing analyzed Herwig YODAs to the POLDIS reference.")
     rivetplot_parser.add_argument(
         "--poldis-refs-campaign",
         help="Reuse POLDIS references from campaigns/<tag> for Rivet plotting instead of rebuilding local references.",
     )
-    full_parser = subparsers.add_parser("full", parents=[base_parent, tag_parent, analysis_name_parent, setup_parent, raw_powheg_parent, scale_variations_parent, include_lo_parent, diagnostics_parent, poldis_error_mode_parent, campaign_parent, analyze_parent, poldis_parent, plot_parent], help="Run campaign, analyze Herwig outputs, build POLDIS references, and make Rivet comparison plots.")
+    full_parser = subparsers.add_parser("full", parents=[base_parent, tag_parent, analysis_name_parent, setup_parent, scale_variations_parent, include_lo_parent, diagnostics_parent, poldis_error_mode_parent, campaign_parent, analyze_parent, poldis_parent, plot_parent], help="Run campaign, analyze Herwig outputs, build POLDIS references, and make Rivet comparison plots.")
     full_parser.set_defaults(command="full")
     return parser
 
@@ -1568,71 +1571,7 @@ def debug_plot_metadata_lines(plot_file: Optional[Path], analysis_name: str) -> 
 
 
 def patch_raw_powheg_card(in_path: Path, analysis_variant: str, enable_raw_powheg: bool) -> bool:
-    if analysis_variant != "RIVETFO" or not in_path.exists():
-        return False
-
-    text = in_path.read_text()
-    matrix_elements: List[str] = []
-    for candidate in ("PowhegMEDISNCPol", "PowhegMEDISCC"):
-        if (re.search(rf"^set /Herwig/MatrixElements/{re.escape(candidate)}:\S+ .*?$", text, flags=re.MULTILINE) or
-                re.search(rf"^set {re.escape(candidate)}:\S+ .*?$", text, flags=re.MULTILINE)):
-            matrix_elements.append(candidate)
-
-    if not matrix_elements:
-        return False
-
-    modified = False
-    for matrix_element in matrix_elements:
-        anchor = None
-        anchor_patterns = (
-            rf"^set /Herwig/MatrixElements/{re.escape(matrix_element)}:UseQ2ScaleInPOWHEGEmission \S+\s*$",
-            rf"^set {re.escape(matrix_element)}:UseQ2ScaleInPOWHEGEmission \S+\s*$",
-            rf"^set /Herwig/MatrixElements/{re.escape(matrix_element)}:Contribution \S+\s*$",
-            rf"^set {re.escape(matrix_element)}:Contribution \S+\s*$",
-        )
-        for pattern in anchor_patterns:
-            match = re.search(pattern, text, flags=re.MULTILINE)
-            if match:
-                anchor = match.group(0)
-                break
-        if anchor is None:
-            continue
-
-        settings = [
-            (
-                f"/Herwig/MatrixElements/{matrix_element}:DISDiagnostics",
-                "On" if enable_raw_powheg else "Off",
-            ),
-            (
-                f"/Herwig/MatrixElements/{matrix_element}:DumpNLOTermDiagnostics",
-                "No",
-            ),
-            (
-                f"/Herwig/MatrixElements/{matrix_element}:DumpPOWHEGRawMomenta",
-                "Yes" if enable_raw_powheg else "No",
-            ),
-        ]
-
-        for setting, value in settings:
-            new_text, changed = set_or_insert_card_setting(text, setting, value, anchor)
-            if changed:
-                modified = True
-                text = new_text
-                continue
-
-            # Some cards use the short repository path rather than the absolute one.
-            short_setting = setting.replace("/Herwig/MatrixElements/", "")
-            if short_setting != setting:
-                new_text, changed = set_or_insert_card_setting(text, short_setting, value, anchor)
-                if changed:
-                    modified = True
-                    text = new_text
-                    continue
-
-    if not modified:
-        return False
-    in_path.write_text(text)
-    return True
+    return False
 
 
 def rewrite_fixed_order_powheg_card_text(source_text: str, enable_fixed_order: bool) -> str:
@@ -1703,21 +1642,11 @@ def patch_ps_spin_card(in_path: Path, spec: JobSpec) -> bool:
     base_family = ps_unweighted_family(spec.analysis_variant)
     use_real_spin = "Yes" if base_family == "RIVETPS-SPIN" else "No"
     shower_spin = "No" if base_family == "RIVETPS-NOSPIN-UNPOL" else "Yes"
-    diagnostics_enabled = spec.setup == "SPINVAL" and base_family == "RIVETPS-SPIN"
 
     modified = False
     settings = [
         ("/Herwig/MatrixElements/PowhegMEDISNCPol:UsePOWHEGRealSpinVertex", use_real_spin),
         ("/Herwig/Shower/ShowerHandler:SpinCorrelations", shower_spin),
-        ("/Herwig/MatrixElements/PowhegMEDISNCPol:DISDiagnostics", "On" if diagnostics_enabled else "Off"),
-        (
-            "/Herwig/MatrixElements/PowhegMEDISNCPol:DiagnosePOWHEGRealSpinVertex",
-            "Yes" if diagnostics_enabled else "No",
-        ),
-        (
-            "/Herwig/MatrixElements/PowhegMEDISNCPol:POWHEGRealSpinDiagMax",
-            "200" if diagnostics_enabled else "0",
-        ),
     ]
     for setting, value in settings:
         text, changed = set_or_insert_card_setting(text, setting, value, anchor)
@@ -1730,7 +1659,7 @@ def patch_ps_spin_card(in_path: Path, spec: JobSpec) -> bool:
 
 
 def patch_rivetweights_card(in_path: Path, spec: JobSpec) -> bool:
-    if spec.analysis_variant != "RIVETWEIGHTS" or not in_path.exists():
+    if spec.analysis_variant not in NC_CORRELATED_WEIGHT_VARIANTS or not in_path.exists():
         return False
     text = in_path.read_text()
     rendered = rewrite_rivetweights_card_text(text, spec.stem)
@@ -3276,7 +3205,7 @@ def build_nlo_yoda_files(
                 skipped=True,
                 message=f"Missing {'POSNLO' if pos_file is None else 'NEGNLO'} merged YODA",
             )
-        if "-RIVETWEIGHTS" in nlo_run:
+        if any(f"-{variant}" in nlo_run for variant in NC_CORRELATED_WEIGHT_VARIANTS):
             return YODANLOResult(
                 logical_run=nlo_run,
                 pos_file=pos_file,
@@ -3285,7 +3214,7 @@ def build_nlo_yoda_files(
                 command=[],
                 returncode=0,
                 skipped=True,
-                message="RIVETWEIGHTS POSNLO/NEGNLO files are combined later from normalized estimate objects.",
+                message="Correlated-weight POSNLO/NEGNLO files are combined later from normalized estimate objects.",
             )
         if merge_tool is None:
             return YODANLOResult(
@@ -4639,10 +4568,15 @@ def build_rivetweights_objects(
         print(f"[dry-run] combine-rivetweights-normalized {pos_input} {neg_input} -> {output_path}")
         return {}
 
+    pos_scale = 1.0
+    neg_scale = 1.0
+
     combined = combine_rivetweights_normalized_order_histograms(
         yoda.read(str(pos_input)),
         yoda.read(str(neg_input)),
         analysis_name,
+        pos_scale=pos_scale,
+        neg_scale=neg_scale,
     )
     combined = build_correlated_helicity_derived_objects(combined, analysis_name)
     write_analysis_yoda_gz(combined, str(output_path))
@@ -4695,19 +4629,33 @@ RIVETWEIGHTS_ANALYSIS_LABELS = {
     "NJets",
     "pT3",
     "pT3OverpT1",
+    "pT4",
+    "pT4OverpT1",
     "SumPtExtra",
     "Phi3",
+    "DeltaPhiHardJ3",
+    "DeltaPhiJ13J14",
     "PhiCurrentHemi",
     "Broadening",
+    "Cos2DeltaPhiHardJ3NumPt3OverpT1",
+    "Cos2DeltaPhiHardJ3DenPt3OverpT1",
+    "Cos2DeltaPhiJ13J14NumPt4OverpT1",
+    "Cos2DeltaPhiJ13J14DenPt4OverpT1",
     "Cos2PhiCurrentHemiNumQ2",
     "Cos2PhiCurrentHemiDenQ2",
     "DNJets",
     "DpT3",
     "DpT3OverpT1",
+    "DpT4",
+    "DpT4OverpT1",
     "DSumPtExtra",
     "DPhi3",
+    "DDeltaPhiHardJ3",
+    "DDeltaPhiJ13J14",
     "DPhiCurrentHemi",
     "DBroadening",
+    "DCos2DeltaPhiHardJ3NumPt3OverpT1",
+    "DCos2DeltaPhiJ13J14NumPt4OverpT1",
     "DCos2PhiCurrentHemiNumQ2",
     "DCos2PhiCurrentHemiDenQ2",
 }
@@ -4755,6 +4703,8 @@ def combine_rivetweights_normalized_order_histograms(
     pos_objects: Dict[str, object],
     neg_objects: Dict[str, object],
     analysis_name: str,
+    pos_scale: float = 1.0,
+    neg_scale: float = 1.0,
 ) -> Dict[str, object]:
     pos_selected = select_rivetweights_default_histograms(pos_objects, analysis_name)
     neg_selected = select_rivetweights_default_histograms(neg_objects, analysis_name)
@@ -4777,6 +4727,10 @@ def combine_rivetweights_normalized_order_histograms(
         for index in range(1, out_obj.numBins() + 1):
             pos_value, pos_error = _bin_value_error(pos_obj.bin(index))
             neg_value, neg_error = _bin_value_error(neg_obj.bin(index))
+            pos_value *= pos_scale
+            pos_error *= abs(pos_scale)
+            neg_value *= neg_scale
+            neg_error *= abs(neg_scale)
             value = pos_value + neg_value
             error = math.hypot(pos_error, neg_error)
             set_bin_val_err(out_obj.bin(index), value, error)
@@ -4832,7 +4786,7 @@ def analyze_herwig_campaign(
                 order_plot_outputs[order] = str(plot_path)
             return setup, order_outputs, order_plot_outputs
 
-        if analysis_variant == "RIVETWEIGHTS":
+        if is_nc_correlated_weight_variant(analysis_variant):
             objects = build_rivetweights_objects(
                 base_dir,
                 campaign_dir,
@@ -6860,10 +6814,8 @@ def run_campaign_command(args: argparse.Namespace) -> int:
     validate_setup_family(requested_setups)
     ps_mode = contains_ps_setups(requested_setups)
     if ps_mode:
-        if analysis_variant == "RIVETFO":
-            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetfo.")
-        if enable_raw_powheg:
-            raise ValueError("--raw-powheg is not supported for SPINVAL/SPINCOMP/SPINHAD.")
+        if analysis_variant in {"RIVETFO"}:
+            raise ValueError(f"SPINVAL/SPINCOMP/SPINHAD are not supported with --{analysis_variant.lower()}.")
         if getattr(args, "include_lo", None):
             raise ValueError("SPINVAL/SPINCOMP/SPINHAD are NLO-only workflows; do not use --include-lo.")
         analysis_variant = resolve_ps_analysis_variant(analysis_variant)
@@ -6877,17 +6829,15 @@ def run_campaign_command(args: argparse.Namespace) -> int:
         if ps_mode
         else None
     )
-    if analysis_variant == "RIVETWEIGHTS" and not ps_mode:
+    if is_nc_correlated_weight_variant(analysis_variant) and not ps_mode:
         unsupported = [setup for setup in requested_setups if setup not in SETUP_ORDER]
         if unsupported:
             raise ValueError(
-                "RIVETWEIGHTS is implemented for NC setups only: "
+                f"{analysis_variant} is implemented for NC setups only: "
                 f"GAMMA, Z, and ALL (got {', '.join(unsupported)})."
             )
         if getattr(args, "include_lo", None):
-            raise ValueError("RIVETWEIGHTS is a 00-only POSNLO/NEGNLO workflow; do not use --include-lo.")
-        if enable_raw_powheg:
-            raise ValueError("--raw-powheg is not supported together with --rivetweights.")
+            raise ValueError(f"{analysis_variant} is a 00-only POSNLO/NEGNLO workflow; do not use --include-lo.")
         include_lo = False
     resolve_analysis_name(args, requested_setups)
     args.setup = requested_setups
@@ -7020,9 +6970,6 @@ def run_campaign_command(args: argparse.Namespace) -> int:
         print_stage(
             f"Preparing campaign '{args.tag}' ({len(jobs)} logical runs, {len(shards)} shards, variant={analysis_variant or 'default'})"
         )
-
-    if enable_raw_powheg and analysis_variant != "RIVETFO":
-        raise ValueError("--raw-powheg is only supported together with --rivetfo.")
 
     campaign_started = time.time()
     write_campaign_monitor_files(
@@ -7520,16 +7467,16 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
     requested_setups = resolve_campaign_setups_requested(args.setup, manifest)
     validate_setup_family(requested_setups)
     ps_mode = contains_ps_setups(requested_setups)
-    if analysis_variant == "RIVETWEIGHTS" and not ps_mode:
+    if is_nc_correlated_weight_variant(analysis_variant) and not ps_mode:
         unsupported = [setup for setup in requested_setups if setup not in SETUP_ORDER]
         if unsupported:
             raise ValueError(
-                "RIVETWEIGHTS is implemented for NC setups only: "
+                f"{analysis_variant} is implemented for NC setups only: "
                 f"GAMMA, Z, and ALL (got {', '.join(unsupported)})."
             )
     if ps_mode:
-        if analysis_variant == "RIVETFO":
-            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetfo.")
+        if analysis_variant in {"RIVETFO"}:
+            raise ValueError(f"SPINVAL/SPINCOMP/SPINHAD are not supported with --{analysis_variant.lower()}.")
         analysis_variant = resolve_ps_analysis_variant(analysis_variant)
     scale_variations = resolve_scale_variations_requested(getattr(args, "scale_variations", None), manifest, default=False)
     include_lo = resolve_include_lo_requested(getattr(args, "include_lo", None), manifest, analysis_variant)
@@ -7543,12 +7490,10 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
         if include_lo:
             raise ValueError("SPINVAL/SPINCOMP/SPINHAD are NLO-only workflows; do not use --include-lo.")
         diagnostics_enabled = False
-    if analysis_variant == "RIVETWEIGHTS":
+    if is_nc_correlated_weight_variant(analysis_variant):
         if include_lo:
-            raise ValueError("RIVETWEIGHTS is a 00-only POSNLO/NEGNLO workflow; do not use --include-lo.")
+            raise ValueError(f"{analysis_variant} is a 00-only POSNLO/NEGNLO workflow; do not use --include-lo.")
         include_lo = False
-        if getattr(args, "raw_powheg", False):
-            raise ValueError("--raw-powheg is not supported together with --rivetweights.")
     resolve_analysis_name(args, requested_setups)
     args.setup = requested_setups
     args.scale_variations = scale_variations
@@ -7572,8 +7517,6 @@ def run_postprocess_command(args: argparse.Namespace) -> int:
             f"Reusing POLDIS references from campaign '{external_ref_campaign}' "
             "and skipping local dynamic POLDIS generation."
         )
-    if getattr(args, "raw_powheg", False) and analysis_variant != "RIVETFO":
-        raise ValueError("--raw-powheg is only supported together with --rivetfo.")
     print_stage(f"Postprocessing existing campaign '{args.tag}'")
 
     campaign_started = time.time()
@@ -7902,32 +7845,30 @@ def run_analyze_herwig_command(args: argparse.Namespace) -> int:
     validate_setup_family(requested_setups)
     ps_mode = contains_ps_setups(requested_setups)
     analysis_variant = analysis_variant_from_args(args) or str(manifest.get("analysis_variant", ""))
-    if analysis_variant == "RIVETWEIGHTS" and not ps_mode:
+    if is_nc_correlated_weight_variant(analysis_variant) and not ps_mode:
         unsupported = [setup for setup in requested_setups if setup not in SETUP_ORDER]
         if unsupported:
             raise ValueError(
-                "RIVETWEIGHTS is implemented for NC setups only: "
+                f"{analysis_variant} is implemented for NC setups only: "
                 f"GAMMA, Z, and ALL (got {', '.join(unsupported)})."
             )
     if ps_mode:
-        if analysis_variant == "RIVETFO":
-            raise ValueError("SPINVAL/SPINCOMP/SPINHAD are not supported with --rivetfo.")
+        if analysis_variant in {"RIVETFO"}:
+            raise ValueError(f"SPINVAL/SPINCOMP/SPINHAD are not supported with --{analysis_variant.lower()}.")
         analysis_variant = resolve_ps_analysis_variant(analysis_variant)
     scale_variations = resolve_scale_variations_requested(getattr(args, "scale_variations", None), manifest, default=False)
     include_lo = resolve_include_lo_requested(getattr(args, "include_lo", None), manifest, analysis_variant)
     poldis_error_mode = resolve_poldis_error_mode_requested(getattr(args, "poldis_error_mode", None), manifest)
     if ps_mode and include_lo:
         raise ValueError("SPINVAL/SPINCOMP/SPINHAD are NLO-only workflows; do not use --include-lo.")
-    if analysis_variant == "RIVETWEIGHTS" and include_lo:
-        raise ValueError("RIVETWEIGHTS is a 00-only POSNLO/NEGNLO workflow; do not use --include-lo.")
+    if is_nc_correlated_weight_variant(analysis_variant) and include_lo:
+        raise ValueError(f"{analysis_variant} is a 00-only POSNLO/NEGNLO workflow; do not use --include-lo.")
     resolve_analysis_name(args, requested_setups)
     args.setup = requested_setups
     args.scale_variations = scale_variations
     args.include_lo = include_lo
     args.poldis_error_mode = poldis_error_mode
     args.resolved_analysis_variant = analysis_variant
-    if getattr(args, "raw_powheg", False) and analysis_variant != "RIVETFO":
-        raise ValueError("--raw-powheg is only supported together with --rivetfo.")
     include_raw_powheg = use_raw_powheg_runtime(
         analysis_variant,
         bool(getattr(args, "raw_powheg", False) or manifest.get("raw_powheg")),
@@ -8014,6 +7955,8 @@ def run_rivetplot_command(args: argparse.Namespace) -> int:
     ps_mode = contains_ps_setups(requested_setups)
     analysis_variant = analysis_variant_from_args(args) or str(manifest.get("analysis_variant", ""))
     if ps_mode:
+        if analysis_variant in {"RIVETFO"}:
+            raise ValueError(f"SPINVAL/SPINCOMP/SPINHAD are not supported with --{analysis_variant.lower()}.")
         analysis_variant = resolve_ps_analysis_variant(analysis_variant)
     scale_variations = resolve_scale_variations_requested(getattr(args, "scale_variations", None), manifest, default=False)
     include_lo = resolve_include_lo_requested(getattr(args, "include_lo", None), manifest, analysis_variant)
@@ -8119,9 +8062,9 @@ def run_full_command(args: argparse.Namespace) -> int:
         if include_lo:
             raise ValueError("SPINVAL/SPINCOMP/SPINHAD are NLO-only workflows; do not use --include-lo.")
         include_lo = False
-    if analysis_variant == "RIVETWEIGHTS":
+    if is_nc_correlated_weight_variant(analysis_variant):
         if include_lo:
-            raise ValueError("RIVETWEIGHTS is a 00-only POSNLO/NEGNLO workflow; do not use --include-lo.")
+            raise ValueError(f"{analysis_variant} is a 00-only POSNLO/NEGNLO workflow; do not use --include-lo.")
         include_lo = False
     resolve_analysis_name(args, requested_setups)
     args.setup = requested_setups

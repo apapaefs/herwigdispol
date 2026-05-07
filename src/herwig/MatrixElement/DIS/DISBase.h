@@ -232,34 +232,6 @@ protected:
                                             double PqMapped) const;
 
   /**
-   * Event-local closure diagnostic for the Born and mapped QCDC spin factors.
-   * Implementations may compare the actual Born ME evaluated with custom
-   * longitudinal polarisations against the sigma_B factors implied by A_pol().
-   * Returns false if the diagnostic is not available for the current process.
-   */
-  struct BornClosureDiagnostics {
-    double sigmaBorn;
-    double sigmaZero;
-    double sigmaMapped;
-    double me2Born;
-    double me2Zero;
-    double me2Mapped;
-    double coeffScale;
-    double coeffPlMe;
-    double coeffPlPred;
-    double coeffPqMe;
-    double coeffPqPred;
-    double coeffPlPqMe;
-    double coeffPlPqPred;
-  };
-
-  virtual bool bornClosureDiagnostics(double Pl,
-                                      double PqBorn,
-                                      double PqMapped,
-                                      double ell,
-                                      BornClosureDiagnostics &out) const;
-
-  /**
    * Ratio of the real-emission parity-even denominator to the Born one.
    * This is unity in the legacy/photon case and can be overridden by
    * neutral-current implementations that keep the mapped quark/gluon
@@ -278,41 +250,28 @@ protected:
   virtual bool useMappedPolarizedEmissionKernel() const;
 
   /**
-   * Event-local neutral-current audit data used by the NLO spin-factor
-   * diagnostics.
+   * Event-local neutral-current response coefficients used by the common NLO
+   * term assembly. The default DISBase fallback is sufficient for photon-like
+   * channels; full neutral-current DIS overrides this to keep gamma/Z parity
+   * structures separated.
    */
-  struct NeutralCurrentAuditData {
-    std::string channel;
-    double etaL;
-    double etaQ;
-    double D_even;
-    double D_spin;
-    double N_even;
-    double N_spin;
-    double qUnpolarized;
-    double qPolarized;
-    double gUnpolarized;
-    double gPolarized;
+  struct NeutralCurrentResponse {
     double qOddResponse;
     double gOddResponse;
-    double bornFactor;
-    double realDenominatorFactor;
-    double mappedDenominatorRatio;
   };
 
   /**
-   * Extract event-local neutral-current response coefficients needed by the
-   * NLO audit diagnostics. Returns false if the diagnostic is not available
-   * for the current process.
+   * Extract event-local neutral-current response coefficients. Returns false
+   * when the common photon-like fallback should be used.
    */
-  virtual bool neutralCurrentAuditData(tcPDPtr lin, tcPDPtr lout,
-                                       tcPDPtr qin, tcPDPtr qout,
-                                       Energy2 scale,
-                                       double Pl,
-                                       double PqBorn,
-                                       double PqMapped,
-                                       double ell,
-                                       NeutralCurrentAuditData &out) const;
+  virtual bool neutralCurrentResponse(tcPDPtr lin, tcPDPtr lout,
+                                      tcPDPtr qin, tcPDPtr qout,
+                                      Energy2 scale,
+                                      double Pl,
+                                      double PqBorn,
+                                      double PqMapped,
+                                      double ell,
+                                      NeutralCurrentResponse &out) const;
 
   /**
    * Return the alphaS scale used in the POWHEG hardest-emission
@@ -384,39 +343,18 @@ protected:
                                                bool isCompton) const;
 
   /**
-   * Emit a separate diagnostic for the realised POWHEG 2->3 state,
-   * checking that spin information and production vertices are attached
-   * and that the associated rho matrices are sensible. The default
-   * implementation is a no-op.
-   */
-  virtual void diagnoseRealEmissionSpinState(RealEmissionProcessPtr proc,
-                                             bool isCompton) const;
-
-  /**
    * Structured result for mapped incoming-parton polarization and the rho
    * matrix derived from it for the real-emission spin machinery.
    */
   struct MappedIncomingSpinDensity {
     RhoDMatrix rho;
-    double x;
-    double scale;
-    double beamPz;
-    double rawPolarization;
     double clampedPolarization;
-    double sumPdfValue;
-    double diffPdfValue;
-    double ratio;
-    bool finite;
-    bool usedFallback;
-    bool usedClamp;
-    std::string status;
   };
 
   /**
    * Build the mapped incoming-parton rho matrix used by the real-emission
-   * spin machinery together with the underlying polarization diagnostics.
-   * When the mapped polarization is numerically unsafe, fall back to the
-   * unpolarized rho matrix for the requested parton.
+   * spin machinery. When the mapped polarization is numerically unsafe, fall
+   * back to the unpolarized rho matrix for the requested parton.
    */
   MappedIncomingSpinDensity mappedIncomingSpinDensity(tcPDPtr parton,
                                                       double x,
@@ -441,53 +379,10 @@ protected:
 protected:
 
   /**
-   * Master switch for optional DIS diagnostic logging.
-   */
-  bool diagnosticsEnabled() const { return disDiagnostics_; }
-
-  /**
-   * Return true when the current channel is the pure LO gamma mode used by
-   * the local point audit. Derived classes override this when they can
-   * identify the channel exactly.
-   */
-  virtual bool pureLOGammaPointAuditChannel() const { return false; }
-
-  /**
    * True for charged-current DIS matrix elements and false for neutral-current
    * ones. Used when selecting the applicable SimpleDISCut window.
    */
   virtual bool usesChargedCurrentDISWindow() const = 0;
-
-  /**
-   * Return true if a POWHEG real-emission spin diagnostic should be
-   * emitted for this event and provide the running diagnostic index.
-   */
-  bool nextPOWHEGRealSpinDiagnosticSlot(unsigned long & index) const;
-
-  /**
-   * Return true if an accepted NLO audit point should be emitted and provide
-   * the running accepted-event diagnostic index.
-   */
-  bool nextNLOAuditDiagnosticSlot(unsigned long & index) const;
-
-  /**
-   * Return true if a mapped Delta f / f clamp diagnostic should be emitted
-   * and provide the running diagnostic index.
-   */
-  bool nextMappedPolarizationClampDiagnosticSlot(unsigned long & index) const;
-
-  /**
-   * Return true if a sampled local LO gamma point should be emitted and
-   * provide the running diagnostic index.
-   */
-  bool nextLOGammaPointDiagnosticSlot(unsigned long & index) const;
-
-  /**
-   * Emit the structured local LO gamma point audit line.
-   */
-  void dumpLOGammaPointDiagnostic(unsigned long sampleIndex,
-                                  double me2Value,
-                                  CrossSection sigmaHat) const;
 
   /**
    * Whether the exact spin-only POWHEG real-emission vertex is enabled.
@@ -506,8 +401,7 @@ protected:
    */
   double NLOWeightRaw(double leptonPolarization,
                       double hadronPolarization,
-                      bool overridePolarizations,
-                      bool doDiagnostics = true) const;
+                      bool overridePolarizations) const;
 
   /**
    * Effective Born-side parton polarization built from the same polarized-PDF
@@ -645,76 +539,6 @@ protected:
    */
   RealEmissionProcessPtr generateNativePOWHEGHardest(RealEmissionProcessPtr born,
                                                      bool allowBornFallback);
-
-  /**
-   * Per-channel native POWHEG competition diagnostics for the current event.
-   */
-  struct POWHEGRawChannelDiagnostics {
-    POWHEGRawChannelDiagnostics();
-
-    std::string status;
-    unsigned long trials;
-    unsigned long rejectXP;
-    unsigned long rejectVeto;
-    unsigned long weightNeg;
-    unsigned long weightHigh;
-    double xp;
-    double zp;
-    double xMapped;
-    double xT;
-    double xTMin;
-    double pT;
-    double phase;
-    double pdfRatio;
-    double alphaRatio;
-    double meAvg;
-    double wgt;
-    double pdfScale;
-    double alphaScale;
-  };
-
-  /**
-   * Event-local native POWHEG competition diagnostics for the current event.
-   */
-  struct POWHEGRawEventDiagnostics {
-    POWHEGRawEventDiagnostics();
-
-    double q2;
-    double xB;
-    double y;
-    double s;
-    std::string winner;
-    unsigned int fallback;
-    POWHEGRawChannelDiagnostics compton;
-    POWHEGRawChannelDiagnostics bgf;
-  };
-
-  /**
-   * Dump the winning raw POWHEG hadronic pair before the Breit-to-lab
-   * rotation is applied.
-   */
-  void dumpPOWHEGRawMomenta(bool isCompton, unsigned long eventIndex) const;
-
-  /**
-   * Prepare a new raw POWHEG diagnostic slot and return its event index.
-   */
-  bool beginPOWHEGRawDiagnosticEvent(unsigned long & index) const;
-
-  /**
-   * Reset the transient raw POWHEG competition diagnostics.
-   */
-  void resetPOWHEGRawDiagnostics();
-
-  /**
-   * Dump the per-event native POWHEG competition summary.
-   */
-  void dumpPOWHEGRawSummary(unsigned long eventIndex) const;
-
-  /**
-   * Return the current beam-level ep invariant mass squared used in the raw
-   * POWHEG diagnostics and local LO gamma audit.
-   */
-  double currentPOWHEGRawBeamS() const;
 
   /**
    * Generate the configured comparison-mode hardest emission.
@@ -899,30 +723,6 @@ private:
                                               double & ctmax) const;
 
   /**
-   * Emit a diagnostic when the native tightened window accepted a point that
-   * still failed the final passCuts() check.
-   */
-  void logNativeWindowAcceptedButCutRejected(double xB,
-                                             Energy2 q2,
-                                             double cth,
-                                             double legacyCtmin,
-                                             double legacyCtmax,
-                                             double nativeCtmin,
-                                             double nativeCtmax) const;
-
-  /**
-   * Emit a diagnostic for a point that the legacy angular window would have
-   * generated but the native DIS window removes.
-   */
-  void logLegacyOnlyAcceptedPoint(double xB,
-                                  Energy2 q2,
-                                  double cth,
-                                  double legacyCtmin,
-                                  double legacyCtmax,
-                                  double nativeCtmin,
-                                  double nativeCtmax) const;
-
-  /**
    *  The radiative variables
    */
   //@{
@@ -976,63 +776,10 @@ private:
   bool generateRivetWeights_;
 
   /**
-   *  Master switch for optional DIS/POWHEG diagnostic logging.
-   */
-  bool disDiagnostics_;
-
-  /**
    *  Tighten the Born generation to the full DIS window before applying the
    *  safety-check passCuts() veto.
    */
   bool useNativeDISWindowGeneration_;
-
-  /**
-   *  Use the canonical uniform polarized-NLO term assembly for the shared
-   *  DIS NLO representation. This is the validated default Branch A path.
-   */
-  bool useUniformPolarizedNLORepresentation_;
-
-  /**
-   *  Experimental Branch B switch: use raw finite-form polarized deltas in
-   *  the odd NLO kernels while retaining the clamped spin objects elsewhere.
-   */
-  bool useRawFinitePolarizedNLODeltas_;
-
-  /**
-   *  Emit the periodic NLO_TERM_* summary diagnostics.
-   */
-  bool dumpNLOTermDiagnostics_;
-
-  /**
-   *  Emit sampled NLO point-audit diagnostics.
-   */
-  bool dumpNLOAuditDiagnostics_;
-
-  /**
-   *  Emit sampled local LO gamma point diagnostics.
-   */
-  bool dumpLOGammaPointDiagnostics_;
-
-  /**
-   *  Number of accepted NLO events to dump before periodic sampling starts.
-   */
-  unsigned long nloAuditInitialSamples_;
-
-  /**
-   *  Periodic sampling interval for accepted NLO audit diagnostics.
-   */
-  unsigned long nloAuditSamplePeriod_;
-
-  /**
-   *  Periodic sampling interval for the cumulative NLO summary diagnostics.
-   */
-  unsigned long nloTermDiagnosticPeriod_;
-
-  /**
-   *  Maximum number of local LO gamma point diagnostics to emit.
-   *  A value of zero means no limit.
-   */
-  unsigned long loGammaPointDiagnosticMax_;
 
   /**
    *  Comparison-only ladder for bringing the POWHEG hardest-emission path
@@ -1052,17 +799,6 @@ private:
   bool usePOWHEGRealSpinVertex_;
 
   /**
-   *  Dump the winning raw POWHEG hadronic pair before qtilde reconstruction.
-   */
-  bool dumpPOWHEGRawMomenta_;
-
-  /**
-   *  Maximum number of raw POWHEG momentum dumps to emit. Zero means
-   *  unlimited.
-   */
-  unsigned long powhegRawMomentaDumpMax_;
-
-  /**
    *  Lepton longitudinal polarization for the current real-emission state.
    */
   double leptonPolarization_;
@@ -1077,59 +813,6 @@ private:
    *  Sampling diagnostics for the mapped xp variable.
    */
   double xpSamplingRandom_, xpSamplingRho_, xpSamplingRhomin_;
-
-  /**
-   *  Event-local native POWHEG competition diagnostics. These are transient
-   *  and are rebuilt for each attempted raw POWHEG event.
-   */
-  POWHEGRawEventDiagnostics powhegRawDiagnostics_;
-
-  /**
-   *  Emit a dedicated diagnostic for the realised POWHEG 2->3 spin state.
-   */
-  bool diagnosePOWHEGRealSpinVertex_;
-
-  /**
-   *  Maximum number of POWHEG real-emission spin diagnostics to emit.
-   *  A value of zero means no limit.
-   */
-  unsigned long powhegRealSpinDiagMax_;
-
-  /**
-   *  Counter for emitted POWHEG real-emission spin diagnostics.
-   */
-  mutable unsigned long powhegRealSpinDiagCount_;
-
-  /**
-   *  Counter for accepted NLO audit diagnostics.
-   */
-  mutable unsigned long nloAuditAcceptedCount_;
-
-  /**
-   *  Counter for emitted raw POWHEG momentum diagnostics.
-   */
-  mutable unsigned long powhegRawMomentaDumpCount_;
-
-  /**
-   *  Counter for emitted local LO gamma point diagnostics.
-   */
-  mutable unsigned long loGammaPointDiagnosticCount_;
-
-  /**
-   *  Counter for emitted mapped Delta f / f clamp diagnostics.
-   */
-  mutable unsigned long mappedPolarizationClampDiagnosticCount_;
-
-  /**
-   *  Counter for native-window points that still fail passCuts().
-   */
-  mutable unsigned long nativeWindowAcceptedButCutRejectedCount_;
-
-  /**
-   *  Counter for points that the legacy angular window would have generated
-   *  but the native DIS window removes.
-   */
-  mutable unsigned long legacyOnlyAcceptedCount_;
 
   /**
    *  Cached copy of the active DIS window used by native generation.

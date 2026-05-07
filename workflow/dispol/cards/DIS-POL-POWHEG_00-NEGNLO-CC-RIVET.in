@@ -2,7 +2,7 @@
 
 ##################################################
 # Charged-current NLO DIS — unpolarized (00)
-# Diagnostic: baseline for photon-only NLO comparison
+# Photon-only NLO DIS setup
 ##################################################
 
 read snippets/EPCollider.in

@@ -535,7 +535,7 @@ protected:
   }
 
   /**
-   *  Insert the raw POWHEG real-emission process into the current shower tree.
+   *  Insert the generated POWHEG real-emission process into the current shower tree.
    */
   bool insertFixedOrderPOWHEGRealEmission(bool hard);
 

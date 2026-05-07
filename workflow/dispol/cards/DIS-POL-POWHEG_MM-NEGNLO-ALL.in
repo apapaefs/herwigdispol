@@ -2,7 +2,7 @@
 
 ##################################################
 # Photon-only NLO DIS — PP polarization
-# Diagnostic: isolate NLO polarized machinery from γ+Z complications
+# Polarized DIS validation setup
 ##################################################
 
 read snippets/EPCollider.in

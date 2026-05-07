@@ -5,8 +5,7 @@ Run focused polarized NLO follow-up studies for the DIS validation campaign.
 Modes:
   - gamma-interior: interior-window polarized GAMMA NLO study
   - gamma-power-scan: broad-window polarized GAMMA SamplingPower scan
-  - z-termdiag: Z NLO term-diagnostic runs and extraction
-  - all: run the three studies in sequence
+  - all: run the two studies in sequence
 
 The script mirrors the operational style of run_z_lo_sigma0_check.py:
   * generate temporary .in files under campaigns/<tag>/<mode>/generated-inputs/
@@ -26,7 +25,6 @@ import math
 import re
 import shlex
 import subprocess
-import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -48,20 +46,16 @@ DEFAULT_SEED_BASE = 700_000
 
 GAMMA_INTERIOR_MODE = "gamma-interior"
 GAMMA_POWER_SCAN_MODE = "gamma-power-scan"
-Z_TERMDIAG_MODE = "z-termdiag"
 ALL_MODE = "all"
-VALID_MODES = (GAMMA_INTERIOR_MODE, GAMMA_POWER_SCAN_MODE, Z_TERMDIAG_MODE, ALL_MODE)
+VALID_MODES = (GAMMA_INTERIOR_MODE, GAMMA_POWER_SCAN_MODE, ALL_MODE)
 
 GAMMA_CONTROL_TAG = "plain47"
 GAMMA_INTERIOR_SUFFIX = "GNLOINT"
-Z_TERMDIAG_SUFFIX = "ZTDIAG"
 
 DEFAULT_GAMMA_INTERIOR_SHARDS = 100
 DEFAULT_GAMMA_INTERIOR_EVENTS = 1_000_000
 DEFAULT_GAMMA_POWER_SCAN_SHARDS = 20
 DEFAULT_GAMMA_POWER_SCAN_EVENTS = 1_000_000
-DEFAULT_Z_TERMDIAG_SHARDS = 1
-DEFAULT_Z_TERMDIAG_EVENTS = 1_000_000
 DEFAULT_POWER_SCAN_POWERS = "0.4,0.8"
 
 SAMPLING_POWER_OBJECTS = ("MEDISNC", "MEDISNCPol", "PowhegMEDISNC", "PowhegMEDISNCPol")
@@ -112,7 +106,7 @@ class ShardResult:
     launcher_log: Path
 
 
-BROAD_GAMMA_WINDOW = CutWindow(label="broad", q2_min=49.0, q2_max=2500.0, y_min=0.2, y_max=0.6)
+BROAD_GAMMA_WINDOW = CutWindow(label="broad", q2_min=100.0, q2_max=2500.0, y_min=0.2, y_max=0.6)
 INTERIOR_GAMMA_WINDOW = CutWindow(label="interior", q2_min=100.0, q2_max=1000.0, y_min=0.3, y_max=0.5)
 
 
@@ -182,33 +176,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Events per shard for gamma-power-scan.",
     )
 
-    parser.add_argument(
-        "--z-termdiag-shards",
-        type=int,
-        default=DEFAULT_Z_TERMDIAG_SHARDS,
-        help="Shards per logical run for z-termdiag.",
-    )
-    parser.add_argument(
-        "--z-termdiag-events-per-shard",
-        type=int,
-        default=DEFAULT_Z_TERMDIAG_EVENTS,
-        help="Events per shard for z-termdiag.",
-    )
-    parser.add_argument(
-        "--nlo-audit-initial-samples",
-        type=int,
-        help="Optional override for NLOAuditInitialSamples in generated Z TERMDIAG cards.",
-    )
-    parser.add_argument(
-        "--nlo-audit-sample-period",
-        type=int,
-        help="Optional override for NLOAuditSamplePeriod in generated Z TERMDIAG cards.",
-    )
-    parser.add_argument(
-        "--nlo-term-diagnostic-period",
-        type=int,
-        help="Optional override for NLOTermDiagnosticPeriod in generated Z TERMDIAG cards.",
-    )
     return parser
 
 
@@ -218,14 +185,6 @@ def build_gamma_requested_name(piece: str, helicity: str) -> str:
 
 def build_gamma_source_card(piece: str, helicity: str) -> str:
     return build_gamma_requested_name(piece, helicity).replace(".out", ".in")
-
-
-def build_z_termdiag_requested_name(piece: str, helicity: str) -> str:
-    return f"DIS-POL-POWHEG_{helicity}-{piece}-Z-TERMDIAG.out"
-
-
-def build_z_termdiag_source_card(piece: str, helicity: str) -> str:
-    return build_z_termdiag_requested_name(piece, helicity).replace(".out", ".in")
 
 
 def stem_without_suffix(filename: str) -> str:
@@ -559,7 +518,6 @@ def patch_card_text(
     window: CutWindow | None = None,
     sampling_power: float | None = None,
     enforce_finite_width: bool = False,
-    z_diag_overrides: Mapping[str, int] | None = None,
 ) -> str:
     replacements = {}
     if window is not None:
@@ -569,7 +527,6 @@ def patch_card_text(
             "set /Herwig/Cuts/NeutralCurrentCut:Miny ": f"set /Herwig/Cuts/NeutralCurrentCut:Miny {window.y_min}",
             "set /Herwig/Cuts/NeutralCurrentCut:Maxy ": f"set /Herwig/Cuts/NeutralCurrentCut:Maxy {window.y_max}",
         }
-    z_diag_overrides = dict(z_diag_overrides or {})
     source_has_sampling = "SamplingPower" in source_text
     source_has_finite_width = "UseFiniteWidthSpacelikeZPropagator" in source_text
     lines = source_text.splitlines()
@@ -610,22 +567,6 @@ def patch_card_text(
                 patched.append(f"set {lhs.split()[0]} Yes")
             else:
                 patched.append(line)
-            continue
-
-        if stripped.startswith("set /Herwig/MatrixElements/PowhegMEDISNCPol:NLOAuditInitialSamples ") and "NLOAuditInitialSamples" in z_diag_overrides:
-            patched.append(
-                f"set /Herwig/MatrixElements/PowhegMEDISNCPol:NLOAuditInitialSamples {z_diag_overrides['NLOAuditInitialSamples']}"
-            )
-            continue
-        if stripped.startswith("set /Herwig/MatrixElements/PowhegMEDISNCPol:NLOAuditSamplePeriod ") and "NLOAuditSamplePeriod" in z_diag_overrides:
-            patched.append(
-                f"set /Herwig/MatrixElements/PowhegMEDISNCPol:NLOAuditSamplePeriod {z_diag_overrides['NLOAuditSamplePeriod']}"
-            )
-            continue
-        if stripped.startswith("set /Herwig/MatrixElements/PowhegMEDISNCPol:NLOTermDiagnosticPeriod ") and "NLOTermDiagnosticPeriod" in z_diag_overrides:
-            patched.append(
-                f"set /Herwig/MatrixElements/PowhegMEDISNCPol:NLOTermDiagnosticPeriod {z_diag_overrides['NLOTermDiagnosticPeriod']}"
-            )
             continue
 
         if stripped == "cd /Herwig/MatrixElements/":
@@ -1060,30 +1001,6 @@ def build_gamma_interior_runs(tag: str) -> List[LogicalRun]:
     return runs
 
 
-def build_z_termdiag_runs(tag: str) -> List[LogicalRun]:
-    runs: List[LogicalRun] = []
-    for piece in NLO_PIECES:
-        for helicity in GAMMA_HELICITIES:
-            source_card = build_z_termdiag_source_card(piece, helicity)
-            source_stem = stem_without_suffix(source_card)
-            generated_stem = f"{source_stem}-{Z_TERMDIAG_SUFFIX}"
-            key = f"{piece}_{helicity}"
-            runs.append(
-                LogicalRun(
-                    mode=Z_TERMDIAG_MODE,
-                    key=key,
-                    source_card=source_card,
-                    requested_name=build_z_termdiag_requested_name(piece, helicity),
-                    generated_stem=generated_stem,
-                    generated_input_rel=Path("campaigns") / tag / Z_TERMDIAG_MODE / "generated-inputs" / f"{generated_stem}.in",
-                    run_file=f"{generated_stem}.run",
-                    piece=piece,
-                    helicity=helicity,
-                )
-            )
-    return runs
-
-
 def print_plan(base_dir: Path, tag: str, mode: str, runs: Sequence[LogicalRun], shards: Sequence[ShardSpec]) -> None:
     print(f"[plan:{mode}] base_dir={base_dir}")
     print(f"[plan:{mode}] logical_runs={len(runs)} shards={len(shards)}")
@@ -1233,101 +1150,12 @@ def run_gamma_power_scan(args: argparse.Namespace, seed_base: int | None = None)
     print(f"Wrote CSV report: {csv_path}")
 
 
-def extractor_output_paths(base_dir: Path, tag: str) -> tuple[Path, Path, Path]:
-    mode_dir = campaign_mode_dir(base_dir, tag, Z_TERMDIAG_MODE)
-    return mode_dir / "extract.txt", mode_dir / "extract.json", mode_dir / "extract.csv"
-
-
-def run_z_termdiag_extractor(base_dir: Path, tag: str, dry_run: bool) -> None:
-    text_path, json_path, csv_path = extractor_output_paths(base_dir, tag)
-    cmd = [
-        sys.executable,
-        str(base_dir / "extract_nlo_term_diagnostics.py"),
-        "--base-dir",
-        str(base_dir),
-        "--tag",
-        tag,
-        "--strict-tag",
-        "--setup",
-        "Z",
-        "--piece",
-        "POSNLO",
-        "--piece",
-        "NEGNLO",
-        "--helicity",
-        "PP",
-        "--helicity",
-        "PM",
-        "--name-filter",
-        "TERMDIAG",
-        "--z-spin-report",
-        "--json-out",
-        str(json_path),
-        "--csv-out",
-        str(csv_path),
-    ]
-    if dry_run:
-        print(shlex.join(cmd))
-        return
-    mode_dir = campaign_mode_dir(base_dir, tag, Z_TERMDIAG_MODE)
-    mode_dir.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.run(cmd, cwd=base_dir, capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(f"extract_nlo_term_diagnostics.py failed:\n{proc.stderr}")
-    text_path.write_text(proc.stdout)
-    print(proc.stdout, end="")
-    print(f"Wrote extractor text report: {text_path}")
-    print(f"Wrote extractor JSON report: {json_path}")
-    print(f"Wrote extractor CSV report: {csv_path}")
-
-
-def run_z_termdiag(args: argparse.Namespace, seed_base: int | None = None) -> None:
-    base_dir = args.base_dir.resolve()
-    tag = args.tag
-    seed_base = args.seed_base if seed_base is None else seed_base
-    overrides: Dict[str, int] = {}
-    if args.nlo_audit_initial_samples is not None:
-        overrides["NLOAuditInitialSamples"] = args.nlo_audit_initial_samples
-    if args.nlo_audit_sample_period is not None:
-        overrides["NLOAuditSamplePeriod"] = args.nlo_audit_sample_period
-    if args.nlo_term_diagnostic_period is not None:
-        overrides["NLOTermDiagnosticPeriod"] = args.nlo_term_diagnostic_period
-
-    runs = build_z_termdiag_runs(tag)
-    patch_by_key = {
-        run.key: {
-            "enforce_finite_width": True,
-            "z_diag_overrides": overrides,
-        }
-        for run in runs
-    }
-    materialize_cards(base_dir, runs, patch_by_key)
-    shards = build_shards(runs, tag, args.z_termdiag_shards, args.z_termdiag_events_per_shard, seed_base)
-
-    if args.dry_run:
-        print_plan(base_dir, tag, Z_TERMDIAG_MODE, runs, shards)
-        ensure_run_files(base_dir, runs, dry_run=True)
-        run_z_termdiag_extractor(base_dir, tag, dry_run=True)
-        return
-
-    if not args.collect_only:
-        ensure_run_files(base_dir, runs, dry_run=False)
-        run_shards(base_dir, tag, Z_TERMDIAG_MODE, shards, args.jobs)
-
-    run_z_termdiag_extractor(base_dir, tag, dry_run=False)
-
-
 def run_all(args: argparse.Namespace) -> None:
     base_seed = args.seed_base
     run_gamma_interior(args, seed_base=base_seed)
 
-    powers = parse_power_list(args.powers)
     gamma_power_seed = base_seed + args.gamma_interior_shards * 4
     run_gamma_power_scan(args, seed_base=gamma_power_seed)
-
-    generated_power_runs = len(powers) * 4
-    z_seed = gamma_power_seed + args.gamma_power_scan_shards * generated_power_runs
-    run_z_termdiag(args, seed_base=z_seed)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -1339,8 +1167,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         run_gamma_interior(args)
     elif args.mode == GAMMA_POWER_SCAN_MODE:
         run_gamma_power_scan(args)
-    elif args.mode == Z_TERMDIAG_MODE:
-        run_z_termdiag(args)
     elif args.mode == ALL_MODE:
         run_all(args)
     else:

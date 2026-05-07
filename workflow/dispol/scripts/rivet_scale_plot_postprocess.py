@@ -19,11 +19,6 @@ _HELPER_BLOCK = textwrap.dedent(
 
     # Codex scale-envelope patch
     scale_band_labels = {label for label in dataf['yvals'] if '.herwig_' in label}
-    raw_overlay_labels = {
-        label
-        for label in dataf['yvals']
-        if '.raw_powheg_' in label or label.startswith('Raw_POWHEG')
-    }
     reference_label = next((label for label in dataf['yvals'] if label.startswith('POLDIS')), None)
     if reference_label is None and 'Data' in dataf['yvals']:
         reference_label = 'Data'
@@ -32,11 +27,12 @@ _HELPER_BLOCK = textwrap.dedent(
             (
                 label
                 for label in dataf['yvals']
-                if label not in scale_band_labels and label not in raw_overlay_labels
+                if label not in scale_band_labels
             ),
             None,
         )
-    desired_reference_label = 'POLDIS NLO'
+    desired_reference_label = '__REFERENCE_LABEL__'
+    original_reference_label = reference_label
     scale_band_opacity = 0.5
 
     def _rename_plot_label(old, new):
@@ -55,12 +51,33 @@ _HELPER_BLOCK = textwrap.dedent(
             variation_mapping.update(renamed_variations)
         if isinstance(dataf.get('add_legend_handle'), list):
             dataf['add_legend_handle'] = [new if label == old else label for label in dataf['add_legend_handle']]
-        if old in styles:
-            styles[new] = styles.pop(old)
         return new
 
     if reference_label is not None:
         reference_label = _rename_plot_label(reference_label, desired_reference_label)
+
+    def _copy_scale_patch_style(source_label, target_label):
+        if source_label is None or target_label is None:
+            return
+        if target_label in styles:
+            return
+        if source_label in styles:
+            styles[target_label] = dict(styles[source_label])
+            return
+        for candidate in ('Data', 'POLDIS NLO', 'POLDIS LO', 'POLDIS NNLO'):
+            if candidate in styles:
+                styles[target_label] = dict(styles[candidate])
+                return
+        for candidate, style in styles.items():
+            if candidate not in scale_band_labels:
+                styles[target_label] = dict(style)
+                return
+
+    def _ensure_scale_patch_styles():
+        if reference_label is not None:
+            _copy_scale_patch_style(original_reference_label, reference_label)
+        for _label in list(dataf.get('yvals', {})):
+            _copy_scale_patch_style(reference_label, _label)
 
     def _symmetrize_reference_yerrs(label):
         if label is None or label not in dataf.get('yerrs', {}):
@@ -143,6 +160,8 @@ _HELPER_BLOCK = textwrap.dedent(
             band_dn = np.insert(band_dn, 0, band_dn[0])
             band_up = np.insert(band_up, 0, band_up[0])
         return band_dn, band_up
+
+    # End Codex scale-envelope patch
     """
 ).strip("\n")
 
@@ -150,6 +169,7 @@ _HELPER_BLOCK = textwrap.dedent(
 _MAIN_PANEL_BLOCK = textwrap.dedent(
     """
     # curve from input yoda files in main panel
+    _ensure_scale_patch_styles()
     for label, yvals in dataf['yvals'].items():
         if all(np.isnan(v) for v in dataf['yvals'][label]):
             continue
@@ -257,7 +277,11 @@ _RATIO_PANEL_BLOCK = textwrap.dedent(
 ).strip("\n")
 
 
-def patch_scale_envelope_plot_script_text(text: str) -> str:
+def scale_envelope_helper_block(reference_label: str) -> str:
+    return _HELPER_BLOCK.replace("__REFERENCE_LABEL__", reference_label)
+
+
+def patch_scale_envelope_plot_script_text(text: str, reference_label: str = "POLDIS NLO") -> str:
     data_import_match = re.search(r"exec\(open\(prefix\+'[^']+__data\.py'\)\.read\(\), dataf\)\n", text)
     if not data_import_match:
         raise ValueError("Could not find generated data import block in Rivet plot script")
@@ -265,16 +289,24 @@ def patch_scale_envelope_plot_script_text(text: str) -> str:
     patched = text
     if PATCH_SENTINEL in patched:
         patched = re.sub(
-            r"\n\n# Codex scale-envelope patch.*?(?=\nlegend_handles = dict\(\) # keep track of handles for the legend\n)",
+            r"\n\n# Codex scale-envelope patch.*?# End Codex scale-envelope patch\n",
             "\n\n",
             patched,
             count=1,
             flags=re.S,
         )
+        if PATCH_SENTINEL in patched:
+            patched = re.sub(
+                r"\n\n# Codex scale-envelope patch.*?\ndef _ratio_band_arrays\(label\):.*?\n    return band_dn, band_up\n",
+                "\n\n",
+                patched,
+                count=1,
+                flags=re.S,
+            )
     patched = (
         patched[: data_import_match.end()]
         + "\n\n"
-        + _HELPER_BLOCK
+        + scale_envelope_helper_block(reference_label)
         + patched[data_import_match.end() :]
     )
 
@@ -294,7 +326,11 @@ def patch_scale_envelope_plot_script_text(text: str) -> str:
     return patched
 
 
-def rewrite_scale_envelope_plot_scripts(plot_dir: Path, python_executable: str | None = None) -> Tuple[int, int]:
+def rewrite_scale_envelope_plot_scripts(
+    plot_dir: Path,
+    python_executable: str | None = None,
+    reference_label: str = "POLDIS NLO",
+) -> Tuple[int, int]:
     python_cmd = python_executable or sys.executable
     patched_count = 0
     rerendered_count = 0
@@ -303,7 +339,7 @@ def rewrite_scale_envelope_plot_scripts(plot_dir: Path, python_executable: str |
         if script_path.name.endswith("__data.py"):
             continue
         original = script_path.read_text()
-        updated = patch_scale_envelope_plot_script_text(original)
+        updated = patch_scale_envelope_plot_script_text(original, reference_label=reference_label)
         if updated != original:
             script_path.write_text(updated)
             patched_count += 1
@@ -332,19 +368,38 @@ _NOSCALE_HELPER_BLOCK = textwrap.dedent(
 
     # Codex no-scale ratio patch
     main_reference_label = dataf['add_legend_handle'][0] if dataf.get('add_legend_handle') else next(iter(dataf['yvals']))
+    try:
+        _initial_ratio_y_lims = tuple(ratio0_ax.get_ylim())
+    except Exception:
+        _initial_ratio_y_lims = (0.5, 1.5)
+
+    def _is_none_ratio_reference_label(label):
+        normalized = str(label).upper()
+        return normalized == 'NONE' or 'NOSPIN-UNPOL' in normalized
+
     ratio_reference_label = next(
         (
             label
             for label in dataf.get('add_legend_handle', [])
-            if 'RIVETPS-NOSPIN-UNPOL' in label
+            if _is_none_ratio_reference_label(label)
         ),
         None,
     )
     if ratio_reference_label is None:
         ratio_reference_label = next(
-            (label for label in dataf['yvals'] if 'RIVETPS-NOSPIN-UNPOL' in label),
+            (label for label in dataf['yvals'] if _is_none_ratio_reference_label(label)),
             main_reference_label,
         )
+
+    def _no_scale_ratio_y_lims():
+        if (
+            isinstance(_initial_ratio_y_lims, tuple)
+            and len(_initial_ratio_y_lims) == 2
+            and all(np.isfinite(value) for value in _initial_ratio_y_lims)
+            and _initial_ratio_y_lims[0] < _initial_ratio_y_lims[1]
+        ):
+            return _initial_ratio_y_lims
+        return (0.5, 1.5)
 
     def _main_xpoints(label):
         xpts = list(dataf['xpoints'][label])
@@ -444,7 +499,7 @@ _NOSCALE_RATIO_PANEL_BLOCK = textwrap.dedent(
         tmp[-1][0].set_linewidth(styles[label]['ratio0_linewidth'])
 
     ratio0_ax.axhline(1.0, color='0.5', linewidth=0.8, linestyle='--', zorder=0)
-    ratio0_ax.set_ylim(0.5, 1.5)
+    ratio0_ax.set_ylim(*_no_scale_ratio_y_lims())
     """
 ).strip("\n")
 
