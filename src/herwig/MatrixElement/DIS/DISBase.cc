@@ -172,197 +172,24 @@ void DISBase::persistentOutput(PersistentOStream & os) const {
 }
 
 void DISBase::persistentInput(PersistentIStream & is, int version) {
+  if(version != 14) {
+    throw Exception()
+      << "DISBase persistent input version " << version
+      << " is no longer supported after the release diagnostic cleanup. "
+      << "Regenerate .run files from the source cards."
+      << Exception::runerror;
+  }
+
   is >> comptonInt_ >> bgfInt_ >> procProb_  >> initial_ >> final_ >> alpha_
      >> iunit(pTmin_,GeV) >> comptonWeight_ >> BGFWeight_ >> gluon_
-     >> iunit(muF_,GeV) >> scaleFact_ >> scaleOpt_ >> contrib_;
-  bool b0 = false, b1 = false, b2 = false, b3 = false, b4 = false;
-  unsigned long ul0 = 0, ul1 = 0, ul2 = 0, ul3 = 0, ul4 = 0;
-  bool legacyFixedOrderSampling = false;
-  generateRivetWeights_ = false;
-  useFixedOrderAlphaSInPOWHEGEmission_ = false;
-  useQ2ScaleInPOWHEGEmission_ = false;
-  useNativeDISWindowGeneration_ = false;
-  powhegEmissionComparisonMode_ = POWHEGEmissionComparisonModeDefault;
-  powhegEmissionComparisonMaxAttempts_ = 100;
-  usePOWHEGRealSpinVertex_ = false;
-  if(version == 0) {
-    is >> usePOWHEGRealSpinVertex_ >> power_;
-  }
-  else if(version == 1) {
-    is >> useFixedOrderAlphaSInPOWHEGEmission_
-       >> useQ2ScaleInPOWHEGEmission_
-       >> legacyFixedOrderSampling
-       >> usePOWHEGRealSpinVertex_ >> b0
-       >> ul0 >> power_;
-  }
-  else if(version == 2) {
-    is >> useFixedOrderAlphaSInPOWHEGEmission_
-       >> useQ2ScaleInPOWHEGEmission_
-       >> legacyFixedOrderSampling
-       >> powhegEmissionComparisonMode_
-       >> powhegEmissionComparisonMaxAttempts_
-       >> usePOWHEGRealSpinVertex_
-       >> b0 >> ul0 >> power_;
-  }
-  else if(version == 3) {
-    is >> useFixedOrderAlphaSInPOWHEGEmission_
-       >> useQ2ScaleInPOWHEGEmission_
-       >> powhegEmissionComparisonMode_
-       >> powhegEmissionComparisonMaxAttempts_
-       >> usePOWHEGRealSpinVertex_
-       >> b0 >> ul0 >> power_;
-  }
-  else if(version == 4) {
-    is >> useFixedOrderAlphaSInPOWHEGEmission_
-       >> useQ2ScaleInPOWHEGEmission_
-       >> powhegEmissionComparisonMode_
-       >> powhegEmissionComparisonMaxAttempts_
-       >> usePOWHEGRealSpinVertex_
-       >> b0 >> ul0
-       >> b1 >> ul1 >> power_;
-  }
-  else if(version == 5) {
-    is >> useFixedOrderAlphaSInPOWHEGEmission_
-       >> useQ2ScaleInPOWHEGEmission_
-       >> b0
-       >> powhegEmissionComparisonMode_
-       >> powhegEmissionComparisonMaxAttempts_
-       >> usePOWHEGRealSpinVertex_
-       >> b1 >> ul0
-       >> b2 >> ul1 >> power_;
-  }
-  else if(version == 6) {
-    is >> useFixedOrderAlphaSInPOWHEGEmission_
-       >> useQ2ScaleInPOWHEGEmission_
-       >> b0
-       >> b1
-       >> powhegEmissionComparisonMode_
-       >> powhegEmissionComparisonMaxAttempts_
-       >> usePOWHEGRealSpinVertex_
-       >> b2 >> ul0
-       >> b3 >> ul1 >> power_;
-  }
-  else if(version == 7) {
-    is >> useFixedOrderAlphaSInPOWHEGEmission_
-       >> useQ2ScaleInPOWHEGEmission_
-       >> b0
-       >> b1
-       >> b2
-       >> ul0 >> ul1
-       >> powhegEmissionComparisonMode_
-       >> powhegEmissionComparisonMaxAttempts_
-       >> usePOWHEGRealSpinVertex_
-       >> b3 >> ul2
-       >> b4 >> ul3 >> power_;
-  }
-  else if(version == 8) {
-    is >> useFixedOrderAlphaSInPOWHEGEmission_
-       >> useQ2ScaleInPOWHEGEmission_
-       >> b0
-       >> b1
-       >> b2
-       >> ul0 >> ul1
-       >> ul2
-       >> powhegEmissionComparisonMode_
-       >> powhegEmissionComparisonMaxAttempts_
-       >> usePOWHEGRealSpinVertex_
-       >> b3 >> ul3
-       >> b4 >> ul4 >> power_;
-  }
-  else if(version == 9) {
-    is >> useFixedOrderAlphaSInPOWHEGEmission_
-       >> useQ2ScaleInPOWHEGEmission_
-       >> b0
-       >> b1
-       >> b2
-       >> ul0 >> ul1
-       >> ul2
-       >> b3 >> ul3
-       >> powhegEmissionComparisonMode_
-       >> powhegEmissionComparisonMaxAttempts_
-       >> usePOWHEGRealSpinVertex_
-       >> b4 >> ul4
-       >> b0 >> ul0 >> power_;
-  }
-  else if(version == 10) {
-    is >> useFixedOrderAlphaSInPOWHEGEmission_
-       >> useQ2ScaleInPOWHEGEmission_
-       >> b0
-       >> useNativeDISWindowGeneration_
-       >> b1
-       >> b2
-       >> ul0 >> ul1
-       >> ul2
-       >> b3 >> ul3
-       >> powhegEmissionComparisonMode_
-       >> powhegEmissionComparisonMaxAttempts_
-       >> usePOWHEGRealSpinVertex_
-       >> b4 >> ul4
-       >> b0 >> ul0 >> power_;
-  }
-  else if(version == 11) {
-    is >> useFixedOrderAlphaSInPOWHEGEmission_
-       >> useQ2ScaleInPOWHEGEmission_
-       >> b0
-       >> useNativeDISWindowGeneration_
-       >> b1
-       >> b2
-       >> b3
-       >> ul0 >> ul1
-       >> ul2
-       >> b4 >> ul3
-       >> powhegEmissionComparisonMode_
-       >> powhegEmissionComparisonMaxAttempts_
-       >> usePOWHEGRealSpinVertex_
-       >> b0 >> ul4
-       >> b1 >> ul0 >> power_;
-  }
-  else if(version == 12) {
-    is >> useFixedOrderAlphaSInPOWHEGEmission_
-       >> useQ2ScaleInPOWHEGEmission_
-       >> b0
-       >> useNativeDISWindowGeneration_
-       >> b1
-       >> b2
-       >> b3
-       >> b4
-       >> ul0 >> ul1
-       >> ul2
-       >> b0 >> ul3
-       >> powhegEmissionComparisonMode_
-       >> powhegEmissionComparisonMaxAttempts_
-       >> usePOWHEGRealSpinVertex_
-       >> b1 >> ul4
-       >> b2 >> ul0 >> power_;
-  }
-  else if(version == 13) {
-    is >> useFixedOrderAlphaSInPOWHEGEmission_
-       >> useQ2ScaleInPOWHEGEmission_
-       >> b0
-       >> useNativeDISWindowGeneration_
-       >> b1
-       >> b2
-       >> b3
-       >> b4
-       >> ul0 >> ul1
-       >> ul2
-       >> b0 >> ul3
-       >> powhegEmissionComparisonMode_
-       >> powhegEmissionComparisonMaxAttempts_
-       >> usePOWHEGRealSpinVertex_
-       >> b1 >> ul4
-       >> b2 >> ul0
-       >> generateRivetWeights_ >> power_;
-  }
-  else {
-    is >> useFixedOrderAlphaSInPOWHEGEmission_
-       >> useQ2ScaleInPOWHEGEmission_
-       >> useNativeDISWindowGeneration_
-       >> powhegEmissionComparisonMode_
-       >> powhegEmissionComparisonMaxAttempts_
-       >> usePOWHEGRealSpinVertex_
-       >> generateRivetWeights_ >> power_;
-  }
+     >> iunit(muF_,GeV) >> scaleFact_ >> scaleOpt_ >> contrib_
+     >> useFixedOrderAlphaSInPOWHEGEmission_
+     >> useQ2ScaleInPOWHEGEmission_
+     >> useNativeDISWindowGeneration_
+     >> powhegEmissionComparisonMode_
+     >> powhegEmissionComparisonMaxAttempts_
+     >> usePOWHEGRealSpinVertex_
+     >> generateRivetWeights_ >> power_;
   if(powhegEmissionComparisonMode_ >
      POWHEGEmissionComparisonModeRealOnly) {
     powhegEmissionComparisonMode_ = POWHEGEmissionComparisonModeDefault;

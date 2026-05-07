@@ -805,12 +805,12 @@ private:
 
   /**
    *  Channel-local POWHEG raw variables for the currently selected winner.
-   *  These are transient diagnostics and are rebuilt for each event.
+   *  These transient generation values are rebuilt for each event.
    */
   double comptonRawXP_, comptonRawZP_, bgfRawXP_, bgfRawZP_;
 
   /**
-   *  Sampling diagnostics for the mapped xp variable.
+   *  Sampling state for the mapped xp variable.
    */
   double xpSamplingRandom_, xpSamplingRho_, xpSamplingRhomin_;
 
