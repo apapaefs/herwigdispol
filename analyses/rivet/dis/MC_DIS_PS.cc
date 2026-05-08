@@ -123,25 +123,40 @@ namespace Rivet {
       };
       const vector<double> broadeningBins = {
         0.0, 0.025, 0.050, 0.075, 0.100, 0.125, 0.150, 0.175,
-        0.200, 0.225, 0.250, 0.275, 0.300, 0.325, 0.350, 0.450, 0.500
+        0.200, 0.225, 0.250, 0.2625, 0.275, 0.2875, 0.300, 0.3125,
+        0.325, 0.3375, 0.350, 0.375, 0.400, 0.425, 0.450, 0.475, 0.500
       };
       book(_h_NJets, "NJets", 7, 1.5, 8.5);
       book(_h_pT3, "pT3", 15, 0.0, 30.0);
       book(_h_pT3OverpT1, "pT3OverpT1", 15, 0.0, 1.0);
+      book(_h_pT4, "pT4", 15, 0.0, 30.0);
+      book(_h_pT4OverpT1, "pT4OverpT1", 15, 0.0, 1.0);
       book(_h_SumPtExtra, "SumPtExtra", 20, 0.0, 40.0);
       book(_h_Phi3, "Phi3", 16, 0.0, M_PI);
+      book(_h_DeltaPhiHardJ3, "DeltaPhiHardJ3", 16, 0.0, M_PI);
+      book(_h_DeltaPhiJ13J14, "DeltaPhiJ13J14", 16, 0.0, M_PI);
       book(_h_PhiCurrentHemi, "PhiCurrentHemi", 20, 0.0, M_PI);
       book(_h_Broadening, "Broadening", broadeningBins);
+      book(_h_Cos2DeltaPhiHardJ3NumPt3OverpT1, "Cos2DeltaPhiHardJ3NumPt3OverpT1", 15, 0.0, 1.0);
+      book(_h_Cos2DeltaPhiHardJ3DenPt3OverpT1, "Cos2DeltaPhiHardJ3DenPt3OverpT1", 15, 0.0, 1.0);
+      book(_h_Cos2DeltaPhiJ13J14NumPt4OverpT1, "Cos2DeltaPhiJ13J14NumPt4OverpT1", 15, 0.0, 1.0);
+      book(_h_Cos2DeltaPhiJ13J14DenPt4OverpT1, "Cos2DeltaPhiJ13J14DenPt4OverpT1", 15, 0.0, 1.0);
       book(_h_Cos2PhiCurrentHemiNumQ2, "Cos2PhiCurrentHemiNumQ2", q2MomentBins);
       book(_h_Cos2PhiCurrentHemiDenQ2, "Cos2PhiCurrentHemiDenQ2", q2MomentBins);
       if (_rivetWeightsMode) {
         book(_h_DNJets, "DNJets", 7, 1.5, 8.5);
         book(_h_DpT3, "DpT3", 15, 0.0, 30.0);
         book(_h_DpT3OverpT1, "DpT3OverpT1", 15, 0.0, 1.0);
+        book(_h_DpT4, "DpT4", 15, 0.0, 30.0);
+        book(_h_DpT4OverpT1, "DpT4OverpT1", 15, 0.0, 1.0);
         book(_h_DSumPtExtra, "DSumPtExtra", 20, 0.0, 40.0);
         book(_h_DPhi3, "DPhi3", 16, 0.0, M_PI);
+        book(_h_DDeltaPhiHardJ3, "DDeltaPhiHardJ3", 16, 0.0, M_PI);
+        book(_h_DDeltaPhiJ13J14, "DDeltaPhiJ13J14", 16, 0.0, M_PI);
         book(_h_DPhiCurrentHemi, "DPhiCurrentHemi", 20, 0.0, M_PI);
         book(_h_DBroadening, "DBroadening", broadeningBins);
+        book(_h_DCos2DeltaPhiHardJ3NumPt3OverpT1, "DCos2DeltaPhiHardJ3NumPt3OverpT1", 15, 0.0, 1.0);
+        book(_h_DCos2DeltaPhiJ13J14NumPt4OverpT1, "DCos2DeltaPhiJ13J14NumPt4OverpT1", 15, 0.0, 1.0);
         book(_h_DCos2PhiCurrentHemiNumQ2, "DCos2PhiCurrentHemiNumQ2", q2MomentBins);
         book(_h_DCos2PhiCurrentHemiDenQ2, "DCos2PhiCurrentHemiDenQ2", q2MomentBins);
       }
@@ -290,14 +305,51 @@ namespace Rivet {
       if (acceptedJets.size() < 3) return;
 
       const ClusteredJet& jet3 = acceptedJets[2];
+      const double pT3OverpT1 = jet3.breitMom.pT() / jet1.breitMom.pT();
       _h_pT3->fill(jet3.breitMom.pT(), weight);
-      _h_pT3OverpT1->fill(jet3.breitMom.pT() / jet1.breitMom.pT(), weight);
+      _h_pT3OverpT1->fill(pT3OverpT1, weight);
       const double phi3 = foldToPi(jet3.breitMom.phi() - phiLepton);
+      const double deltaPhiHardJ3 = foldToPi(jet3.breitMom.phi() - jet1.breitMom.phi());
+      const double cos2DeltaPhiHardJ3 = std::cos(2.0 * deltaPhiHardJ3);
       _h_Phi3->fill(phi3, weight);
+      _h_DeltaPhiHardJ3->fill(deltaPhiHardJ3, weight);
+      _h_Cos2DeltaPhiHardJ3NumPt3OverpT1->fill(pT3OverpT1, cos2DeltaPhiHardJ3 * weight);
+      _h_Cos2DeltaPhiHardJ3DenPt3OverpT1->fill(pT3OverpT1, weight);
       if (_rivetWeightsMode) {
         _h_DpT3->fill(jet3.breitMom.pT(), deltaWeight);
-        _h_DpT3OverpT1->fill(jet3.breitMom.pT() / jet1.breitMom.pT(), deltaWeight);
+        _h_DpT3OverpT1->fill(pT3OverpT1, deltaWeight);
         _h_DPhi3->fill(phi3, deltaWeight);
+        _h_DDeltaPhiHardJ3->fill(deltaPhiHardJ3, deltaWeight);
+        _h_DCos2DeltaPhiHardJ3NumPt3OverpT1->fill(pT3OverpT1, cos2DeltaPhiHardJ3 * deltaWeight);
+      }
+
+      if (acceptedJets.size() < 4) return;
+
+      const ClusteredJet& jet4 = acceptedJets[3];
+      const double pT4OverpT1 = jet4.breitMom.pT() / jet1.breitMom.pT();
+      const Vector3 p1 = jet1.breitMom.vector3();
+      const Vector3 p3 = jet3.breitMom.vector3();
+      const Vector3 p4 = jet4.breitMom.vector3();
+      const Vector3 n13Raw = p1.cross(p3);
+      const Vector3 n14Raw = p1.cross(p4);
+      if (p1.mod() == 0.0 || n13Raw.mod() == 0.0 || n14Raw.mod() == 0.0) return;
+
+      const Vector3 p1Hat = p1.unit();
+      const Vector3 n13 = n13Raw.unit();
+      const Vector3 n14 = n14Raw.unit();
+      const double deltaPhiJ13J14 = foldToPi(std::atan2(p1Hat.dot(n13.cross(n14)), n13.dot(n14)));
+      const double cos2DeltaPhiJ13J14 = std::cos(2.0 * deltaPhiJ13J14);
+
+      _h_pT4->fill(jet4.breitMom.pT(), weight);
+      _h_pT4OverpT1->fill(pT4OverpT1, weight);
+      _h_DeltaPhiJ13J14->fill(deltaPhiJ13J14, weight);
+      _h_Cos2DeltaPhiJ13J14NumPt4OverpT1->fill(pT4OverpT1, cos2DeltaPhiJ13J14 * weight);
+      _h_Cos2DeltaPhiJ13J14DenPt4OverpT1->fill(pT4OverpT1, weight);
+      if (_rivetWeightsMode) {
+        _h_DpT4->fill(jet4.breitMom.pT(), deltaWeight);
+        _h_DpT4OverpT1->fill(pT4OverpT1, deltaWeight);
+        _h_DDeltaPhiJ13J14->fill(deltaPhiJ13J14, deltaWeight);
+        _h_DCos2DeltaPhiJ13J14NumPt4OverpT1->fill(pT4OverpT1, cos2DeltaPhiJ13J14 * deltaWeight);
       }
     }
 
@@ -345,20 +397,34 @@ namespace Rivet {
       scale(_h_NJets, sf);
       scale(_h_pT3, sf);
       scale(_h_pT3OverpT1, sf);
+      scale(_h_pT4, sf);
+      scale(_h_pT4OverpT1, sf);
       scale(_h_SumPtExtra, sf);
       scale(_h_Phi3, sf);
+      scale(_h_DeltaPhiHardJ3, sf);
+      scale(_h_DeltaPhiJ13J14, sf);
       scale(_h_PhiCurrentHemi, sf);
       scale(_h_Broadening, sf);
+      scale(_h_Cos2DeltaPhiHardJ3NumPt3OverpT1, sf);
+      scale(_h_Cos2DeltaPhiHardJ3DenPt3OverpT1, sf);
+      scale(_h_Cos2DeltaPhiJ13J14NumPt4OverpT1, sf);
+      scale(_h_Cos2DeltaPhiJ13J14DenPt4OverpT1, sf);
       scale(_h_Cos2PhiCurrentHemiNumQ2, sf);
       scale(_h_Cos2PhiCurrentHemiDenQ2, sf);
       if (_rivetWeightsMode) {
         scale(_h_DNJets, sf);
         scale(_h_DpT3, sf);
         scale(_h_DpT3OverpT1, sf);
+        scale(_h_DpT4, sf);
+        scale(_h_DpT4OverpT1, sf);
         scale(_h_DSumPtExtra, sf);
         scale(_h_DPhi3, sf);
+        scale(_h_DDeltaPhiHardJ3, sf);
+        scale(_h_DDeltaPhiJ13J14, sf);
         scale(_h_DPhiCurrentHemi, sf);
         scale(_h_DBroadening, sf);
+        scale(_h_DCos2DeltaPhiHardJ3NumPt3OverpT1, sf);
+        scale(_h_DCos2DeltaPhiJ13J14NumPt4OverpT1, sf);
         scale(_h_DCos2PhiCurrentHemiNumQ2, sf);
         scale(_h_DCos2PhiCurrentHemiDenQ2, sf);
       }
@@ -558,11 +624,17 @@ namespace Rivet {
       _h_DpT1, _h_DpT2, _h_DpT2OverpT1, _h_DpTAsym;
     Histo1DPtr _h_DQ2PreCut, _h_DXBjPreCut, _h_DYPreCut,
       _h_DpT1PreCut, _h_DpT2PreCut;
-    Histo1DPtr _h_NJets, _h_pT3, _h_pT3OverpT1, _h_SumPtExtra, _h_Phi3,
-      _h_PhiCurrentHemi, _h_Broadening, _h_Cos2PhiCurrentHemiNumQ2,
-      _h_Cos2PhiCurrentHemiDenQ2;
-    Histo1DPtr _h_DNJets, _h_DpT3, _h_DpT3OverpT1, _h_DSumPtExtra, _h_DPhi3,
-      _h_DPhiCurrentHemi, _h_DBroadening, _h_DCos2PhiCurrentHemiNumQ2,
+    Histo1DPtr _h_NJets, _h_pT3, _h_pT3OverpT1, _h_pT4, _h_pT4OverpT1,
+      _h_SumPtExtra, _h_Phi3, _h_DeltaPhiHardJ3, _h_DeltaPhiJ13J14,
+      _h_PhiCurrentHemi, _h_Broadening,
+      _h_Cos2DeltaPhiHardJ3NumPt3OverpT1, _h_Cos2DeltaPhiHardJ3DenPt3OverpT1,
+      _h_Cos2DeltaPhiJ13J14NumPt4OverpT1, _h_Cos2DeltaPhiJ13J14DenPt4OverpT1,
+      _h_Cos2PhiCurrentHemiNumQ2, _h_Cos2PhiCurrentHemiDenQ2;
+    Histo1DPtr _h_DNJets, _h_DpT3, _h_DpT3OverpT1, _h_DpT4, _h_DpT4OverpT1,
+      _h_DSumPtExtra, _h_DPhi3, _h_DDeltaPhiHardJ3, _h_DDeltaPhiJ13J14,
+      _h_DPhiCurrentHemi, _h_DBroadening,
+      _h_DCos2DeltaPhiHardJ3NumPt3OverpT1,
+      _h_DCos2DeltaPhiJ13J14NumPt4OverpT1, _h_DCos2PhiCurrentHemiNumQ2,
       _h_DCos2PhiCurrentHemiDenQ2;
     JetInputMode _jetInputMode = JetInputMode::FULL;
     bool _rivetWeightsMode = false;

@@ -169,6 +169,157 @@ python3 workflow/dispol/scripts/run_validation_campaign.py poldis-top --base-dir
 python3 workflow/dispol/scripts/run_validation_campaign.py rivetplot --base-dir workflow/dispol -t <tag> --setup ALL
 ```
 
+## Paper Reproduction Campaigns
+
+The production campaigns used for the paper are large Tiresias-scale runs. The
+commands below give generic versions of the launch commands, with tags and
+event counts exposed as shell variables so they can be adjusted for a smoke
+test or a fresh production run.
+
+Common Tiresias-style paths:
+
+```bash
+BASE=${BASE:-/home/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL}
+PYTHON=${PYTHON:-python3.10}
+YODAMERGE=${YODAMERGE:-/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/bin/yodamerge}
+```
+
+Neutral-current integrated cross sections, corresponding to the NC validation
+tables:
+
+```bash
+NC_TAG=${NC_TAG:-paper_nc_totals}
+NC_JOBS=${NC_JOBS:-192}
+NC_SHARDS=${NC_SHARDS:-200}
+NC_SEED_BASE=${NC_SEED_BASE:-500000}
+NC_LO_EVENTS=${NC_LO_EVENTS:-1280000000}
+NC_POSNLO_EVENTS=${NC_POSNLO_EVENTS:-1280000000}
+NC_NEGNLO_EVENTS=${NC_NEGNLO_EVENTS:-12800000}
+
+"$PYTHON" "$BASE/run_validation_campaign.py" \
+  campaign \
+  --base-dir "$BASE" \
+  -t "$NC_TAG" \
+  --jobs "$NC_JOBS" \
+  --shards "$NC_SHARDS" \
+  --seed-base "$NC_SEED_BASE" \
+  --lo-events "$NC_LO_EVENTS" \
+  --posnlo-events "$NC_POSNLO_EVENTS" \
+  --negnlo-events "$NC_NEGNLO_EVENTS" \
+  --progress-interval 2 \
+  --max-listed 40 \
+  --force-prepare \
+  --keep-going \
+  --yoda-merge-tool "$YODAMERGE"
+```
+
+Charged-current integrated cross sections:
+
+```bash
+CC_TAG=${CC_TAG:-paper_cc_totals}
+CC_JOBS=${CC_JOBS:-192}
+CC_SHARDS=${CC_SHARDS:-200}
+CC_SEED_BASE=${CC_SEED_BASE:-500000}
+CC_LO_EVENTS=${CC_LO_EVENTS:-1280000000}
+CC_POSNLO_EVENTS=${CC_POSNLO_EVENTS:-1280000000}
+CC_NEGNLO_EVENTS=${CC_NEGNLO_EVENTS:-12800000}
+CC_POLDIS_EVENTS=${CC_POLDIS_EVENTS:-200000000}
+
+"$PYTHON" "$BASE/run_validation_campaign.py" \
+  campaign \
+  --base-dir "$BASE" \
+  -t "$CC_TAG" \
+  --setup CC \
+  --pdf-profile nnpdf_paired \
+  --poldis run \
+  --poldis-events "$CC_POLDIS_EVENTS" \
+  --poldis-jobs 4 \
+  --poldis-variant-jobs 1 \
+  --jobs "$CC_JOBS" \
+  --shards "$CC_SHARDS" \
+  --seed-base "$CC_SEED_BASE" \
+  --lo-events "$CC_LO_EVENTS" \
+  --posnlo-events "$CC_POSNLO_EVENTS" \
+  --negnlo-events "$CC_NEGNLO_EVENTS" \
+  --progress-interval 2 \
+  --max-listed 40 \
+  --force-prepare \
+  --keep-going \
+  --yoda-merge-tool "$YODAMERGE"
+```
+
+Correlated-weight no-shower validation, used for the parton-level differential
+validation plots:
+
+```bash
+NOSHOWER_TAG=${NOSHOWER_TAG:-paper_noshower}
+NOSHOWER_POLDIS_REFS_TAG=${NOSHOWER_POLDIS_REFS_TAG:-rivetweights_noshower02}
+NOSHOWER_JOBS=${NOSHOWER_JOBS:-192}
+NOSHOWER_SHARDS=${NOSHOWER_SHARDS:-200}
+NOSHOWER_SEED_BASE=${NOSHOWER_SEED_BASE:-920000}
+NOSHOWER_POSNLO_EVENTS=${NOSHOWER_POSNLO_EVENTS:-40000000}
+NOSHOWER_NEGNLO_EVENTS=${NOSHOWER_NEGNLO_EVENTS:-2000000}
+
+"$PYTHON" "$BASE/run_validation_campaign.py" \
+  full \
+  --base-dir "$BASE" \
+  -t "$NOSHOWER_TAG" \
+  --jobs "$NOSHOWER_JOBS" \
+  --shards "$NOSHOWER_SHARDS" \
+  --seed-base "$NOSHOWER_SEED_BASE" \
+  --posnlo-events "$NOSHOWER_POSNLO_EVENTS" \
+  --negnlo-events "$NOSHOWER_NEGNLO_EVENTS" \
+  --progress-interval 2 \
+  --max-listed 20 \
+  --keep-going \
+  --scale-variations \
+  --poldis skip \
+  --poldis-refs-campaign "$NOSHOWER_POLDIS_REFS_TAG" \
+  --poldis-error-mode scale \
+  --rivetweights \
+  --setup ALL \
+  --fixed-order-powheg-no-shower \
+  --force-prepare \
+  --yoda-merge-tool "$YODAMERGE"
+```
+
+Shower-spin comparison, used for the no-hadronization and hadronization spin
+comparison plots:
+
+```bash
+SPIN_TAG=${SPIN_TAG:-paper_spinweights}
+SPIN_JOBS=${SPIN_JOBS:-192}
+SPIN_SHARDS=${SPIN_SHARDS:-400}
+SPIN_SEED_BASE=${SPIN_SEED_BASE:-400000}
+SPIN_POSNLO_EVENTS=${SPIN_POSNLO_EVENTS:-320000000}
+SPIN_NEGNLO_EVENTS=${SPIN_NEGNLO_EVENTS:-32000000}
+
+"$PYTHON" "$BASE/run_validation_campaign.py" \
+  full \
+  --base-dir "$BASE" \
+  -t "$SPIN_TAG" \
+  --jobs "$SPIN_JOBS" \
+  --shards "$SPIN_SHARDS" \
+  --seed-base "$SPIN_SEED_BASE" \
+  --posnlo-events "$SPIN_POSNLO_EVENTS" \
+  --negnlo-events "$SPIN_NEGNLO_EVENTS" \
+  --progress-interval 1 \
+  --max-listed 40 \
+  --keep-going \
+  --poldis skip \
+  --rivetweights \
+  --setup SPINCOMP \
+  --setup SPINHAD \
+  --force-prepare \
+  --yoda-merge-tool "$YODAMERGE"
+```
+
+Generated outputs are expected under:
+
+- `workflow/dispol/campaigns/<tag>/`
+- transient `.run`, `.log`, `.out`, `.yoda`, `.csv`, `.html`, and `.tex`
+  products under `workflow/dispol/`
+
 Additional workflow details are documented in
 `workflow/dispol/docs/validation-workflow.md` and
 `workflow/dispol/docs/correlated-helicity-rivetweights.md`.
