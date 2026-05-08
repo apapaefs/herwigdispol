@@ -127,6 +127,20 @@ YLabel=$\mathrm{d}\sigma/\mathrm{d}(p^{\mathrm{jet3}}_{T,B}/p^{\mathrm{jet1}}_{T
 LogY=1
 # END PLOT
 
+# BEGIN PLOT /MC_DIS_PS/pT4
+Title=Accepted 4th-jet transverse momentum
+XLabel=$p^{\mathrm{jet4}}_{T,B}$ / GeV
+YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet4}}_{T,B}$ [pb/GeV]
+LogY=1
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/pT4OverpT1
+Title=Accepted 4th-jet hardness ratio
+XLabel=$p^{\mathrm{jet4}}_{T,B} / p^{\mathrm{jet1}}_{T,B}$
+YLabel=$\mathrm{d}\sigma/\mathrm{d}(p^{\mathrm{jet4}}_{T,B}/p^{\mathrm{jet1}}_{T,B})$ [pb]
+LogY=1
+# END PLOT
+
 # BEGIN PLOT /MC_DIS_PS/SumPtExtra
 Title=Accepted extra-radiation transverse momentum $\mathrm{d}\sigma/\mathrm{d}\Sigma_{j \ge 3} p^{\mathrm{jet}j}_{T,B}$
 XLabel=$\Sigma_{j \ge 3} p^{\mathrm{jet}j}_{T,B}$ / GeV
@@ -138,6 +152,22 @@ LogY=1
 Title=Accepted 3rd-jet azimuth relative to the lepton plane $\mathrm{d}\sigma/\mathrm{d}\phi_3$
 XLabel=$\phi_3$
 YLabel=$\mathrm{d}\sigma/\mathrm{d}\phi_3$ [pb]
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/DeltaPhiHardJ3
+Title=Hard-plane 3rd-jet azimuth
+XLabel=$\Delta\phi_{\mathrm{hard},3} = |\phi^{\mathrm{jet3}}_B - \phi^{\mathrm{jet1}}_B|_{\pi}$
+YLabel=$\mathrm{d}\sigma/\mathrm{d}\Delta\phi_{\mathrm{hard},3}$ [pb]
+RatioPlotYMin=0.8
+RatioPlotYMax=1.2
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/DeltaPhiJ13J14
+Title=3rd-to-4th jet plane angle
+XLabel=$\Delta\phi_{13,14}$
+YLabel=$\mathrm{d}\sigma/\mathrm{d}\Delta\phi_{13,14}$ [pb]
+RatioPlotYMin=0.5
+RatioPlotYMax=1.5
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/PhiCurrentHemi
@@ -154,7 +184,7 @@ LogY=1
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/Cos2PhiCurrentHemiVsQ2
-Title=Current-hemisphere azimuthal moment $\langle \cos 2\phi_{\mathrm{CH}} \rangle(Q^2)$
+Title=Current-hemisphere $\cos 2\phi$ moment
 XLabel=$Q^2$ / GeV$^2$
 YLabel=$\langle \cos 2\phi_{\mathrm{CH}} \rangle$
 LogX=1
@@ -288,6 +318,20 @@ YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}(p^{\mathrm{jet3}}_{T,B}/p^{\mathrm{jet
 LogY=1
 # END PLOT
 
+# BEGIN PLOT /MC_DIS_PS/DpT4
+Title=Polarized accepted 4th-jet transverse momentum
+XLabel=$p^{\mathrm{jet4}}_{T,B}$ / GeV
+YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet4}}_{T,B}$ [pb/GeV]
+LogY=1
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/DpT4OverpT1
+Title=Polarized accepted 4th-jet hardness ratio
+XLabel=$p^{\mathrm{jet4}}_{T,B} / p^{\mathrm{jet1}}_{T,B}$
+YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}(p^{\mathrm{jet4}}_{T,B}/p^{\mathrm{jet1}}_{T,B})$ [pb]
+LogY=1
+# END PLOT
+
 # BEGIN PLOT /MC_DIS_PS/DSumPtExtra
 Title=Accepted polarized extra-radiation transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}\Sigma_{j \ge 3} p^{\mathrm{jet}j}_{T,B}$
 XLabel=$\Sigma_{j \ge 3} p^{\mathrm{jet}j}_{T,B}$ / GeV
@@ -299,6 +343,22 @@ LogY=1
 Title=Accepted polarized 3rd-jet azimuth relative to the lepton plane $\mathrm{d}\Delta\sigma/\mathrm{d}\phi_3$
 XLabel=$\phi_3$
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}\phi_3$ [pb]
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/DDeltaPhiHardJ3
+Title=Polarized hard-plane 3rd-jet azimuth
+XLabel=$\Delta\phi_{\mathrm{hard},3} = |\phi^{\mathrm{jet3}}_B - \phi^{\mathrm{jet1}}_B|_{\pi}$
+YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}\Delta\phi_{\mathrm{hard},3}$ [pb]
+RatioPlotYMin=0.8
+RatioPlotYMax=1.2
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/DDeltaPhiJ13J14
+Title=Polarized 3rd-to-4th jet plane angle
+XLabel=$\Delta\phi_{13,14}$
+YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}\Delta\phi_{13,14}$ [pb]
+RatioPlotYMin=0.5
+RatioPlotYMax=1.5
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/DPhiCurrentHemi
@@ -336,11 +396,88 @@ YLabel=$A_{LL}$
 Title=Double-spin asymmetry $A_{LL}(p^{\mathrm{jet3}}_{T,B}/p^{\mathrm{jet1}}_{T,B})$
 XLabel=$p^{\mathrm{jet3}}_{T,B} / p^{\mathrm{jet1}}_{T,B}$
 YLabel=$A_{LL}$
+LogY=0
+XMin=0.25
+YMin=0.028
+YMax=0.076
+RatioPlotYMin=0.94
+RatioPlotYMax=1.02
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/ALLpT3OverpT1Cumulative
+Title=$A_{LL}$ for $p_{T3}/p_{T1} > r_{\mathrm{cut}}$
+XLabel=$r_{\mathrm{cut}} = p^{\mathrm{jet3}}_{T,B} / p^{\mathrm{jet1}}_{T,B}$
+YLabel=$A_{LL}$
+LogY=0
+YMin=0.029
+YMax=0.045
+RatioPlotYMin=0.94
+RatioPlotYMax=1.02
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/ALLpT4OverpT1
+Title=$A_{LL}$ for 4th-jet hardness
+XLabel=$p^{\mathrm{jet4}}_{T,B} / p^{\mathrm{jet1}}_{T,B}$
+YLabel=$A_{LL}$
+LogY=0
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/ALLpT4OverpT1Cumulative
+Title=$A_{LL}$ for $p_{T4}/p_{T1} > r_{\mathrm{cut}}$
+XLabel=$r_{\mathrm{cut}} = p^{\mathrm{jet4}}_{T,B} / p^{\mathrm{jet1}}_{T,B}$
+YLabel=$A_{LL}$
+LogY=0
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/Cos2DeltaPhiHardJ3Cumulative
+Title=Hard-plane $C_2$ tail moment
+XLabel=$r_{\mathrm{cut}} = p^{\mathrm{jet3}}_{T,B} / p^{\mathrm{jet1}}_{T,B}$
+YLabel=$C_{2}^{\mathrm{hard}}(r_{\mathrm{cut}})$
+LogY=0
+YMax=0
+RatioPlotYMin=0.5
+RatioPlotYMax=8
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/ALLCos2DeltaPhiHardJ3Cumulative
+Title=Spin-dependent hard-plane $C_2$ tail moment
+XLabel=$r_{\mathrm{cut}} = p^{\mathrm{jet3}}_{T,B} / p^{\mathrm{jet1}}_{T,B}$
+YLabel=$\Delta C_{2}^{\mathrm{hard}}(r_{\mathrm{cut}})$
+LogY=0
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/ALLDeltaPhiJ13J14
+Title=$A_{LL}$ for 3rd-to-4th jet plane angle
+XLabel=$\Delta\phi_{13,14}$
+YLabel=$A_{LL}$
+LogY=0
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/Cos2DeltaPhiJ13J14Cumulative
+Title=3rd-to-4th plane $C_2$ tail moment
+XLabel=$r_{\mathrm{cut}} = p^{\mathrm{jet4}}_{T,B} / p^{\mathrm{jet1}}_{T,B}$
+YLabel=$C_{2}^{13,14}(r_{\mathrm{cut}})$
+LogY=0
+RatioPlotYMin=0.0
+RatioPlotYMax=8.0
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/ALLCos2DeltaPhiJ13J14Cumulative
+Title=Spin-dependent 3rd-to-4th plane $C_2$ tail moment
+XLabel=$r_{\mathrm{cut}} = p^{\mathrm{jet4}}_{T,B} / p^{\mathrm{jet1}}_{T,B}$
+YLabel=$\Delta C_{2}^{13,14}(r_{\mathrm{cut}})$
+LogY=0
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/ALLPhi3
 Title=Double-spin asymmetry $A_{LL}(\phi_3)$
 XLabel=$\phi_3$
+YLabel=$A_{LL}$
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_PS/ALLDeltaPhiHardJ3
+Title=Double-spin asymmetry $A_{LL}(\Delta\phi_{\mathrm{hard},3})$
+XLabel=$\Delta\phi_{\mathrm{hard},3} = |\phi^{\mathrm{jet3}}_B - \phi^{\mathrm{jet1}}_B|_{\pi}$
 YLabel=$A_{LL}$
 # END PLOT
 

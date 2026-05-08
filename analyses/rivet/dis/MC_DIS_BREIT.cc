@@ -101,6 +101,16 @@ namespace Rivet {
       if (_rivetWeightsMode) {
         MSG_INFO("RIVETWEIGHTS mode enabled: using HERWIG_DIS_SIGMA and HERWIG_DIS_DELTA_LL optional weights.");
       }
+      const string rivetweightnormopt = toUpper(getOption("RIVETWEIGHTNORM", "SUMW"));
+      _rivetWeightsEventNorm = (rivetweightnormopt == "EVENTS" ||
+                                rivetweightnormopt == "ENTRIES" ||
+                                rivetweightnormopt == "COUNT");
+      if (_rivetWeightsMode && _rivetWeightsEventNorm) {
+        MSG_INFO("RIVETWEIGHTNORM=EVENTS enabled: normalizing Rivet-weight histograms by analyzed event count.");
+      } else if (rivetweightnormopt != "SUMW") {
+        MSG_WARNING("Unknown RIVETWEIGHTNORM option " + rivetweightnormopt + ". Defaulting to SUMW.");
+        _rivetWeightsEventNorm = false;
+      }
 
       const string dismodeopt = toUpper(getOption("DISMODE", "NC"));
       DISMode dismode = DISMode::L2L;
@@ -120,7 +130,7 @@ namespace Rivet {
       declare(FinalState(), "LabFS");
 
       // Histograms (no Q2-binned sets)
-     
+
       book(_h_Q2, "Q2", 100, 100.0, 2500.0);
       book(_h_Pt, "Pt", 15, 5.0, 30.0);
       book(_h_XBj, "XBj", 20, 0.0, 1.0);
@@ -129,6 +139,9 @@ namespace Rivet {
       book(_h_Zeta, "Zeta", 12, -1.75, -0.25);
       book(_h_pT1, "pT1", 15, 5.0, 30.0);
       book(_h_pT2, "pT2", 15, 5.0, 30.0);
+      book(_h_pT1Lab, "pT1Lab", 15, 0.0, 75.0);
+      book(_h_pT2Lab, "pT2Lab", 15, 0.0, 75.0);
+      book(_h_pT3Lab, "pT3Lab", 15, 0.0, 75.0);
       book(_h_pT2OverpT1, "pT2OverpT1", 15, 0.0, 1.0);
       book(_h_pTAsym, "pTAsym", 15, 0.0, 1.0);
       book(_h_Q2PreCut, "Q2PreCut", 100, 100.0, 2500.0);
@@ -136,6 +149,9 @@ namespace Rivet {
       book(_h_YPreCut, "YPreCut", 40, 0.2, 0.6);
       book(_h_pT1PreCut, "pT1PreCut", 30, 0.0, 30.0);
       book(_h_pT2PreCut, "pT2PreCut", 30, 0.0, 30.0);
+      book(_h_pT1LabPreCut, "pT1LabPreCut", 15, 0.0, 75.0);
+      book(_h_pT2LabPreCut, "pT2LabPreCut", 15, 0.0, 75.0);
+      book(_h_pT3LabPreCut, "pT3LabPreCut", 15, 0.0, 75.0);
       if (_rivetWeightsMode) {
         book(_h_DQ2, "DQ2", 100, 100.0, 2500.0);
         book(_h_DPt, "DPt", 15, 5.0, 30.0);
@@ -145,6 +161,9 @@ namespace Rivet {
         book(_h_DZeta, "DZeta", 12, -1.75, -0.25);
         book(_h_DpT1, "DpT1", 15, 5.0, 30.0);
         book(_h_DpT2, "DpT2", 15, 5.0, 30.0);
+        book(_h_DpT1Lab, "DpT1Lab", 15, 0.0, 75.0);
+        book(_h_DpT2Lab, "DpT2Lab", 15, 0.0, 75.0);
+        book(_h_DpT3Lab, "DpT3Lab", 15, 0.0, 75.0);
         book(_h_DpT2OverpT1, "DpT2OverpT1", 15, 0.0, 1.0);
         book(_h_DpTAsym, "DpTAsym", 15, 0.0, 1.0);
         book(_h_DQ2PreCut, "DQ2PreCut", 100, 100.0, 2500.0);
@@ -152,6 +171,9 @@ namespace Rivet {
         book(_h_DYPreCut, "DYPreCut", 40, 0.2, 0.6);
         book(_h_DpT1PreCut, "DpT1PreCut", 30, 0.0, 30.0);
         book(_h_DpT2PreCut, "DpT2PreCut", 30, 0.0, 30.0);
+        book(_h_DpT1LabPreCut, "DpT1LabPreCut", 15, 0.0, 75.0);
+        book(_h_DpT2LabPreCut, "DpT2LabPreCut", 15, 0.0, 75.0);
+        book(_h_DpT3LabPreCut, "DpT3LabPreCut", 15, 0.0, 75.0);
       }
       book(_h_METaggedOutgoingCount, "METaggedOutgoingCount", 8, -0.5, 7.5);
       book(_h_METaggedRole2Count, "METaggedRole2Count", 5, -0.5, 4.5);
@@ -194,17 +216,27 @@ namespace Rivet {
       // fewer than two jets survive the clustering, with missing jet pT = 0.
       const double jet1PreCutPt = jets.size() > 0 ? jets[0].breitMom.pT() : 0.0;
       const double jet2PreCutPt = jets.size() > 1 ? jets[1].breitMom.pT() : 0.0;
+      const double jet1LabPreCutPt = jets.size() > 0 ? jets[0].labMom.pT() : 0.0;
+      const double jet2LabPreCutPt = jets.size() > 1 ? jets[1].labMom.pT() : 0.0;
+      const double jet3LabPreCutPt = jets.size() > 2 ? jets[2].labMom.pT() : 0.0;
+      if (_rivetWeightsMode) ++_rivetWeightsFilled;
       _h_Q2PreCut->fill(Q2, weight);
       _h_XBjPreCut->fill(xbj, weight);
       _h_YPreCut->fill(y, weight);
       _h_pT1PreCut->fill(jet1PreCutPt, weight);
       _h_pT2PreCut->fill(jet2PreCutPt, weight);
+      _h_pT1LabPreCut->fill(jet1LabPreCutPt, weight);
+      _h_pT2LabPreCut->fill(jet2LabPreCutPt, weight);
+      _h_pT3LabPreCut->fill(jet3LabPreCutPt, weight);
       if (_rivetWeightsMode) {
         _h_DQ2PreCut->fill(Q2, deltaWeight);
         _h_DXBjPreCut->fill(xbj, deltaWeight);
         _h_DYPreCut->fill(y, deltaWeight);
         _h_DpT1PreCut->fill(jet1PreCutPt, deltaWeight);
         _h_DpT2PreCut->fill(jet2PreCutPt, deltaWeight);
+        _h_DpT1LabPreCut->fill(jet1LabPreCutPt, deltaWeight);
+        _h_DpT2LabPreCut->fill(jet2LabPreCutPt, deltaWeight);
+        _h_DpT3LabPreCut->fill(jet3LabPreCutPt, deltaWeight);
       }
       if (_jetInputMode == JetInputMode::MEPARTONS) {
         fillMEPartonDiagnostics(jets, weight);
@@ -220,9 +252,9 @@ namespace Rivet {
       // Breit-frame pT thresholds: 5 GeV (lead), 4 GeV (sublead)
       if (j1Bmom.pT() < 5*GeV || j2Bmom.pT() < 4*GeV) vetoEvent;
 
-      // POLDIS applies the lab-frame acceptance to the same two leading Breit jets.
-      if (!inRange(j1LabMom.rapidity(), -3.5, 3.5)) vetoEvent;
-      if (!inRange(j2LabMom.rapidity(), -3.5, 3.5)) vetoEvent;
+      // POLDIS applies the lab-frame pseudorapidity acceptance to the same two leading Breit jets.
+      if (!inRange(j1LabMom.eta(), -3.5, 3.5)) vetoEvent;
+      if (!inRange(j2LabMom.eta(), -3.5, 3.5)) vetoEvent;
 
       // Dijet mean transverse momentum (Breit)
       const double dijetPt = 0.5*(j1Bmom.pT() + j2Bmom.pT());
@@ -242,10 +274,15 @@ namespace Rivet {
       const double logZeta = std::log10(xbj * (1.0 + sqr(Mjj)/Q2));
 
       // Fill histograms
-      
+
       _h_Q2  ->fill(Q2, weight);
       _h_pT1->fill(j1Bmom.pT(), weight);
       _h_pT2->fill(j2Bmom.pT(), weight);
+      _h_pT1Lab->fill(j1LabMom.pT(), weight);
+      _h_pT2Lab->fill(j2LabMom.pT(), weight);
+      if (jets.size() > 2) {
+        _h_pT3Lab->fill(jets[2].labMom.pT(), weight);
+      }
       _h_XBj ->fill(xbj, weight);
       _h_Pt  ->fill(dijetPt, weight);
       _h_Mjj ->fill(Mjj, weight);
@@ -257,6 +294,11 @@ namespace Rivet {
         _h_DQ2  ->fill(Q2, deltaWeight);
         _h_DpT1->fill(j1Bmom.pT(), deltaWeight);
         _h_DpT2->fill(j2Bmom.pT(), deltaWeight);
+        _h_DpT1Lab->fill(j1LabMom.pT(), deltaWeight);
+        _h_DpT2Lab->fill(j2LabMom.pT(), deltaWeight);
+        if (jets.size() > 2) {
+          _h_DpT3Lab->fill(jets[2].labMom.pT(), deltaWeight);
+        }
         _h_DXBj ->fill(xbj, deltaWeight);
         _h_DPt  ->fill(dijetPt, deltaWeight);
         _h_DMjj ->fill(Mjj, deltaWeight);
@@ -294,8 +336,11 @@ namespace Rivet {
                  ", used=" + std::to_string(_rivetWeightsUsed) +
                  ", missing=" + std::to_string(_rivetWeightsMissing));
       }
-      if (sumW() == 0.0) return;
-      const double sf = crossSection()/picobarn/sumW();
+      const double norm = (_rivetWeightsMode && _rivetWeightsEventNorm)
+        ? static_cast<double>(_rivetWeightsFilled)
+        : sumW();
+      if (norm == 0.0) return;
+      const double sf = crossSection()/picobarn/norm;
       scale(_h_Q2,   sf);
       scale(_h_XBj,  sf);
       scale(_h_Pt,   sf);
@@ -304,6 +349,9 @@ namespace Rivet {
       scale(_h_Zeta, sf);
       scale(_h_pT1,  sf);
       scale(_h_pT2, sf);
+      scale(_h_pT1Lab, sf);
+      scale(_h_pT2Lab, sf);
+      scale(_h_pT3Lab, sf);
       scale(_h_pT2OverpT1, sf);
       scale(_h_pTAsym, sf);
       scale(_h_Q2PreCut, sf);
@@ -311,6 +359,9 @@ namespace Rivet {
       scale(_h_YPreCut, sf);
       scale(_h_pT1PreCut, sf);
       scale(_h_pT2PreCut, sf);
+      scale(_h_pT1LabPreCut, sf);
+      scale(_h_pT2LabPreCut, sf);
+      scale(_h_pT3LabPreCut, sf);
       if (_rivetWeightsMode) {
         scale(_h_DQ2, sf);
         scale(_h_DXBj, sf);
@@ -320,6 +371,9 @@ namespace Rivet {
         scale(_h_DZeta, sf);
         scale(_h_DpT1, sf);
         scale(_h_DpT2, sf);
+        scale(_h_DpT1Lab, sf);
+        scale(_h_DpT2Lab, sf);
+        scale(_h_DpT3Lab, sf);
         scale(_h_DpT2OverpT1, sf);
         scale(_h_DpTAsym, sf);
         scale(_h_DQ2PreCut, sf);
@@ -327,6 +381,9 @@ namespace Rivet {
         scale(_h_DYPreCut, sf);
         scale(_h_DpT1PreCut, sf);
         scale(_h_DpT2PreCut, sf);
+        scale(_h_DpT1LabPreCut, sf);
+        scale(_h_DpT2LabPreCut, sf);
+        scale(_h_DpT3LabPreCut, sf);
       }
       scale(_h_METaggedOutgoingCount, sf);
       scale(_h_METaggedRole2Count, sf);
@@ -618,8 +675,8 @@ namespace Rivet {
       ++_mePartonDebugTotals.passPt;
       _h_MESelectionStage->fill(3.0, weight);
       const bool passRapidity =
-        inRange(jets[0].labMom.rapidity(), -3.5, 3.5) &&
-        inRange(jets[1].labMom.rapidity(), -3.5, 3.5);
+        inRange(jets[0].labMom.eta(), -3.5, 3.5) &&
+        inRange(jets[1].labMom.eta(), -3.5, 3.5);
       if (passRapidity) {
         ++_mePartonDebugTotals.passRapidity;
         _h_MESelectionStage->fill(4.0, weight);
@@ -927,12 +984,15 @@ namespace Rivet {
     }
 
     Histo1DPtr _h_Q2, _h_XBj, _h_Pt, _h_Mjj, _h_Eta, _h_Zeta, _h_pT1, _h_pT2,
-      _h_pT2OverpT1, _h_pTAsym;
-    Histo1DPtr _h_Q2PreCut, _h_XBjPreCut, _h_YPreCut, _h_pT1PreCut, _h_pT2PreCut;
+      _h_pT1Lab, _h_pT2Lab, _h_pT3Lab, _h_pT2OverpT1, _h_pTAsym;
+    Histo1DPtr _h_Q2PreCut, _h_XBjPreCut, _h_YPreCut, _h_pT1PreCut, _h_pT2PreCut,
+      _h_pT1LabPreCut, _h_pT2LabPreCut, _h_pT3LabPreCut;
     Histo1DPtr _h_DQ2, _h_DXBj, _h_DPt, _h_DMjj, _h_DEta, _h_DZeta,
-      _h_DpT1, _h_DpT2, _h_DpT2OverpT1, _h_DpTAsym;
+      _h_DpT1, _h_DpT2, _h_DpT1Lab, _h_DpT2Lab, _h_DpT3Lab,
+      _h_DpT2OverpT1, _h_DpTAsym;
     Histo1DPtr _h_DQ2PreCut, _h_DXBjPreCut, _h_DYPreCut,
-      _h_DpT1PreCut, _h_DpT2PreCut;
+      _h_DpT1PreCut, _h_DpT2PreCut,
+      _h_DpT1LabPreCut, _h_DpT2LabPreCut, _h_DpT3LabPreCut;
     Histo1DPtr _h_METaggedOutgoingCount, _h_METaggedRole2Count, _h_METaggedRole3Count,
       _h_METerminalFallbackCount, _h_MEInputPartonCount, _h_MEJetCountPreCut,
       _h_MEInputSource, _h_MESelectionStage;
@@ -940,11 +1000,13 @@ namespace Rivet {
     MEPartonDebugTotals _mePartonDebugTotals;
     JetInputMode _jetInputMode = JetInputMode::FULL;
     bool _rivetWeightsMode = false;
+    bool _rivetWeightsEventNorm = false;
     bool _warnedMEPartonSelection = false;
     bool _warnedMissingRivetWeights = false;
     size_t _rivetWeightsEvents = 0;
     size_t _rivetWeightsUsed = 0;
     size_t _rivetWeightsMissing = 0;
+    size_t _rivetWeightsFilled = 0;
   };
 
   RIVET_DECLARE_PLUGIN(MC_DIS_BREIT);

@@ -50,6 +50,33 @@ YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$ [pb/GeV]
 LogY=1
 # END PLOT
 
+# BEGIN PLOT /MC_DIS_BREIT/pT1Lab
+Title=Dijet-selected leading-jet lab-frame transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,\mathrm{lab}}$
+XLabel=$p^{\mathrm{jet1}}_{T,\mathrm{lab}}$ / GeV
+XMin=0
+XMax=75
+YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,\mathrm{lab}}$ [pb/GeV]
+LogY=1
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_BREIT/pT2Lab
+Title=Dijet-selected 2nd-jet lab-frame transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,\mathrm{lab}}$
+XLabel=$p^{\mathrm{jet2}}_{T,\mathrm{lab}}$ / GeV
+XMin=0
+XMax=75
+YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,\mathrm{lab}}$ [pb/GeV]
+LogY=1
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_BREIT/pT3Lab
+Title=Dijet-selected 3rd-jet lab-frame transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet3}}_{T,\mathrm{lab}}$
+XLabel=$p^{\mathrm{jet3}}_{T,\mathrm{lab}}$ / GeV
+XMin=0
+XMax=75
+YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet3}}_{T,\mathrm{lab}}$ [pb/GeV]
+LogY=1
+# END PLOT
+
 # BEGIN PLOT /MC_DIS_BREIT/pT2OverpT1
 Title=Dijet-selected jet transverse-momentum ratio $\mathrm{d}\sigma/\mathrm{d}(p^{\mathrm{jet2}}_{T,B}/p^{\mathrm{jet1}}_{T,B})$
 XLabel=$p^{\mathrm{jet2}}_{T,B} / p^{\mathrm{jet1}}_{T,B}$
@@ -106,6 +133,33 @@ YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$ [pb/GeV]
 LogY=1
 # END PLOT
 
+# BEGIN PLOT /MC_DIS_BREIT/pT1LabPreCut
+Title=Inclusive leading-jet lab-frame transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,\mathrm{lab}}$
+XLabel=$p^{\mathrm{jet1}}_{T,\mathrm{lab}}$ / GeV
+XMin=0
+XMax=75
+YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,\mathrm{lab}}$ [pb/GeV]
+LogY=1
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_BREIT/pT2LabPreCut
+Title=Inclusive 2nd-jet lab-frame transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,\mathrm{lab}}$
+XLabel=$p^{\mathrm{jet2}}_{T,\mathrm{lab}}$ / GeV
+XMin=0
+XMax=75
+YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,\mathrm{lab}}$ [pb/GeV]
+LogY=1
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_BREIT/pT3LabPreCut
+Title=Inclusive 3rd-jet lab-frame transverse momentum $\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet3}}_{T,\mathrm{lab}}$
+XLabel=$p^{\mathrm{jet3}}_{T,\mathrm{lab}}$ / GeV
+XMin=0
+XMax=75
+YLabel=$\mathrm{d}\sigma/\mathrm{d}p^{\mathrm{jet3}}_{T,\mathrm{lab}}$ [pb/GeV]
+LogY=1
+# END PLOT
+
 # BEGIN PLOT /MC_DIS_BREIT/DQ2
 Title=Dijet-selected polarized DIS cross section $\mathrm{d}\Delta\sigma/\mathrm{d}Q^2$
 XLabel=$Q^2$ / GeV$^2$
@@ -154,6 +208,33 @@ LogY=1
 Title=Dijet-selected polarized 2nd-jet transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
 XLabel=$p^{\mathrm{jet2}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$ [pb/GeV]
+LogY=1
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_BREIT/DpT1Lab
+Title=Dijet-selected polarized leading-jet lab-frame transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,\mathrm{lab}}$
+XLabel=$p^{\mathrm{jet1}}_{T,\mathrm{lab}}$ / GeV
+XMin=0
+XMax=75
+YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,\mathrm{lab}}$ [pb/GeV]
+LogY=1
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_BREIT/DpT2Lab
+Title=Dijet-selected polarized 2nd-jet lab-frame transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,\mathrm{lab}}$
+XLabel=$p^{\mathrm{jet2}}_{T,\mathrm{lab}}$ / GeV
+XMin=0
+XMax=75
+YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,\mathrm{lab}}$ [pb/GeV]
+LogY=1
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_BREIT/DpT3Lab
+Title=Dijet-selected polarized 3rd-jet lab-frame transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet3}}_{T,\mathrm{lab}}$
+XLabel=$p^{\mathrm{jet3}}_{T,\mathrm{lab}}$ / GeV
+XMin=0
+XMax=75
+YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet3}}_{T,\mathrm{lab}}$ [pb/GeV]
 LogY=1
 # END PLOT
 
@@ -210,5 +291,32 @@ LogY=1
 Title=Inclusive polarized 2nd-jet transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$
 XLabel=$p^{\mathrm{jet2}}_{T,B}$ / GeV
 YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,B}$ [pb/GeV]
+LogY=1
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_BREIT/DpT1LabPreCut
+Title=Inclusive polarized leading-jet lab-frame transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,\mathrm{lab}}$
+XLabel=$p^{\mathrm{jet1}}_{T,\mathrm{lab}}$ / GeV
+XMin=0
+XMax=75
+YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet1}}_{T,\mathrm{lab}}$ [pb/GeV]
+LogY=1
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_BREIT/DpT2LabPreCut
+Title=Inclusive polarized 2nd-jet lab-frame transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,\mathrm{lab}}$
+XLabel=$p^{\mathrm{jet2}}_{T,\mathrm{lab}}$ / GeV
+XMin=0
+XMax=75
+YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet2}}_{T,\mathrm{lab}}$ [pb/GeV]
+LogY=1
+# END PLOT
+
+# BEGIN PLOT /MC_DIS_BREIT/DpT3LabPreCut
+Title=Inclusive polarized 3rd-jet lab-frame transverse momentum $\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet3}}_{T,\mathrm{lab}}$
+XLabel=$p^{\mathrm{jet3}}_{T,\mathrm{lab}}$ / GeV
+XMin=0
+XMax=75
+YLabel=$\mathrm{d}\Delta\sigma/\mathrm{d}p^{\mathrm{jet3}}_{T,\mathrm{lab}}$ [pb/GeV]
 LogY=1
 # END PLOT
