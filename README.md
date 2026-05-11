@@ -162,6 +162,9 @@ drivers are:
 
 - `run_validation_campaign.py`: campaign orchestration, post-processing, POLDIS
   conversion, and Rivet plotting
+- `herwig_fixed_order_nlo.py`: standalone Python fixed-order neutral-current
+  DIS NLO validator using Herwig's analytic components and signed HepMC3/Rivet
+  callback events
 - `analyze_DIS_polarized.py`: primary DIS YODA analysis step
 - `analyze-DIS-polarized.py`: retained legacy name for compatibility
 - `poldis_top_to_yoda.py`: conversion of POLDIS `.top` outputs into Rivet-style
@@ -181,6 +184,73 @@ drivers are:
 - `rivet_mkhtml_safe.py`: safer HTML plot wrapper for Rivet
 - `rivet_scale_plot_postprocess.py`: post-processing of scale-variation plot
   outputs
+
+## Standalone Fixed-Order NLO Validator
+
+The standalone validator in
+`workflow/dispol/scripts/herwig_fixed_order_nlo.py` is an independent Python
+implementation of the neutral-current DIS fixed-order NLO ingredients used in
+the Herwig implementation. It is intended for component-level validation
+against fixed-order references, especially POLDIS, without invoking the Herwig
+POWHEG event-carrier path.
+
+The implementation ports the Herwig choices for:
+
+- beam energies, DIS cuts, helicity conventions, and neutral-current
+  `GAMMA`, `Z`, and `ALL` setups
+- Matchbox-style NLO running `alpha_s(MZ)=0.118`
+- neutral-current electroweak coefficients and polarized `A_pol` factors
+- LHAPDF unpolarized and polarized-difference PDF ratios
+- the Herwig `NLOWeightRaw` virtual, collinear, QCDC, and BGF terms
+- local QCDC/BGF real-emission kernels and Born-projected counterevents
+
+It writes signed HepMC3 ASCII event streams and can run the same
+`MC_DIS_BREIT:JETINPUT=MEPARTONS` Rivet analysis used for the Herwig and POLDIS
+comparisons. The correlated polarized mode writes named helicity weights
+(`HERWIG_DIS_PP`, `HERWIG_DIS_PM`, `HERWIG_DIS_MP`, `HERWIG_DIS_MM`,
+`HERWIG_DIS_SIGMA`, and `HERWIG_DIS_DELTA_LL`) and derives the corresponding
+`D*` and `ALL*` YODA objects after Rivet. Scale variations follow the Herwig
+campaign convention with `ScaleFactorDown = 0.5`, nominal `1.0`, and
+`ScaleFactorUp = 2.0`, using `mu^2 = Q^2 * factor^2`.
+
+The validator does not use code from POLDIS or POWHEG-BOX, does not call back
+into Herwig C++, and does not include showering, hadronization, decays, POWHEG
+Sudakov generation, or POWHEG-selected real-emission carrier events. Its role is
+to validate the fixed-order NLO components separately from the Herwig
+POWHEG/no-shower event-carrier machinery.
+
+A small local run, assuming Rivet/YODA/LHAPDF are on the environment path, is:
+
+```bash
+python3 workflow/dispol/scripts/herwig_fixed_order_nlo.py standalone-campaign \
+  -t standalone_fo_q2gt100_smoke \
+  --setup ALL \
+  --window validation \
+  --events 2000 \
+  --shards 4 \
+  --jobs 2 \
+  --poldis-reference workflow/dispol/campaigns/rivetweights_noshowerMac03/analysis/_rivetplot_inputs/reference.scale.reference_all.sanitized.yoda.gz
+```
+
+For a higher-statistics validation run:
+
+```bash
+python3 workflow/dispol/scripts/herwig_fixed_order_nlo.py standalone-campaign \
+  -t standalone_fo_q2gt100_highstat \
+  --setup ALL \
+  --window validation \
+  --events 500000 \
+  --shards 50 \
+  --jobs 10 \
+  --shard-monitor-interval 20 \
+  --poldis-reference workflow/dispol/campaigns/rivetweights_noshowerMac03/analysis/_rivetplot_inputs/reference.scale.reference_all.sanitized.yoda.gz
+```
+
+During parallel runs the script prints shard progress and refreshes
+`workflow/dispol/campaigns/<tag>/work/shard_status.tsv`, which records the
+variation, shard id, event count, seed, state, return code, elapsed time, raw
+YODA path, and stdout/stderr logs for each shard. Generated outputs are written
+under `workflow/dispol/campaigns/<tag>/` and remain excluded from git.
 
 ## End-to-End DIS Workflow
 

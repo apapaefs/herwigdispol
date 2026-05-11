@@ -33,26 +33,47 @@ BASE_DIS_LABELS = (
     "XBjPreCut",
     "YPreCut",
 )
+BREIT_LAB_PT_LABELS = (
+    "pT1Lab",
+    "pT1LabPreCut",
+    "pT2Lab",
+    "pT2LabPreCut",
+    "pT3Lab",
+    "pT3LabPreCut",
+)
 PS_EXTRA_LABELS = (
     "NJets",
     "pT3",
     "pT3OverpT1",
+    "pT4",
+    "pT4OverpT1",
     "SumPtExtra",
     "Phi3",
+    "DeltaPhiHardJ3",
+    "DeltaPhiJ13J14",
     "PhiCurrentHemi",
     "Broadening",
+    "Cos2DeltaPhiHardJ3NumPt3OverpT1",
+    "Cos2DeltaPhiHardJ3DenPt3OverpT1",
+    "Cos2DeltaPhiJ13J14NumPt4OverpT1",
+    "Cos2DeltaPhiJ13J14DenPt4OverpT1",
 )
 ANALYSIS_LABELS = {
-    "MC_DIS_BREIT": BASE_DIS_LABELS,
+    "MC_DIS_BREIT": BASE_DIS_LABELS + BREIT_LAB_PT_LABELS,
     "MC_DIS_PS": BASE_DIS_LABELS + PS_EXTRA_LABELS,
 }
 ANALYSIS_ALL_LABELS = {
+    "MC_DIS_BREIT": BASE_DIS_LABELS + BREIT_LAB_PT_LABELS,
     "MC_DIS_PS": (
         "pT2OverpT1",
         "pTAsym",
         "pT3",
         "pT3OverpT1",
+        "pT4",
+        "pT4OverpT1",
         "Phi3",
+        "DeltaPhiHardJ3",
+        "DeltaPhiJ13J14",
         "PhiCurrentHemi",
         "Broadening",
     ),
@@ -64,7 +85,33 @@ ANALYSIS_DERIVED_MOMENTS = {
 }
 ANALYSIS_DERIVED_CUMULATIVE_ALL = {
     "MC_DIS_PS": (
+        ("ALLpT3OverpT1Cumulative", "pT3OverpT1"),
+        ("ALLpT4OverpT1Cumulative", "pT4OverpT1"),
         ("ALLBroadeningCumulative", "Broadening"),
+    ),
+}
+ANALYSIS_DERIVED_CUMULATIVE_RATIOS = {
+    "MC_DIS_PS": (
+        (
+            "Cos2DeltaPhiHardJ3Cumulative",
+            "Cos2DeltaPhiHardJ3NumPt3OverpT1",
+            "Cos2DeltaPhiHardJ3DenPt3OverpT1",
+        ),
+        (
+            "ALLCos2DeltaPhiHardJ3Cumulative",
+            "DCos2DeltaPhiHardJ3NumPt3OverpT1",
+            "Cos2DeltaPhiHardJ3DenPt3OverpT1",
+        ),
+        (
+            "Cos2DeltaPhiJ13J14Cumulative",
+            "Cos2DeltaPhiJ13J14NumPt4OverpT1",
+            "Cos2DeltaPhiJ13J14DenPt4OverpT1",
+        ),
+        (
+            "ALLCos2DeltaPhiJ13J14Cumulative",
+            "DCos2DeltaPhiJ13J14NumPt4OverpT1",
+            "Cos2DeltaPhiJ13J14DenPt4OverpT1",
+        ),
     ),
 }
 PS_SETUPS = ("SPINVAL", "SPINCOMP", "SPINHAD")
@@ -180,6 +227,10 @@ def _analysis_derived_cumulative_all(analysis: str) -> tuple[tuple[str, str], ..
     return ANALYSIS_DERIVED_CUMULATIVE_ALL.get(analysis, ())
 
 
+def _analysis_derived_cumulative_ratios(analysis: str) -> tuple[tuple[str, str, str], ...]:
+    return ANALYSIS_DERIVED_CUMULATIVE_RATIOS.get(analysis, ())
+
+
 def _write_yoda_compat(path: str, objects):
     try:
         yoda.write(objects, path)
@@ -217,8 +268,13 @@ def build_plot_scatter_objects(objects: Dict[str, object]) -> Dict[str, object]:
         except Exception:
             pass
         for bin_obj in obj.bins():
-            xlow = float(bin_obj.xMin())
-            xhigh = float(bin_obj.xMax())
+            try:
+                xlow = float(bin_obj.xMin())
+                xhigh = float(bin_obj.xMax())
+            except Exception:
+                continue
+            if not numpy.isfinite(xlow) or not numpy.isfinite(xhigh) or not xlow < xhigh:
+                continue
             xmid = 0.5 * (xlow + xhigh)
             xerr = 0.5 * (xhigh - xlow)
             if hasattr(bin_obj, "val"):
@@ -258,6 +314,158 @@ def build_plot_scatter_objects(objects: Dict[str, object]) -> Dict[str, object]:
     return out
 
 
+def _normalize_analysis_object_path(path: str, analysis: str = "MC_DIS_BREIT", keep_raw: bool = False) -> str | None:
+    parts = [part for part in path.split("/") if part]
+    if not parts:
+        return None
+    if parts[0] == "RAW":
+        if not keep_raw:
+            return None
+        if len(parts) >= 3 and _analysis_component_matches(parts[1], analysis):
+            return "/" + "/".join(("RAW", analysis, *parts[2:]))
+        return path
+    if parts[0] == "REF":
+        if len(parts) >= 3 and _analysis_component_matches(parts[1], analysis):
+            return "/" + "/".join(("REF", analysis, *parts[2:]))
+        return path
+    if _analysis_component_matches(parts[0], analysis):
+        return "/" + "/".join((analysis, *parts[1:]))
+    return path
+
+
+def normalize_analysis_path_objects(
+    objects: Dict[str, object],
+    analysis: str = "MC_DIS_BREIT",
+    keep_raw: bool = False,
+) -> Dict[str, object]:
+    normalized: Dict[str, object] = {}
+    for path, obj in objects.items():
+        new_path = _normalize_analysis_object_path(path, analysis=analysis, keep_raw=keep_raw)
+        if new_path is None:
+            continue
+        if new_path == path:
+            normalized[new_path] = obj
+            continue
+        try:
+            clone = obj.clone()
+        except Exception:
+            clone = obj
+        try:
+            clone.setPath(new_path)
+        except Exception:
+            pass
+        normalized[new_path] = clone
+    return normalized
+
+
+def _point_err_pair(point: object, axis: str) -> tuple[float, float]:
+    try:
+        if axis == "x":
+            return _extract_err_pair(point.xErrs())
+        return _extract_err_pair(point.yErrs())
+    except Exception:
+        pass
+    try:
+        if axis == "x":
+            return abs(float(point.x()) - float(point.xMin())), abs(float(point.xMax()) - float(point.x()))
+    except Exception:
+        pass
+    return 0.0, 0.0
+
+
+def _scatter_from_plot_object(path: str, obj: object) -> object | None:
+    if hasattr(obj, "points"):
+        scatter = obj
+    elif hasattr(obj, "bins"):
+        converted = build_plot_scatter_objects({path: obj})
+        return converted.get(path)
+    elif hasattr(obj, "type") and "Scatter" not in obj.type() and hasattr(obj, "mkScatter"):
+        scatter = obj.mkScatter()
+    else:
+        return None
+    try:
+        scatter.setPath(path)
+    except Exception:
+        pass
+    return scatter
+
+
+def _set_errorbar_annotations(scatter: object) -> None:
+    for key, value in (("ErrorBands", "0"), ("ErrorBars", "1")):
+        try:
+            scatter.setAnnotation(key, value)
+        except Exception:
+            pass
+    for key in ("ErrorBandColor", "ErrorBandOpacity"):
+        try:
+            scatter.rmAnnotation(key)
+        except Exception:
+            pass
+
+
+def _symmetrized_scatter(path: str, obj: object, force_error_bars: bool = True) -> object | None:
+    scatter = _scatter_from_plot_object(path, obj)
+    if scatter is None:
+        return None
+    out = yoda.Scatter2D()
+    out.setPath(path)
+    try:
+        _copy_scatter_annotations(scatter, out)
+    except Exception:
+        pass
+    if force_error_bars:
+        _set_errorbar_annotations(out)
+
+    for point in scatter.points():
+        try:
+            x = float(point.x())
+            yval = float(point.y())
+        except Exception:
+            continue
+        if not numpy.isfinite(x) or not numpy.isfinite(yval):
+            continue
+        xerr_dn, xerr_up = _point_err_pair(point, "x")
+        yerr_dn, yerr_up = _point_err_pair(point, "y")
+        yerr = max(abs(yerr_dn), abs(yerr_up))
+        if not numpy.isfinite(yerr):
+            yerr = 0.0
+        new_point = yoda.Point2D()
+        new_point.setX(x)
+        new_point.setY(yval)
+        try:
+            new_point.setXErrs(abs(xerr_dn), abs(xerr_up))
+        except Exception:
+            pass
+        _set_point_y_errs(new_point, yerr, yerr)
+        out.addPoint(new_point)
+    return out if out.numPoints() > 0 else None
+
+
+def symmetrize_plot_scatter_objects(
+    objects: Dict[str, object],
+    force_error_bars: bool = True,
+) -> Dict[str, object]:
+    symmetrized: Dict[str, object] = {}
+    for path, obj in objects.items():
+        scatter = _symmetrized_scatter(path, obj, force_error_bars=force_error_bars)
+        if scatter is not None:
+            symmetrized[path] = scatter
+    return symmetrized
+
+
+def write_plot_safe_yoda(
+    input_path: Union[str, Path],
+    output_path: Union[str, Path],
+    analysis: str = "MC_DIS_BREIT",
+    force_error_bars: bool = True,
+) -> tuple[int, int]:
+    objects = normalize_analysis_path_objects(yoda.read(str(input_path)), analysis=analysis, keep_raw=False)
+    objects = add_missing_all_ratio_objects(objects, analysis=analysis)
+    safe = symmetrize_plot_scatter_objects(objects, force_error_bars=force_error_bars)
+    write_yoda_gz(safe, str(output_path))
+    return len(safe), max(0, len(objects) - len(safe))
+
+
 def variation_object_path(path: str, variation_name: str) -> str:
     if variation_name == "nominal":
         return path
@@ -292,8 +500,11 @@ def _scatter_has_points(scatter: object) -> tuple[bool, str]:
     if not points:
         return False, "contains no plotted points"
     for index, point in enumerate(points, start=1):
-        x = float(point.x())
-        y = float(point.y())
+        try:
+            x = float(point.x())
+            y = float(point.y())
+        except Exception:
+            return False, f"does not expose x/y coordinates in plotted point {index}"
         if not numpy.isfinite(x) or not numpy.isfinite(y):
             return False, f"has non-finite coordinates in plotted point {index}"
     return True, ""
@@ -308,9 +519,12 @@ def _scatter_points_compatible(nominal_obj: object, variation_obj: object) -> tu
         return False, f"has {len(variation_points)} plotted points, expected {len(nominal_points)}"
 
     for index, (nominal_point, variation_point) in enumerate(zip(nominal_points, variation_points), start=1):
-        nominal_x = float(nominal_point.x())
-        variation_x = float(variation_point.x())
-        variation_y = float(variation_point.y())
+        try:
+            nominal_x = float(nominal_point.x())
+            variation_x = float(variation_point.x())
+            variation_y = float(variation_point.y())
+        except Exception:
+            return False, f"does not expose x/y coordinates in plotted point {index}"
         if not numpy.isfinite(variation_x) or not numpy.isfinite(variation_y):
             return False, f"has non-finite coordinates in plotted point {index}"
         if not numpy.isclose(variation_x, nominal_x, rtol=1e-12, atol=1e-12):
@@ -351,11 +565,14 @@ def sanitize_plot_scatter_objects(objects: Dict[str, object]) -> tuple[Dict[str,
     for path, obj in objects.items():
         scatter = obj
         if hasattr(scatter, "type") and "Scatter" not in scatter.type() and hasattr(scatter, "mkScatter"):
-            scatter = scatter.mkScatter()
-            try:
-                scatter.setPath(path)
-            except Exception:
-                pass
+            converted = build_plot_scatter_objects({path: obj}) if hasattr(obj, "bins") else {}
+            scatter = converted.get(path)
+            if scatter is None:
+                scatter = obj.mkScatter()
+                try:
+                    scatter.setPath(path)
+                except Exception:
+                    pass
 
         base_path, variation_name = split_variation_object_path(path)
         if variation_name == "nominal":
@@ -455,21 +672,35 @@ def _filtered_scatter(scatter: object, keep_bins: set[tuple[float, float]]) -> o
     return filtered
 
 
+def _plot_overlay_object_path(path: str) -> str:
+    parts = [part for part in path.split("/") if part]
+    if len(parts) >= 3 and parts[0] in {"REF", "RAW"}:
+        return "/" + "/".join(parts[1:])
+    return path
+
+
 def harmonize_plot_yoda_bin_grids(yoda_paths: Sequence[Union[str, Path]]) -> tuple[int, int]:
     input_paths = [Path(path) for path in yoda_paths]
     if len(input_paths) < 2:
         return 0, 0
 
     loaded = [(path, yoda.read(str(path))) for path in input_paths]
-    common_object_paths = set.intersection(*(set(objects.keys()) for _, objects in loaded))
+    path_maps: list[dict[str, str]] = []
+    for _, objects in loaded:
+        path_map: dict[str, str] = {}
+        for object_path in objects:
+            path_map.setdefault(_plot_overlay_object_path(object_path), object_path)
+        path_maps.append(path_map)
+    common_object_paths = set.intersection(*(set(path_map.keys()) for path_map in path_maps))
 
     updated_objects = 0
     updated_files = set()
 
-    for object_path in sorted(common_object_paths):
+    for comparison_path in sorted(common_object_paths):
         scatters = []
         scatter_maps = []
-        for file_path, objects in loaded:
+        for (file_path, objects), path_map in zip(loaded, path_maps):
+            object_path = path_map[comparison_path]
             obj = objects.get(object_path)
             if obj is None:
                 scatters = []
@@ -485,7 +716,7 @@ def harmonize_plot_yoda_bin_grids(yoda_paths: Sequence[Union[str, Path]]) -> tup
                 scatters = []
                 break
             scatters.append(scatter)
-            scatter_maps.append((file_path, objects))
+            scatter_maps.append((file_path, objects, object_path))
 
         if len(scatters) != len(loaded):
             continue
@@ -497,8 +728,12 @@ def harmonize_plot_yoda_bin_grids(yoda_paths: Sequence[Union[str, Path]]) -> tup
         if all(bin_set == common_bins for bin_set in bin_sets):
             continue
 
-        for (file_path, objects), scatter in zip(scatter_maps, scatters):
+        for (file_path, objects, object_path), scatter in zip(scatter_maps, scatters):
             filtered = _filtered_scatter(scatter, common_bins)
+            try:
+                filtered.setPath(scatter.path())
+            except Exception:
+                pass
             objects[object_path] = filtered
             updated_files.add(file_path)
             updated_objects += 1
@@ -726,6 +961,93 @@ def _build_ratio_hist(numerator_hist: object, denominator_hist: object, path: st
     return ratio_hist
 
 
+def _build_ratio_scatter(numerator_scatter: object, denominator_scatter: object, path: str) -> object:
+    numerator_points = list(numerator_scatter.points())
+    denominator_points = list(denominator_scatter.points())
+    if len(numerator_points) != len(denominator_points):
+        raise RuntimeError(
+            f"Could not build ratio scatter {path}: mismatched point counts "
+            f"({len(numerator_points)}, {len(denominator_points)})"
+        )
+
+    ratio_scatter = yoda.Scatter2D()
+    ratio_scatter.setPath(path)
+    _copy_scatter_annotations(denominator_scatter, ratio_scatter)
+
+    for numerator_point, denominator_point in zip(numerator_points, denominator_points):
+        x = float(denominator_point.x())
+        xerr_dn, xerr_up = _point_err_pair(denominator_point, "x")
+        numerator_value = float(numerator_point.y())
+        denominator_value = float(denominator_point.y())
+        numerator_yerr = max(abs(value) for value in _point_err_pair(numerator_point, "y"))
+        denominator_yerr = max(abs(value) for value in _point_err_pair(denominator_point, "y"))
+        ratio_value, ratio_error = _ratio_value_error(
+            numerator_value,
+            numerator_yerr,
+            denominator_value,
+            denominator_yerr,
+        )
+        if not numpy.isfinite(x) or not numpy.isfinite(ratio_value):
+            continue
+
+        point = yoda.Point2D()
+        point.setX(x)
+        point.setY(ratio_value)
+        try:
+            point.setXErrs(abs(xerr_dn), abs(xerr_up))
+        except Exception:
+            pass
+        _set_point_y_errs(point, ratio_error, ratio_error)
+        ratio_scatter.addPoint(point)
+
+    if hasattr(ratio_scatter, "numPoints") and ratio_scatter.numPoints() <= 0:
+        raise RuntimeError(f"Could not build ratio scatter {path}: no finite ratio points")
+    return ratio_scatter
+
+
+def add_missing_all_ratio_objects(
+    objects: Dict[str, object],
+    analysis: str = "MC_DIS_BREIT",
+) -> Dict[str, object]:
+    """Derive missing ALL* objects from D* and unpolarized binned objects."""
+    output: Dict[str, object] = dict(objects)
+    prefixes = {f"/{analysis}"}
+    for path in objects:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) >= 2 and _analysis_component_matches(parts[-2], analysis):
+            prefixes.add("/" + "/".join(parts[:-1]))
+
+    for prefix in sorted(prefixes):
+        for label in _analysis_all_labels(analysis):
+            all_path = f"{prefix}/ALL{label}"
+            if all_path in output:
+                continue
+            sigma_path = f"{prefix}/{label}"
+            delta_path = f"{prefix}/D{label}"
+            sigma_hist = output.get(sigma_path)
+            delta_hist = output.get(delta_path)
+            if sigma_hist is None or delta_hist is None:
+                continue
+            if not (
+                hasattr(sigma_hist, "numBins")
+                and hasattr(sigma_hist, "bin")
+                and hasattr(delta_hist, "numBins")
+                and hasattr(delta_hist, "bin")
+            ):
+                if not (hasattr(sigma_hist, "points") and hasattr(delta_hist, "points")):
+                    continue
+                try:
+                    output[all_path] = _build_ratio_scatter(delta_hist, sigma_hist, all_path)
+                except RuntimeError:
+                    continue
+            else:
+                try:
+                    output[all_path] = _build_ratio_hist(delta_hist, sigma_hist, all_path)
+                except RuntimeError:
+                    continue
+    return output
+
+
 def build_correlated_helicity_derived_objects(
     objects: Dict[str, object],
     analysis: str = "MC_DIS_BREIT",
@@ -766,6 +1088,24 @@ def build_correlated_helicity_derived_objects(
             continue
         cumulative_path = f"/{analysis}/{cumulative_label}"
         output[cumulative_path] = _build_cumulative_ratio_hist(delta_hist, sigma_hist, cumulative_path)
+
+    for cumulative_label, numerator_label, denominator_label in _analysis_derived_cumulative_ratios(analysis):
+        numerator_path = f"/{analysis}/{numerator_label}"
+        denominator_path = f"/{analysis}/{denominator_label}"
+        numerator_hist = output.get(numerator_path)
+        denominator_hist = output.get(denominator_path)
+        if numerator_hist is None or denominator_hist is None:
+            continue
+        cumulative_path = f"/{analysis}/{cumulative_label}"
+        output[cumulative_path] = _build_cumulative_ratio_hist(
+            numerator_hist,
+            denominator_hist,
+            cumulative_path,
+        )
+        intermediate_paths.add(numerator_path)
+        intermediate_paths.add(denominator_path)
+        intermediate_paths.add(f"/{analysis}/D{numerator_label}")
+        intermediate_paths.add(f"/{analysis}/D{denominator_label}")
 
     for path in intermediate_paths:
         output.pop(path, None)
@@ -848,6 +1188,8 @@ def build_dis_polarized_objects(
     all_labels = set(_analysis_all_labels(analysis))
     derived_moments = _analysis_derived_moments(analysis)
     derived_cumulative_all = _analysis_derived_cumulative_all(analysis)
+    derived_cumulative_ratios = _analysis_derived_cumulative_ratios(analysis)
+    intermediate_paths: set[str] = set()
 
     for label in labels:
         pp_sources = _resolve_input_sources(aos_pp, analysis, label)
@@ -968,6 +1310,30 @@ def build_dis_polarized_objects(
             )
         cumulative_path = f"/{analysis}/{cumulative_label}"
         output[cumulative_path] = _build_cumulative_ratio_hist(delta_hist, sigma_hist, cumulative_path)
+
+    for cumulative_label, numerator_label, denominator_label in derived_cumulative_ratios:
+        numerator_path = f"/{analysis}/{numerator_label}"
+        denominator_path = f"/{analysis}/{denominator_label}"
+        numerator_hist = output.get(numerator_path)
+        denominator_hist = output.get(denominator_path)
+        if numerator_hist is None or denominator_hist is None:
+            raise KeyError(
+                f"Could not build cumulative observable {cumulative_label}: "
+                f"missing {numerator_path} or {denominator_path}"
+            )
+        cumulative_path = f"/{analysis}/{cumulative_label}"
+        output[cumulative_path] = _build_cumulative_ratio_hist(
+            numerator_hist,
+            denominator_hist,
+            cumulative_path,
+        )
+        intermediate_paths.add(numerator_path)
+        intermediate_paths.add(denominator_path)
+        intermediate_paths.add(f"/{analysis}/D{numerator_label}")
+        intermediate_paths.add(f"/{analysis}/D{denominator_label}")
+
+    for path in intermediate_paths:
+        output.pop(path, None)
 
     return output
 
