@@ -1,94 +1,84 @@
-# Polarized Deep-Inelastic Scattering with Spin Correlations in Herwig 7
+# Polarized DIS in Herwig 7
 
-This repository is the research software and reproducibility companion for the
-HerwigPol polarized deep-inelastic scattering implementation developed for
-Herwig 7. It brings together the modified Herwig and ThePEG source snapshots,
-the curated POLDIS fixed-order reference code, the custom Rivet analyses, the
-DIS validation workflow, and the paper source in a single formal repository
-layout.
+This repository contains the source code and validation machinery for our
+implementation of longitudinally polarized deep-inelastic scattering (DIS) in
+Herwig 7. It keeps together the modified Herwig and ThePEG source trees, the
+POLDIS fixed-order reference code, the DIS Rivet analyses, the validation
+scripts, and the paper source used in the study.
 
-The repository is intended to preserve the source-level ingredients needed to
-rebuild and re-run the validated DIS studies. It therefore tracks code, input
-cards, workflow drivers, and technical notes, while intentionally excluding
-generated artifacts such as build products, campaign outputs, merged YODA
-files, plots, and rendered paper outputs.
+The preprint is in preparation. Until the arXiv entry and final citation are
+available, please cite the relevant Herwig, ThePEG, Rivet, YODA, LHAPDF,
+FastJet, and POLDIS references, and mention this repository if you use the code
+or validation workflow.
 
-## Overview
+## Status
 
-The software collected here supports the implementation and validation of
-polarized deep-inelastic scattering at next-to-leading order with spin
-correlations in Herwig 7. In addition to the event-generator source changes,
-the repository preserves the fixed-order comparison inputs, workflow
-orchestration scripts, and analysis components required for end-to-end studies
-of integrated and differential DIS observables.
+This is research code, not a general-purpose Herwig distribution. It contains
+the pieces needed to rebuild the polarized-DIS implementation and to repeat the
+validation runs from source. Generated campaign output and build products are
+not versioned.
 
-The repository should therefore be understood as a curated scientific software
-snapshot rather than as a general-purpose Herwig distribution. Its purpose is
-to provide a reproducible basis for the specific DIS programme documented in
-the accompanying paper and technical notes.
+The workflows kept here are the DIS NLO, POWHEG, correlated Rivet-weight, and
+fixed-order/no-shower comparison paths used in the paper. Regenerate `.run`
+files from the checked-in cards before starting new validation runs.
 
-## Scope
+## Contents
 
-This repository contains the source material needed to reproduce the DIS
-studies based on:
+| Path | Contents |
+| --- | --- |
+| `src/herwig/` | Modified Herwig 7.3.0 source tree |
+| `src/thepeg/` | Modified ThePEG 2.3.0 source tree |
+| `poldis/` | POLDIS source tree and DIS drivers |
+| `analyses/rivet/dis/` | DIS Rivet analyses and metadata |
+| `workflow/dispol/cards/` | Herwig input cards and source templates |
+| `workflow/dispol/scripts/` | Campaign, analysis, conversion, and plotting tools |
+| `workflow/dispol/docs/` | Workflow and validation notes |
+| `docs/paper/` | Manuscript source and bibliography |
 
-- the modified ThePEG 2.3.0 snapshot in `src/thepeg/`
-- the modified Herwig 7.3.0 snapshot in `src/herwig/`
-- the curated POLDIS source tree and DIS-specific drivers in `poldis/`
-- the DIS Rivet analyses `MC_DIS_BREIT` and `MC_DIS_PS`
-- the DIS workflow cards, scripts, and notes in `workflow/dispol/`
-- the paper source in `docs/paper/`
+Generated libraries, `.run`, `.log`, `.out`, `.yoda`, `.csv`, `.html`, `.top`,
+plot output, and rendered paper files are not tracked.
 
-It does not attempt to archive unrelated side studies from the larger working
-area, such as nearby HERMES, RHIC, or WJET materials.
+## Physics And Workflows
 
-## Provenance
+We implement longitudinally polarized lepton-hadron DIS with neutral-current and
+charged-current exchange, NLO QCD corrections, POWHEG hardest-emission
+generation, spin-density propagation, and correlated helicity weights for Rivet
+analyses.
 
-The original clean source starting points for this line of work were:
+The main workflows are:
 
-- `~/Projects/HerwigPol/HwPol`
-- `~/Projects/HerwigPol/ThePEGPol`
+- `RIVETWEIGHTS`: correlated neutral-current helicity weights for low-noise
+  differential validation.
+- `RIVETFO`: POWHEG hardest-emission comparison mode with fixed-order scale and
+  coupling choices.
+- `RealOnly`: retained POWHEG comparison mode for isolating real-emission
+  behavior.
+- `FixedOrderNoShower`: QTilde mode that inserts the POWHEG real emission while
+  suppressing subsequent shower evolution.
 
-The source trees committed here are not pristine upstream checkouts. They are
-curated snapshots copied from the active working trees used for the DIS
-studies:
+Older fixed-weight and dump-style diagnostic paths are not part of the public
+workflow.
 
-- `HerwigSource/Herwig-7.3.0` -> `src/herwig/`
-- `HerwigSource/ThePEG-2.3.0` -> `src/thepeg/`
+## Prerequisites
 
-Generated libraries, build directories, tarballs, campaign outputs, and other
-derived artifacts from the working area have been intentionally omitted.
+You will need, at least:
 
-## Repository Layout
-
-- `src/herwig/`: modified Herwig 7.3.0 source snapshot
-- `src/thepeg/`: modified ThePEG 2.3.0 source snapshot
-- `poldis/`: curated POLDIS source tree and DIS-specific drivers
-- `analyses/rivet/dis/`: DIS Rivet analyses, metadata, and helper wrappers
-- `workflow/dispol/cards/`: checked-in DIS Herwig cards and templates
-- `workflow/dispol/scripts/`: DIS workflow drivers and post-processing tools
-- `workflow/dispol/docs/`: workflow notes and technical investigations
-- `docs/paper/`: paper source, including `main.tex` and `biblio.bib`
-
-## External Prerequisites
-
-Typical local prerequisites include:
-
-- a C++ toolchain and `make`
-- Autotools-compatible build tooling for the bundled Herwig and ThePEG snapshots
-- Python 3 with the `yoda` Python package available to the chosen interpreter
-- LHAPDF with `lhapdf-config`
-- Rivet and YODA command-line tools
+- a C++ compiler and `make`
+- Autotools-compatible build tools
+- Python 3
+- LHAPDF and `lhapdf-config`
+- Rivet and YODA, including the YODA Python module
 - FastJet
 - a Fortran compiler such as `gfortran` for POLDIS
-- a LaTeX toolchain for building the paper draft
+- a LaTeX toolchain if rebuilding the manuscript
 
-## Building ThePEG and Herwig
+The exact paths are installation-dependent. The Herwig and ThePEG snapshots keep
+their upstream `configure --help` output, which is still the best place to check
+available build options.
 
-The repository stores source snapshots only. A clean approach is to build in a
-separate `build/` area inside the clone.
+## Build ThePEG And Herwig
 
-Build ThePEG:
+The repository stores source trees only. One clean way to build ThePEG is:
 
 ```bash
 mkdir -p build/thepeg
@@ -113,17 +103,9 @@ make -j8
 make install
 ```
 
-Notes:
+## Build POLDIS
 
-- the exact external dependency locations depend on the local environment
-- `src/thepeg/configure --help` and `src/herwig/configure --help` list the
-  accepted options for each installation
-- build outputs under `build/` are ignored by git
-
-## Building POLDIS
-
-The curated POLDIS directory contains wrapper scripts for the supported driver
-variants:
+The POLDIS tree includes wrappers for the DIS validation drivers:
 
 ```bash
 cd poldis
@@ -132,18 +114,12 @@ cd poldis
 ./compile_singlejet
 ```
 
-Useful details:
+The wrappers use `gfortran` by default and honour `FC` if another Fortran
+compiler is preferred. LHAPDF flags come from `lhapdf-config`.
 
-- the wrappers use `gfortran` by default and honor `FC` if another compiler is
-  preferred
-- LHAPDF flags are resolved through `lhapdf-config`
-- the canonical DIS comparison driver is `poldis/user_dijet_rivetplots.f`
-- the generated `poldis/poldis.x` executable is intentionally not tracked
+## Build The Rivet Analyses
 
-## Building the Rivet Analyses
-
-The DIS analysis sources live in `analyses/rivet/dis/`. A clean approach is to
-build the generated plugins in a disposable build directory:
+The DIS Rivet analyses are in `analyses/rivet/dis/`:
 
 ```bash
 mkdir -p build/rivet
@@ -152,8 +128,7 @@ rivet-buildplugin build/rivet/RivetMC_DIS_PS.so analyses/rivet/dis/MC_DIS_PS.cc
 export RIVET_ANALYSIS_PATH="$PWD/build/rivet:$PWD/analyses/rivet/dis${RIVET_ANALYSIS_PATH:+:$RIVET_ANALYSIS_PATH}"
 ```
 
-The `.plot` and `.info` metadata files are tracked in the source tree, whereas
-the compiled plugins are not.
+The `.plot` and `.info` files are tracked. The compiled plugins are not.
 
 ## Workflow Drivers
 
@@ -252,79 +227,50 @@ variation, shard id, event count, seed, state, return code, elapsed time, raw
 YODA path, and stdout/stderr logs for each shard. Generated outputs are written
 under `workflow/dispol/campaigns/<tag>/` and remain excluded from git.
 
-## End-to-End DIS Workflow
+## Run A Validation Workflow
 
-The checked-in input cards live in `workflow/dispol/cards/`. The repository
-workflow convention is to use `workflow/dispol/` as the `--base-dir`, which
-keeps generated outputs under one subtree while leaving the curated cards in
-`workflow/dispol/cards/`.
-
-Typical steps from the repository root are:
-
-1. Launch a campaign:
-
-```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py campaign \
-  --base-dir workflow/dispol \
-  -t testing13 \
-  --rivet \
-  --jobs 32 \
-  --shards 0
-```
-
-2. Rebuild merged outputs and summaries for an existing tag:
-
-```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py postprocess \
-  --base-dir workflow/dispol \
-  -t testing13 \
-  --rivet
-```
-
-3. Build analyzed DIS YODAs:
-
-```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py analyze-herwig \
-  --base-dir workflow/dispol \
-  -t testing13
-```
-
-4. Convert POLDIS `.top` files into a reference YODA:
-
-```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py poldis-top \
-  --base-dir workflow/dispol \
-  --order NLO
-```
-
-5. Produce Rivet comparison plots:
-
-```bash
-python3 workflow/dispol/scripts/run_validation_campaign.py rivetplot \
-  --base-dir workflow/dispol \
-  -t testing13 \
-  --setup ALL
-```
-
-6. Run the full chain:
+Use `workflow/dispol/` as the workflow base directory. For a correlated
+helicity-weight run:
 
 ```bash
 python3 workflow/dispol/scripts/run_validation_campaign.py full \
   --base-dir workflow/dispol \
-  -t testing13 \
-  --rivet \
-  --jobs 32 \
-  --shards 0
+  -t <tag> \
+  --setup ALL \
+  --rivetweights \
+  --jobs <ncores> \
+  --shards <nshards>
+```
+
+For a fixed-order comparison run:
+
+```bash
+python3 workflow/dispol/scripts/run_validation_campaign.py full \
+  --base-dir workflow/dispol \
+  -t <tag> \
+  --setup ALL \
+  --rivetfo \
+  --jobs <ncores> \
+  --shards <nshards>
+```
+
+Useful follow-up stages for an existing campaign:
+
+```bash
+python3 workflow/dispol/scripts/run_validation_campaign.py postprocess --base-dir workflow/dispol -t <tag> --setup ALL
+python3 workflow/dispol/scripts/run_validation_campaign.py analyze-herwig --base-dir workflow/dispol -t <tag> --setup ALL
+python3 workflow/dispol/scripts/run_validation_campaign.py poldis-top --base-dir workflow/dispol --order NLO
+python3 workflow/dispol/scripts/run_validation_campaign.py rivetplot --base-dir workflow/dispol -t <tag> --setup ALL
 ```
 
 ## Paper Reproduction Campaigns
 
-The production campaigns used for the paper are large Tiresias-scale runs. The
-commands below give generic versions of the launch commands, with tags and
-event counts exposed as shell variables so they can be adjusted for a smoke
-test or a fresh production run.
+The paper plots and tables were produced with large Tiresias campaigns. The
+blocks below are the launch commands with tags and event counts exposed as shell
+variables, so that they can be used either for smoke tests or for
+production-statistics reruns.
 
-Common Tiresias-style paths:
+Common paths:
 
 ```bash
 BASE=${BASE:-/home/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL}
@@ -332,8 +278,7 @@ PYTHON=${PYTHON:-python3.10}
 YODAMERGE=${YODAMERGE:-/home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/bin/yodamerge}
 ```
 
-Neutral-current integrated cross sections, corresponding to the NC validation
-tables:
+Neutral-current integrated cross sections, used for the NC validation tables:
 
 ```bash
 NC_TAG=${NC_TAG:-paper_nc_totals}
@@ -397,7 +342,7 @@ CC_POLDIS_EVENTS=${CC_POLDIS_EVENTS:-200000000}
 ```
 
 Correlated-weight no-shower validation, used for the parton-level differential
-validation plots:
+plots:
 
 ```bash
 NOSHOWER_TAG=${NOSHOWER_TAG:-paper_noshower}
@@ -431,8 +376,8 @@ NOSHOWER_NEGNLO_EVENTS=${NOSHOWER_NEGNLO_EVENTS:-2000000}
   --yoda-merge-tool "$YODAMERGE"
 ```
 
-Shower-spin comparison, used for the no-hadronization and hadronization spin
-comparison plots:
+Shower-spin comparison, used for the spin-comparison plots with and without
+hadronization:
 
 ```bash
 SPIN_TAG=${SPIN_TAG:-paper_spinweights}
@@ -462,83 +407,52 @@ SPIN_NEGNLO_EVENTS=${SPIN_NEGNLO_EVENTS:-32000000}
   --yoda-merge-tool "$YODAMERGE"
 ```
 
-Generated outputs are expected under:
+The scripts write campaign output under:
 
 - `workflow/dispol/campaigns/<tag>/`
 - transient `.run`, `.log`, `.out`, `.yoda`, `.csv`, `.html`, and `.tex`
   products under `workflow/dispol/`
 
-Operational notes:
+More workflow detail is in `workflow/dispol/docs/validation-workflow.md` and
+`workflow/dispol/docs/correlated-helicity-rivetweights.md`.
 
-- `SPINCOMP` and `SPINHAD` shower cards are configured with low-verbosity
-  `EventGenerator` settings so large parton-shower campaigns do not flood the
-  `.log` files
-- if a campaign crashes before
-  `workflow/dispol/campaigns/<tag>/manifest.json` is written, it can be
-  recovered with `workflow/dispol/scripts/recover_campaign_manifest.py`, then
-  resumed with
-  `workflow/dispol/scripts/run_validation_campaign.py full --rerun-failed-random-seed`
+## Tests
 
-Additional workflow details are documented in
-`workflow/dispol/docs/validation-workflow.md`.
+Run the workflow tests with:
+
+```bash
+python3 -m unittest discover workflow/dispol/scripts/tests
+```
+
+For source-level checks, also verify that the active DIS cards and scripts do
+not regenerate retired validation-only settings, then rebuild the touched Herwig
+modules in the target environment.
 
 ## Paper Source
 
-The paper draft lives in:
+The manuscript source lives in:
 
 - `docs/paper/main.tex`
 - `docs/paper/biblio.bib`
 
-Only the TeX and bibliography sources are versioned. Rendered figure PDFs and
-other LaTeX build products are intentionally excluded, so figures must be
-regenerated locally or supplied separately before producing a final PDF.
+Rendered PDFs, auxiliary LaTeX products, and generated figures are excluded from
+git. Citation metadata will be added once the preprint is available.
 
-The paper associated with this repository is titled:
+## Acknowledgments
 
-- `Polarized Deep-Inelastic Scattering with Spin Correlations in Herwig 7`
+We thank Daniel de Florian for useful discussions and for providing the POLDIS
+code used for validation. AP acknowledges support from the US Department of
+Energy, Office of Science, Office of Nuclear Physics under Award Number
+DE-SC0025728.
 
 ## License
 
-The modified Herwig 7 and ThePEG 2.3.0 source snapshots bundled in this
-repository are distributed under the terms of the GNU General Public License,
-version 3 (GPLv3). A top-level copy of the GPLv3 text is provided in
-`COPYING`, and the corresponding component-level license files are retained in:
+The modified Herwig 7 and ThePEG 2.3.0 source snapshots in this repository are
+distributed under the GNU General Public License, version 3 (GPLv3). A top-level
+copy is provided in `COPYING`, with component-level copies in:
 
 - `src/herwig/COPYING`
 - `src/thepeg/COPYING`
 
 Additional component-specific notices and exceptions remain in the relevant
-subdirectories, where applicable.
-
-## Acknowledgments
-
-We would like to thank Daniel de Florian for useful discussions and for
-providing the POLDIS code used for validation. AP acknowledges support from
-the U.S. Department of Energy, Office of Science, Office of Nuclear Physics,
-under Award Number DE-SC0025728.
-
-## What Is Intentionally Excluded
-
-The repository is source-first. The main excluded categories are:
-
-- compiled libraries and in-tree build products
-- campaign outputs and shard artifacts
-- `.run`, `.log`, `.out`, `.yoda`, `.csv`, `.html`, and `.top` generated files
-- compiled Rivet plugins
-- rendered paper artifacts and figure PDFs
-- stale duplicate files when a newer canonical source exists elsewhere in the
-  curated layout
-
-## Migration from the Older Working Layout
-
-- `HwPolNotesNew/DISPOL` -> `workflow/dispol`
-- DIS pieces from `HwPolNotesNew/analyses` -> `analyses/rivet/dis`
-- `POLDIS/POLDIS-public` plus retained DIS helpers -> `poldis`
-- `main.tex` and `biblio.bib` -> `docs/paper`
-
-The canonical public entry points in this repository are the repo-relative
-paths under `workflow/dispol/scripts/`, especially:
-
-- `workflow/dispol/scripts/run_validation_campaign.py`
-- `workflow/dispol/scripts/analyze_DIS_polarized.py`
-- `workflow/dispol/scripts/poldis_top_to_yoda.py`
+subdirectories.
