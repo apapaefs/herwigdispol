@@ -33,10 +33,10 @@ files from the checked-in cards before starting new validation runs.
 | `workflow/dispol/cards/` | Herwig input cards and source templates |
 | `workflow/dispol/scripts/` | Campaign, analysis, conversion, and plotting tools |
 | `workflow/dispol/docs/` | Workflow and validation notes |
-| `docs/paper/` | Manuscript source and bibliography |
+| `docs/paper/` | Manuscript source, bibliography, styles, and referenced figure assets |
 
 Generated libraries, `.run`, `.log`, `.out`, `.yoda`, `.csv`, `.html`, `.top`,
-plot output, and rendered paper files are not tracked.
+plot output, LaTeX build products, and the rendered paper PDF are not tracked.
 
 ## Physics And Workflows
 
@@ -434,9 +434,15 @@ The manuscript source lives in:
 
 - `docs/paper/main.tex`
 - `docs/paper/biblio.bib`
+- `docs/paper/JHEP.bst`
+- `docs/paper/jheppub.sty`
+- `docs/paper/feynman.sty`
+- `docs/paper/figures/`
 
-Rendered PDFs, auxiliary LaTeX products, and generated figures are excluded from
-git. Citation metadata will be added once the preprint is available.
+The figure assets referenced by `main.tex` are tracked so the draft can compile
+from a clean checkout. Auxiliary LaTeX products and the rendered `main.pdf`
+remain excluded from git. Citation metadata will be added once the preprint is
+available.
 
 ## Acknowledgments
 
