@@ -83,7 +83,7 @@ class ShardResult:
     launcher_log: Path
 
 
-BROAD_WINDOW = CutWindow(label="broad", q2_min=49.0, q2_max=2500.0, y_min=0.2, y_max=0.6)
+BROAD_WINDOW = CutWindow(label="broad", q2_min=100.0, q2_max=2500.0, y_min=0.2, y_max=0.6)
 INTERIOR_WINDOW = CutWindow(label="interior", q2_min=100.0, q2_max=1000.0, y_min=0.3, y_max=0.5)
 
 

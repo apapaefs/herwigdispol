@@ -244,4 +244,3 @@ void NLOHepMC3File::Init() {
      3);
 
 }
-

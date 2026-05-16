@@ -37,8 +37,17 @@ from extract_dis_out_results import (
 
 
 DEFAULT_BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_ROOT_DIR = DEFAULT_BASE_DIR.parent.parent.parent.parent
-DEFAULT_POLDIS_DIR = DEFAULT_ROOT_DIR / "POLDIS" / "POLDIS-public"
+
+
+def default_poldis_dir() -> Path:
+    for root in (DEFAULT_BASE_DIR, *DEFAULT_BASE_DIR.parents):
+        candidate = root / "POLDIS" / "POLDIS-public"
+        if candidate.exists():
+            return candidate
+    return DEFAULT_BASE_DIR.parent.parent / "POLDIS" / "POLDIS-public"
+
+
+DEFAULT_POLDIS_DIR = default_poldis_dir()
 DEFAULT_TAG = "plain55-poldis-ref"
 DEFAULT_EVENTS = 1_600_000_000
 DEFAULT_PDF_PROFILE = "nnpdf_paired"
@@ -105,8 +114,7 @@ class ShardSpec:
     seed: int
 
 
-# Keep the production "broad" y/Q^2_max window, but match the rerun cards'
-# raised Q^2 threshold so plain/RIVETFO POLDIS references stay aligned.
+# Match the EIC dijet setup used by the POLDIS comparisons.
 BROAD_WINDOW = CutWindow(label="broad", q2_min=100.0, q2_max=2500.0, y_min=0.2, y_max=0.6)
 INTERIOR_WINDOW = CutWindow(label="interior", q2_min=100.0, q2_max=1000.0, y_min=0.3, y_max=0.5)
 WINDOWS = {"broad": BROAD_WINDOW, "interior": INTERIOR_WINDOW}
@@ -116,6 +124,7 @@ TOTAL_RE = re.compile(
     r"(?P<error>[+-]?\d+(?:\.\d*)?(?:[Ee][+-]?\d+)?)\s*$"
 )
 PROGRESS_RE = re.compile(r"^\s*(?P<events>\d+),\s*ISEED=")
+POLDIS_FATAL_RE = re.compile(r"^\s*Fatal error in subroutine\s+(?P<subroutine>\S+)", re.IGNORECASE)
 
 RUNTIME_FILES = ("poldis.f", "gbook.f", "jetalg.f")
 
@@ -278,18 +287,30 @@ def reference_yoda_path(
     return work_dir(base_dir, tag, setup, window) / "reference.yoda.gz"
 
 
+def reference_yoda_order_path(
+    base_dir: Path,
+    tag: str,
+    setup: str,
+    window: CutWindow,
+    order: str,
+) -> Path:
+    order = order.upper()
+    if order == "NLO":
+        return reference_yoda_path(base_dir, tag, setup, window)
+    return work_dir(base_dir, tag, setup, window) / f"reference.{order}.yoda.gz"
+
+
 def reference_yoda_variation_path(
     base_dir: Path,
     tag: str,
     setup: str,
     window: CutWindow,
     scale_variation: str = "nominal",
+    order: str = "NLO",
 ) -> Path:
-    filename = (
-        "reference.nominal.yoda.gz"
-        if scale_variation == "nominal"
-        else f"reference.{scale_variation}.yoda.gz"
-    )
+    order = order.upper()
+    prefix = "reference" if order == "NLO" else f"reference.{order}"
+    filename = f"{prefix}.{scale_variation}.yoda.gz"
     return work_dir(base_dir, tag, setup, window) / filename
 
 
@@ -299,9 +320,12 @@ def reference_yoda_error_mode_path(
     setup: str,
     window: CutWindow,
     error_mode: str,
+    order: str = "NLO",
 ) -> Path:
     suffix = REFERENCE_ERROR_MODE_SUFFIXES[error_mode]
-    filename = f"reference.{suffix}.yoda.gz"
+    order = order.upper()
+    prefix = "reference" if order == "NLO" else f"reference.{order}"
+    filename = f"{prefix}.{suffix}.yoda.gz"
     return work_dir(base_dir, tag, setup, window) / filename
 
 
@@ -356,6 +380,15 @@ def parse_poldis_totals(text: str, context: str) -> Dict[str, Measurement]:
     if missing:
         raise RuntimeError(f"Failed to parse {context}: missing {', '.join(missing)} totals")
     return totals
+
+
+def validate_poldis_run_log(log_path: Path) -> Dict[str, Measurement]:
+    text = log_path.read_text()
+    for line in text.splitlines():
+        fatal = POLDIS_FATAL_RE.match(line)
+        if fatal:
+            raise RuntimeError(f"Failed POLDIS run {log_path}: {line.strip()}")
+    return parse_poldis_totals(text, context=str(log_path))
 
 
 def compile_command(poldis_dir: Path) -> list[str]:
@@ -709,8 +742,7 @@ def build_parallel_monitor_payload(
     latest_state: Optional[Mapping[str, object]] = None
     latest_updated_at = float("-inf")
 
-    for label in ("unpolarized", "polarized"):
-        raw_state = variant_states.get(label, {})
+    for label, raw_state in sorted(variant_states.items()):
         total_value = raw_state.get("events_total")
         total_int = int(total_value) if isinstance(total_value, int) else None
         done_value = raw_state.get("events_done", 0)
@@ -941,6 +973,11 @@ def run_poldis_with_progress(
     if returncode != 0:
         raise RuntimeError(f"Command failed in {run_dir}: {shlex.join(cmd)}\nSee {log_path}")
 
+    try:
+        validate_poldis_run_log(log_path)
+    except RuntimeError as exc:
+        raise RuntimeError(f"POLDIS run did not finish cleanly in {run_dir}: {exc}\nSee {log_path}") from exc
+
     payload = build_monitor_payload(
         tag=tag,
         setup=setup,
@@ -972,7 +1009,10 @@ def ensure_compiled(poldis_dir: Path, run_dir: Path, dry_run: bool) -> None:
 
 
 def ensure_ran(run_dir: Path, dry_run: bool) -> None:
-    run_logged(["./poldis.x"], cwd=run_dir, log_path=run_dir / "run.log", dry_run=dry_run)
+    log_path = run_dir / "run.log"
+    run_logged(["./poldis.x"], cwd=run_dir, log_path=log_path, dry_run=dry_run)
+    if not dry_run:
+        validate_poldis_run_log(log_path)
 
 
 def process_shard(
@@ -1063,7 +1103,7 @@ def load_variant_payload(
             log_path = shard_dir / "run.log"
             if not log_path.exists():
                 raise FileNotFoundError(f"Missing POLDIS shard log {log_path}")
-            totals = parse_poldis_totals(log_path.read_text(), context=str(log_path))
+            totals = validate_poldis_run_log(log_path)
             top_path = shard_dir / expected_top_name(setup, ipol)
             shard_payload = {
                 "index": int(shard_info["index"]),
@@ -1098,7 +1138,7 @@ def load_variant_payload(
     log_path = run_dir / "run.log"
     if not log_path.exists():
         raise FileNotFoundError(f"Missing POLDIS run log {log_path}")
-    totals = parse_poldis_totals(log_path.read_text(), context=str(log_path))
+    totals = validate_poldis_run_log(log_path)
     top_path = run_dir / expected_top_name(setup, ipol)
     return {
         "log": str(log_path),
@@ -1120,7 +1160,11 @@ def build_broad_comparisons(setup: str, payload: dict) -> dict:
     return comparisons
 
 
-def build_scale_variation_reference_objects(unpol_payload: Mapping[str, object], pol_payload: Mapping[str, object]) -> Dict[str, object]:
+def build_scale_variation_reference_objects(
+    unpol_payload: Mapping[str, object],
+    pol_payload: Mapping[str, object],
+    order: str = "NLO",
+) -> Dict[str, object]:
     from poldis_top_to_yoda import combine_ref_object_sets, convert_topdrawer_to_ref_objects
 
     unpol_shards = unpol_payload.get("shards")
@@ -1154,16 +1198,17 @@ def build_scale_variation_reference_objects(unpol_payload: Mapping[str, object],
                 convert_topdrawer_to_ref_objects(
                     unpol=str(unpol_shard["top"]),
                     pol=str(pol_shard["top"]),
+                    order=order,
                 )
             )
             generated_events.append(unpol_events)
-        return combine_ref_object_sets(ref_sets, generated_events=generated_events)
+        return combine_ref_object_sets(ref_sets, generated_events=generated_events, order=order)
 
     unpol_top = str(unpol_payload.get("top") or "")
     pol_top = str(pol_payload.get("top") or "")
     if not unpol_top or not pol_top:
         raise RuntimeError("Missing nominal unpolarized/polarized Topdrawer files for reference conversion.")
-    return convert_topdrawer_to_ref_objects(unpol=unpol_top, pol=pol_top)
+    return convert_topdrawer_to_ref_objects(unpol=unpol_top, pol=pol_top, order=order)
 
 
 def build_reference_yodas(
@@ -1174,52 +1219,73 @@ def build_reference_yodas(
     window: CutWindow,
     variation_runs: Mapping[str, Mapping[str, Mapping[str, object]]],
     error_mode: str,
-) -> tuple[str, Dict[str, str], Dict[str, str]]:
+) -> tuple[str, Dict[str, str], Dict[str, str], Dict[str, str], Dict[str, Dict[str, str]], Dict[str, Dict[str, str]]]:
     from poldis_top_to_yoda import build_ref_object_error_mode, write_yoda_gz
 
-    variation_ref_objects: Dict[str, Dict[str, object]] = {}
-    variation_outputs: Dict[str, str] = {}
-    for scale_variation, runs in variation_runs.items():
-        ref_objects = build_scale_variation_reference_objects(runs["unpolarized"], runs["polarized"])
-        variation_ref_objects[scale_variation] = ref_objects
-        output_path = reference_yoda_variation_path(base_dir, tag, setup, window, scale_variation)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        write_yoda_gz(ref_objects, str(output_path))
-        variation_outputs[scale_variation] = str(output_path)
+    selected_by_order: Dict[str, str] = {}
+    variations_by_order: Dict[str, Dict[str, str]] = {}
+    error_modes_by_order: Dict[str, Dict[str, str]] = {}
 
-    nominal_ref_objects = variation_ref_objects["nominal"]
-    scale_down_ref_objects = variation_ref_objects.get("ScaleFactorDown")
-    scale_up_ref_objects = variation_ref_objects.get("ScaleFactorUp")
-    error_mode_outputs: Dict[str, str] = {}
-    for candidate_mode in REFERENCE_ERROR_MODES:
-        if candidate_mode != "stat" and (scale_down_ref_objects is None or scale_up_ref_objects is None):
-            continue
-        ref_objects = build_ref_object_error_mode(
+    for order in ("LO", "NLO", "NNLO"):
+        variation_ref_objects: Dict[str, Dict[str, object]] = {}
+        variation_outputs: Dict[str, str] = {}
+        for scale_variation, runs in variation_runs.items():
+            ref_objects = build_scale_variation_reference_objects(
+                runs["unpolarized"],
+                runs["polarized"],
+                order=order,
+            )
+            variation_ref_objects[scale_variation] = ref_objects
+            output_path = reference_yoda_variation_path(base_dir, tag, setup, window, scale_variation, order=order)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            write_yoda_gz(ref_objects, str(output_path))
+            variation_outputs[scale_variation] = str(output_path)
+
+        nominal_ref_objects = variation_ref_objects["nominal"]
+        scale_down_ref_objects = variation_ref_objects.get("ScaleFactorDown")
+        scale_up_ref_objects = variation_ref_objects.get("ScaleFactorUp")
+        error_mode_outputs: Dict[str, str] = {}
+        for candidate_mode in REFERENCE_ERROR_MODES:
+            if candidate_mode != "stat" and (scale_down_ref_objects is None or scale_up_ref_objects is None):
+                continue
+            ref_objects = build_ref_object_error_mode(
+                nominal_ref_objects,
+                error_mode=candidate_mode,
+                scale_down_ref_objects=scale_down_ref_objects,
+                scale_up_ref_objects=scale_up_ref_objects,
+            )
+            output_path = reference_yoda_error_mode_path(base_dir, tag, setup, window, candidate_mode, order=order)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            write_yoda_gz(ref_objects, str(output_path))
+            error_mode_outputs[candidate_mode] = str(output_path)
+
+        if error_mode not in error_mode_outputs:
+            raise RuntimeError(
+                f"Requested reference error mode {error_mode!r} is unavailable for setup {setup} "
+                f"window {window.label} order {order}"
+            )
+
+        selected_path = reference_yoda_order_path(base_dir, tag, setup, window, order)
+        selected_ref_objects = build_ref_object_error_mode(
             nominal_ref_objects,
-            error_mode=candidate_mode,
+            error_mode=error_mode,
             scale_down_ref_objects=scale_down_ref_objects,
             scale_up_ref_objects=scale_up_ref_objects,
         )
-        output_path = reference_yoda_error_mode_path(base_dir, tag, setup, window, candidate_mode)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        write_yoda_gz(ref_objects, str(output_path))
-        error_mode_outputs[candidate_mode] = str(output_path)
+        selected_path.parent.mkdir(parents=True, exist_ok=True)
+        write_yoda_gz(selected_ref_objects, str(selected_path))
+        selected_by_order[order] = str(selected_path)
+        variations_by_order[order] = variation_outputs
+        error_modes_by_order[order] = error_mode_outputs
 
-    if error_mode not in error_mode_outputs:
-        raise RuntimeError(
-            f"Requested reference error mode {error_mode!r} is unavailable for setup {setup} window {window.label}"
-        )
-
-    selected_path = reference_yoda_path(base_dir, tag, setup, window)
-    selected_ref_objects = build_ref_object_error_mode(
-        nominal_ref_objects,
-        error_mode=error_mode,
-        scale_down_ref_objects=scale_down_ref_objects,
-        scale_up_ref_objects=scale_up_ref_objects,
+    return (
+        selected_by_order["NLO"],
+        variations_by_order["NLO"],
+        error_modes_by_order["NLO"],
+        selected_by_order,
+        variations_by_order,
+        error_modes_by_order,
     )
-    selected_path.parent.mkdir(parents=True, exist_ok=True)
-    write_yoda_gz(selected_ref_objects, str(selected_path))
-    return str(selected_path), variation_outputs, error_mode_outputs
 
 
 def build_reference_payload(
@@ -1261,7 +1327,14 @@ def build_reference_payload(
     }
     unpol_payload = variation_runs["nominal"]["unpolarized"]
     pol_payload = variation_runs["nominal"]["polarized"]
-    reference_yoda, reference_yoda_variations, reference_yoda_error_modes = build_reference_yodas(
+    (
+        reference_yoda,
+        reference_yoda_variations,
+        reference_yoda_error_modes,
+        reference_yoda_by_order,
+        reference_yoda_variations_by_order,
+        reference_yoda_error_modes_by_order,
+    ) = build_reference_yodas(
         base_dir=base_dir,
         tag=tag,
         setup=setup,
@@ -1288,6 +1361,9 @@ def build_reference_payload(
         "reference_yoda": reference_yoda,
         "reference_yoda_variations": reference_yoda_variations,
         "reference_yoda_error_modes": reference_yoda_error_modes,
+        "reference_yoda_by_order": reference_yoda_by_order,
+        "reference_yoda_variations_by_order": reference_yoda_variations_by_order,
+        "reference_yoda_error_modes_by_order": reference_yoda_error_modes_by_order,
         "runs": {
             "unpolarized": unpol_payload,
             "polarized": pol_payload,
@@ -1323,6 +1399,10 @@ def render_reference_text(payload: dict) -> str:
         f"Selected reference error mode: {payload.get('reference_yoda_error_mode', DEFAULT_REFERENCE_ERROR_MODE)}",
         f"Reference YODA: {payload['reference_yoda']}",
     ]
+    if isinstance(payload.get("reference_yoda_by_order"), dict):
+        lines.append("Reference YODA by order:")
+        for order, path in payload["reference_yoda_by_order"].items():
+            lines.append(f"  {order}: {path}")
     if isinstance(payload.get("reference_yoda_error_modes"), dict):
         lines.append("Reference YODA error modes:")
         for name, path in payload["reference_yoda_error_modes"].items():
@@ -1613,6 +1693,33 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if args.dry_run:
         return 0
+
+    total_shard_jobs = sum(len(specs) for specs in variant_specs.values())
+    write_monitor_files(
+        base_dir,
+        args.tag,
+        args.setup,
+        window,
+        build_monitor_payload(
+            tag=args.tag,
+            setup=args.setup,
+            window=window,
+            phase="collecting",
+            variant="all",
+            started_at=started_at,
+            run_index=len(variants),
+            run_count=len(variants),
+            log_path=reference_json_path(base_dir, args.tag, args.setup, window),
+            total_jobs=total_shard_jobs,
+            job_counts={
+                "running": 0,
+                "compiling": 0,
+                "pending": 0,
+                "completed": total_shard_jobs,
+                "total": total_shard_jobs,
+            },
+        ),
+    )
 
     payload = build_reference_payload(
         base_dir=base_dir,

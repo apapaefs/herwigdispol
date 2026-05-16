@@ -3,19 +3,41 @@ import unittest
 from pathlib import Path
 
 
+def layout_candidates(root):
+    return (
+        (
+            root / "DISPOL" / "scripts" / "run_validation_campaign.py",
+            root / "HerwigSource" / "Herwig-7.3.0" / "Shower" / "QTilde" / "QTildeShowerHandler.cc",
+            root / "HerwigSource" / "Herwig-7.3.0" / "Shower" / "QTilde" / "QTildeShowerHandler.h",
+        ),
+        (
+            root / "workflow" / "dispol" / "scripts" / "run_validation_campaign.py",
+            root / "src" / "herwig" / "Shower" / "QTilde" / "QTildeShowerHandler.cc",
+            root / "src" / "herwig" / "Shower" / "QTilde" / "QTildeShowerHandler.h",
+        ),
+        (
+            root / "HwPolNotesNew" / "DISPOL" / "run_validation_campaign.py",
+            root / "herwigdispol" / "src" / "herwig" / "Shower" / "QTilde" / "QTildeShowerHandler.cc",
+            root / "herwigdispol" / "src" / "herwig" / "Shower" / "QTilde" / "QTildeShowerHandler.h",
+        ),
+        (
+            root / "HwPolNotesNew" / "DISPOL" / "run_validation_campaign.py",
+            root / "HerwigSource" / "Herwig-7.3.0" / "Shower" / "QTilde" / "QTildeShowerHandler.cc",
+            root / "HerwigSource" / "Herwig-7.3.0" / "Shower" / "QTilde" / "QTildeShowerHandler.h",
+        ),
+        (
+            root / "HerwigPol" / "HwPolNotesNew" / "DISPOL" / "run_validation_campaign.py",
+            root / "Herwig" / "Herwig-pol-full-python3-rivet4" / "src" / "Herwig-7.3.0" / "Shower" / "QTilde" / "QTildeShowerHandler.cc",
+            root / "Herwig" / "Herwig-pol-full-python3-rivet4" / "src" / "Herwig-7.3.0" / "Shower" / "QTilde" / "QTildeShowerHandler.h",
+        ),
+    )
+
+
 def find_layout():
     for root in Path(__file__).resolve().parents:
-        campaign = root / "DISPOL" / "scripts" / "run_validation_campaign.py"
-        qtilde_cc = root / "HerwigSource" / "Herwig-7.3.0" / "Shower" / "QTilde" / "QTildeShowerHandler.cc"
-        qtilde_h = root / "HerwigSource" / "Herwig-7.3.0" / "Shower" / "QTilde" / "QTildeShowerHandler.h"
-        if campaign.exists() and qtilde_cc.exists() and qtilde_h.exists():
-            return campaign, qtilde_cc, qtilde_h
-
-        campaign = root / "workflow" / "dispol" / "scripts" / "run_validation_campaign.py"
-        qtilde_cc = root / "src" / "herwig" / "Shower" / "QTilde" / "QTildeShowerHandler.cc"
-        qtilde_h = root / "src" / "herwig" / "Shower" / "QTilde" / "QTildeShowerHandler.h"
-        if campaign.exists() and qtilde_cc.exists() and qtilde_h.exists():
-            return campaign, qtilde_cc, qtilde_h
+        for campaign, qtilde_cc, qtilde_h in layout_candidates(root):
+            if campaign.exists() and qtilde_cc.exists() and qtilde_h.exists():
+                return campaign, qtilde_cc, qtilde_h
 
     raise RuntimeError("Could not locate a supported DISPOL/Herwig source layout")
 
@@ -25,10 +47,21 @@ CAMPAIGN, QTILDE_CC, QTILDE_H = find_layout()
 
 def load_campaign_functions(*names):
     tree = ast.parse(CAMPAIGN.read_text())
+    support_names = {
+        "REMOVED_DIAGNOSTIC_CARD_TOKEN_PARTS",
+        "REMOVED_DIAGNOSTIC_CARD_TOKENS",
+    }
     selected = [
         node
         for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name in names
+        if (
+            isinstance(node, ast.FunctionDef)
+            and node.name in names
+        )
+        or (
+            isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id in support_names for target in node.targets)
+        )
     ]
     module = ast.Module(
         body=[
@@ -46,6 +79,7 @@ class FixedOrderPOWHEGNoShowerTests(unittest.TestCase):
 
     def test_fixed_order_powheg_card_patch_inserts_runtime_mode(self):
         namespace = load_campaign_functions(
+            "strip_removed_diagnostic_card_lines",
             "set_or_insert_card_setting",
             "rewrite_fixed_order_powheg_card_text",
         )

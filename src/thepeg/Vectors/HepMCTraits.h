@@ -256,12 +256,12 @@ struct HepMCTraitsBase {
 
   /** Set the polarization directions, \a the and \a phi, for particle
       \a p. */
-  static void setPolarization(ParticleT & genp, double the, double phi) {
-    genp.set_polarization(PolarizationT(the, phi));
-  }
+	  static void setPolarization(ParticleT & genp, double the, double phi) {
+	    genp.set_polarization(PolarizationT(the, phi));
+	  }
 
-  /** Set the colour line (with index \a indx) to \a coline for
-      particle \a p. */
+	  /** Set the colour line (with index \a indx) to \a coline for
+	      particle \a p. */
   static void setColourLine(ParticleT & p, int indx, int coline) {
     p.set_flow(indx, coline);
   }

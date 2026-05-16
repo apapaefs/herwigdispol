@@ -765,12 +765,12 @@ void DISBase::doinit() {
 
 // Choose the alphaS scale for accepted real-emission generation.
 Energy2 DISBase::powhegEmissionAlphaSScale(Energy2 q2, double xT) const {
-  return useQ2ScaleInPOWHEGEmission_ ? q2 : 0.25*q2*sqr(xT);
+  return sqr(scaleFact_) * (useQ2ScaleInPOWHEGEmission_ ? q2 : 0.25*q2*sqr(xT));
 }
 
 // Choose the PDF numerator scale for emission PDF ratios.
 Energy2 DISBase::powhegEmissionPDFScale(Energy2 q2, Energy2 mappedScale) const {
-  return useQ2ScaleInPOWHEGEmission_ ? q2 : mappedScale;
+  return sqr(scaleFact_) * (useQ2ScaleInPOWHEGEmission_ ? q2 : mappedScale);
 }
 
 // Fixed-order alphaS source used by release comparison modes when requested.
@@ -1080,14 +1080,15 @@ RealEmissionProcessPtr DISBase::applyHardMatrixElementCorrection(RealEmissionPro
     // common pieces
     Energy2 scale = q2_*((1.-xp)*(1-zp)*zp/xp+1.);
     Energy2 pdfScale = powhegEmissionPDFScale(q2_, scale);
-    Energy2 alphaScale = useQ2ScaleInPOWHEGEmission_ ? q2_ : scale;
+    Energy2 bornPDFScale = sqr(scaleFact_) * q2_;
+    Energy2 alphaScale = sqr(scaleFact_) * (useQ2ScaleInPOWHEGEmission_ ? q2_ : scale);
     wgt *= 2./3./Constants::pi*powhegEmissionAlphaSValue(alphaScale)/procProb_;
     // PDF piece
     double pdfRatioGen = 0.0;
     if (!powhegEmissionPDFRatioForGeneration(pdf_, beam_,
                                              quark[0]->dataPtr(),
                                              quark[0]->dataPtr(),
-                                             pdfScale, q2_,
+                                             pdfScale, bornPDFScale,
                                              xB_/xp, xB_,
                                              pdfRatioGen)) {
       return RealEmissionProcessPtr();
@@ -1108,14 +1109,15 @@ RealEmissionProcessPtr DISBase::applyHardMatrixElementCorrection(RealEmissionPro
     // common pieces 
     Energy2 scale = q2_*((1.-xp)*(1-zp)*zp/xp+1);
     Energy2 pdfScale = powhegEmissionPDFScale(q2_, scale);
-    Energy2 alphaScale = useQ2ScaleInPOWHEGEmission_ ? q2_ : scale;
+    Energy2 bornPDFScale = sqr(scaleFact_) * q2_;
+    Energy2 alphaScale = sqr(scaleFact_) * (useQ2ScaleInPOWHEGEmission_ ? q2_ : scale);
     wgt *= 0.25/Constants::pi*powhegEmissionAlphaSValue(alphaScale)/(1.-procProb_);
     // PDF piece
     double pdfRatioGen = 0.0;
     if (!powhegEmissionPDFRatioForGeneration(pdf_, beam_,
                                              gluon_,
                                              quark[0]->dataPtr(),
-                                             pdfScale, q2_,
+                                             pdfScale, bornPDFScale,
                                              xB_/xp, xB_,
                                              pdfRatioGen)) {
       return RealEmissionProcessPtr();
@@ -1436,8 +1438,10 @@ DISBase::ComptonME(double xp, double x2, double xperp,
   double lo(1.+aBorn*l_+sqr(l_));
   if (std::abs(lo) <= 1e-30) lo = (lo < 0.0 ? -1.0 : 1.0) * 1e-30;
   double denom = norm ? 1.+sqr(xp)*(sqr(x2)+1.5*sqr(xperp)) : 1.;
+  double mappedLo = 1.+aMapped*l_+sqr(l_);
+  double leading = mappedDenRatio*mappedLo/lo;
   double fact  = mappedDenRatio*sqr(xp)*(sqr(x2)+sqr(xperp))/lo;
-  output.c0 = (1. + fact*(sqr(cos2)+aMapped*cos2*l_+sqr(l_)))/denom;
+  output.c0 = (leading + fact*(sqr(cos2)+aMapped*cos2*l_+sqr(l_)))/denom;
   output.c1 = fact*(-aMapped*cos2*root*sin2-2.*l_*root*sin2)/denom;
   output.c2 = fact*(sqr(root)*sqr(sin2))/denom;
   return output;
@@ -1575,10 +1579,11 @@ void DISBase::generateCompton() {
     // PDF piece of the weight
     Energy2 scale = q2_*((1.-xp)*(1-zp)*zp/xp+1.);
     Energy2 pdfScale = powhegEmissionPDFScale(q2_, scale);
+    Energy2 bornPDFScale = sqr(scaleFact_) * q2_;
     double pdfRatioGen = 0.0;
     if (!powhegEmissionPDFRatioForGeneration(pdf_, beam_,
                                              partons_[0], partons_[0],
-                                             pdfScale, q2_,
+                                             pdfScale, bornPDFScale,
                                              xB_/xp, xB_,
                                              pdfRatioGen)) {
       if(xT<=xTMin) break;
@@ -1685,10 +1690,11 @@ void DISBase::generateBGF() {
     // PDF piece of the weight
     Energy2 scale = q2_*((1.-xp)*(1-zp)*zp/xp+1.);
     Energy2 pdfScale = powhegEmissionPDFScale(q2_, scale);
+    Energy2 bornPDFScale = sqr(scaleFact_) * q2_;
     double pdfRatioGen = 0.0;
     if (!powhegEmissionPDFRatioForGeneration(pdf_, beam_,
                                              gluon_, partons_[0],
-                                             pdfScale, q2_,
+                                             pdfScale, bornPDFScale,
                                              xB_/xp, xB_,
                                              pdfRatioGen)) {
       if(xT<=xTMin) break;
@@ -2201,10 +2207,6 @@ std::map<std::string,double> DISBase::generateRivetWeights() const {
   weights["HERWIG_DIS_SIGMA"] = 0.0;
   weights["HERWIG_DIS_DELTA_LL"] = 0.0;
 
-  const tcEventPtr event = generator()->currentEvent();
-  const double eventWeight = event ? event->weight() : 1.0;
-  if (!std::isfinite(eventWeight)) return weights;
-
   const double sampledPq = rivetWeightBornPartonPolarization(0.0);
   const double sampledBorn = rivetWeightBornME2(0.0, sampledPq);
   const double sampledRaw = NLOWeightRaw(0.0, 0.0, true);
@@ -2233,7 +2235,7 @@ std::map<std::string,double> DISBase::generateRivetWeights() const {
       rivetWeightBornPartonPolarization(target.hadronPol);
     const double born = rivetWeightBornME2(target.leptonPol, partonPol);
     const double raw = NLOWeightRaw(target.leptonPol, target.hadronPol, true);
-    const double targetWeight = eventWeight * born * raw / sampledDenominator;
+    const double targetWeight = born * raw / sampledDenominator;
     weights[target.name] = std::isfinite(targetWeight) ? targetWeight : 0.0;
   }
 

@@ -340,5 +340,3 @@ void HepMCConverter<HepMCEventT,Traits>::setPdfInfo(const Event & e) {
 
 
 }
-
-

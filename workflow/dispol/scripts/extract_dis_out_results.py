@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.10
+#!/usr/bin/env python3
 """
 Extract and compare DIS polarized cross sections from Herwig .out files.
 
@@ -49,7 +49,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Collection, Dict, Iterable, List, Optional, Sequence, Tuple
 
 try:
     from prettytable import PrettyTable
@@ -123,6 +123,12 @@ RIVETWEIGHTS_DEFAULT_RUNS = [
     "DIS-POL-POWHEG_00-POSNLO-GAMMA.out",
     "DIS-POL-POWHEG_00-NEGNLO-GAMMA.out",
 ]
+RIVETWEIGHTS_SHOWER_DEFAULT_RUNS = list(RIVETWEIGHTS_DEFAULT_RUNS)
+
+CC_RIVETWEIGHTS_DEFAULT_RUNS = [
+    "DIS-POL-POWHEG_00-POSNLO-CC.out",
+    "DIS-POL-POWHEG_00-NEGNLO-CC.out",
+]
 
 CC_DEFAULT_RUNS = [
     "DIS-POL-POWHEG_00-POSNLO-CC.out",
@@ -155,15 +161,16 @@ UNIT_RE = re.compile(r"Cross-section\s*\(([^)]+)\)")
 
 LO_NAME_RE = re.compile(
     r"^DIS-POL-LO_(?P<hel>PP|PM|MP|MM|00)-(?P<ew>ALL|GAMMA|Z|CC)"
-    r"(?:-(?P<analysis>RIVETFOFIXED|RIVETWEIGHTS|RIVETFO|RIVET))?(?:-(?P<variant>[^.]+))?\.out$"
+    r"(?:-(?P<analysis>RIVETWEIGHTS-SHOWER|RIVETFOFIXED|RIVETWEIGHTS|RIVETFO|RIVET))?(?:-(?P<variant>[^.]+))?\.out$"
 )
 NLO_NAME_RE = re.compile(
     r"^DIS-POL-POWHEG_(?P<hel>PP|PM|MP|MM|00)-(?P<part>POSNLO|NEGNLO)-(?P<ew>ALL|GAMMA|Z|CC)"
-    r"(?:-(?P<analysis>RIVETFOFIXED|RIVETWEIGHTS|RIVETFO|RIVET))?(?:-(?P<variant>[^.]+))?\.out$"
+    r"(?:-(?P<analysis>RIVETWEIGHTS-SHOWER|RIVETFOFIXED|RIVETWEIGHTS|RIVETFO|RIVET))?(?:-(?P<variant>[^.]+))?\.out$"
 )
 # Support seeded shard variants such as
 #   S700560-plain48-gamma-interior-s001
 SEEDED_VARIANT_RE = re.compile(r"(?:^|-)S\d+-(?P<tag>.+)$")
+SCALE_VARIATION_VARIANTS = ("SCALEDOWN", "SCALEUP")
 
 
 @dataclass(frozen=True)
@@ -523,13 +530,24 @@ def parse_requested_name(name: str) -> Tuple[str, str, str, str, str, str]:
 
 
 def is_shard_variant(variant: str, preferred_tag: str) -> bool:
+    if variant_scale_prefix(variant):
+        return False
     normalized = normalize_variant_tag(variant)
     return bool(preferred_tag) and normalized.startswith(f"{preferred_tag}-s")
 
 
 def variant_matches_tag(variant: str, preferred_tag: str) -> bool:
+    if variant_scale_prefix(variant):
+        return False
     normalized = normalize_variant_tag(variant)
     return bool(preferred_tag) and (normalized == preferred_tag or is_shard_variant(variant, preferred_tag))
+
+
+def variant_scale_prefix(variant: str) -> str:
+    for prefix in SCALE_VARIATION_VARIANTS:
+        if variant == prefix or variant.startswith(f"{prefix}-"):
+            return prefix
+    return ""
 
 
 def normalize_variant_tag(variant: str) -> str:
@@ -1378,16 +1396,16 @@ def build_report(
             lines.append("Herwig stages: no files found")
 
         ref_rows: List[List[str]] = []
-        unpol_refs = POLDIS_UNPOL_REFS.get(setup, {})
-        pol_refs = POLDIS_POL_REFS.get(setup, {})
+        unpol_refs = setup_summary.get("poldis_unpolarized_refs", {})
+        pol_refs = setup_summary.get("poldis_polarized_refs", {})
         for order in ("LO", "NLO", "NNLO"):
             if order not in unpol_refs and order not in pol_refs:
                 continue
             ref_rows.append(
                 [
                     order,
-                    fmt_xsec(unpol_refs[order]) if order in unpol_refs else "missing",
-                    fmt_xsec(pol_refs[order]) if order in pol_refs else "missing",
+                    fmt_xsec(measurement_from_dict(unpol_refs[order])) if order in unpol_refs else "missing",
+                    fmt_xsec(measurement_from_dict(pol_refs[order])) if order in pol_refs else "missing",
                 ]
             )
         if ref_rows:
@@ -1606,6 +1624,27 @@ def normalize_requested_setups(setups: Sequence[str]) -> List[str]:
     return ordered
 
 
+def default_base_runs_for_analysis(
+    requested_analysis: str,
+    selected_setups: Collection[str],
+    requested_runs: Sequence[str],
+) -> Sequence[str]:
+    base_runs = (
+        RIVETFOFIXED_DEFAULT_RUNS
+        if requested_analysis == "RIVETFOFIXED" and requested_runs == DEFAULT_RUNS
+        else RIVETWEIGHTS_SHOWER_DEFAULT_RUNS
+        if requested_analysis == "RIVETWEIGHTS-SHOWER" and requested_runs == DEFAULT_RUNS
+        else RIVETWEIGHTS_DEFAULT_RUNS
+        if requested_analysis == "RIVETWEIGHTS" and requested_runs == DEFAULT_RUNS
+        else requested_runs
+    )
+    if requested_runs != DEFAULT_RUNS or requested_analysis == "RIVETFOFIXED" or "CC" not in selected_setups:
+        return base_runs
+    if requested_analysis in {"RIVETWEIGHTS", "RIVETWEIGHTS-SHOWER"}:
+        return list(base_runs) + CC_RIVETWEIGHTS_DEFAULT_RUNS
+    return list(base_runs) + CC_DEFAULT_RUNS
+
+
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1645,6 +1684,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--rivetweights",
         action="store_true",
         help="Resolve and report only -RIVETWEIGHTS output files.",
+    )
+    parser.add_argument(
+        "--rivetweights-shower",
+        dest="rivetweights_shower",
+        action="store_true",
+        help="Resolve and report only -RIVETWEIGHTS-SHOWER output files.",
     )
     parser.add_argument(
         "--rivetfofixed",
@@ -1695,13 +1740,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
-    if int(args.rivet) + int(args.rivetfo) + int(args.rivetweights) + int(args.rivetfofixed) > 1:
-        raise SystemExit("Use at most one of --rivet, --rivetfo, --rivetweights, and --rivetfofixed.")
+    if int(args.rivet) + int(args.rivetfo) + int(args.rivetweights) + int(args.rivetweights_shower) + int(args.rivetfofixed) > 1:
+        raise SystemExit("Use at most one of --rivet, --rivetfo, --rivetweights, --rivetweights-shower, and --rivetfofixed.")
     base_dir = Path(args.base_dir).resolve()
     progress_enabled = sys.stderr.isatty() if args.progress is None else args.progress
     requested_analysis = (
         "RIVETFOFIXED" if args.rivetfofixed else
-        ("RIVETWEIGHTS" if args.rivetweights else ("RIVETFO" if args.rivetfo else ("RIVET" if args.rivet else "")))
+        (
+            "RIVETWEIGHTS-SHOWER" if args.rivetweights_shower else
+            ("RIVETWEIGHTS" if args.rivetweights else ("RIVETFO" if args.rivetfo else ("RIVET" if args.rivet else "")))
+        )
     )
     override_path = Path(args.poldis_refs_json).resolve() if args.poldis_refs_json else None
     override_results_csv = (
@@ -1716,15 +1764,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         override_path,
     )
     selected_setups = set(normalize_requested_setups(args.setup or ()))
-    requested_base_runs = (
-        RIVETFOFIXED_DEFAULT_RUNS
-        if requested_analysis == "RIVETFOFIXED" and args.runs == DEFAULT_RUNS
-        else RIVETWEIGHTS_DEFAULT_RUNS
-        if requested_analysis == "RIVETWEIGHTS" and args.runs == DEFAULT_RUNS
-        else args.runs
-    )
-    if args.runs == DEFAULT_RUNS and requested_analysis != "RIVETFOFIXED" and "CC" in selected_setups:
-        requested_base_runs = list(requested_base_runs) + CC_DEFAULT_RUNS
+    requested_base_runs = default_base_runs_for_analysis(requested_analysis, selected_setups, args.runs)
     requested_runs = [apply_analysis_suffix(name, requested_analysis) for name in requested_base_runs]
     if selected_setups:
         requested_runs = [

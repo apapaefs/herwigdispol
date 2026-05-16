@@ -171,10 +171,37 @@ is a separate `00`-only workflow and normally uses:
 JETINPUT=MEPARTONS
 ```
 
+## Showered Parton-Level RIVETWEIGHTS
+
+The campaign driver also exposes a separate `--rivetweights-shower` mode. It
+keeps the same `00`-only correlated helicity weights and the same POSNLO/NEGNLO
+normalized-bin combination as `--rivetweights`, but it leaves the parton shower
+active.
+
+This is intentionally separate from ordinary `--rivetweights`. The ordinary
+mode continues to use the no-shower card shape and `JETINPUT=MEPARTONS`.
+The showered sibling uses:
+
+```text
+MC_DIS_BREIT:JETINPUT=FULL:RIVETWEIGHTS=YES
+```
+
+The generated showered cards remove active no-shower controls such as
+`ShowerHandler:LimitEmissions HardOnly`, while keeping hadronization and decays
+off:
+
+```text
+set EventGenerator:EventHandler:HadronizationHandler NULL
+set /Herwig/EventHandlers/EventHandler:DecayHandler NULL
+```
+
+Scale-envelope plots for `--rivetweights-shower` are rendered with blue Herwig
+lines and blue scale-variation bands.
+
 ## MC_DIS_PS / SPINCOMP / SPINHAD
 
 The same named-weight treatment is also wired into `MC_DIS_PS` for the
-HerwigPolCodex shower-spin plots. The analysis option is:
+`main.tex` shower-spin plots. The analysis option is:
 
 ```text
 MC_DIS_PS:JETINPUT=FULL:RIVETWEIGHTS=YES
@@ -262,51 +289,58 @@ analysis input.
 A short `RIVETWEIGHTS` campaign is run with:
 
 ```bash
-python /home/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py \
-  full \
-  --base-dir /home/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
+python3 DISPOL/scripts/run_validation_campaign.py full \
+  --base-dir DISPOL \
   -t rivetweightsXX_short \
-  --jobs 192 \
-  --shards 40 \
-  --seed-base 400000 \
-  --posnlo-events 400000 \
-  --negnlo-events 40000 \
-  --progress-interval 2 \
-  --max-listed 40 \
+  --jobs <ncores> \
+  --shards <nshards> \
   --keep-going \
   --scale-variations \
-  --poldis-refs-campaign rivetfo49 \
+  --poldis-refs-campaign <reference-tag> \
   --poldis-error-mode scale \
   --poldis skip \
   --rivetweights \
   --setup ALL \
-  --force-prepare \
-  --yoda-merge-tool /home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/bin/yodamerge
+  --force-prepare
+```
+
+The showered parton-level sibling is run the same way, replacing the flag:
+
+```bash
+python3 DISPOL/scripts/run_validation_campaign.py full \
+  --base-dir DISPOL \
+  -t rivetweights_showerXX_short \
+  --jobs <ncores> \
+  --shards <nshards> \
+  --keep-going \
+  --scale-variations \
+  --poldis-refs-campaign <reference-tag> \
+  --poldis-error-mode scale \
+  --poldis skip \
+  --rivetweights-shower \
+  --setup ALL \
+  --force-prepare
 ```
 
 To repair plots for an existing campaign after a postprocessing-only fix, rerun
 only:
 
 ```bash
-python /home/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py \
-  analyze-herwig \
-  --base-dir /home/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
+python3 DISPOL/scripts/run_validation_campaign.py analyze-herwig \
+  --base-dir DISPOL \
   -t rivetweights06_short \
   --setup ALL \
   --rivetweights \
-  --scale-variations \
-  --yoda-merge-tool /home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/bin/yodamerge
+  --scale-variations
 
-python /home/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/run_validation_campaign.py \
-  rivetplot \
-  --base-dir /home/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL \
+python3 DISPOL/scripts/run_validation_campaign.py rivetplot \
+  --base-dir DISPOL \
   -t rivetweights06_short \
   --setup ALL \
   --rivetweights \
   --scale-variations \
-  --poldis-refs-campaign rivetfo49 \
-  --poldis-error-mode scale \
-  --yoda-merge-tool /home/apapaefs/Projects/Herwig/Herwig-pol-full-python3-rivet4/bin/yodamerge
+  --poldis-refs-campaign <reference-tag> \
+  --poldis-error-mode scale
 ```
 
 `rivetplot` does not take `--poldis skip`; use `--poldis-refs-campaign` to point
@@ -339,6 +373,10 @@ The current `RIVETWEIGHTS` mode is:
   POWHEG Sudakov reweight;
 - compatible with the existing scale-variation machinery, provided the
   normalized POS/NEG combination is used for each variation.
+
+The `--rivetweights-shower` sibling is also NC-only, `00`-only, and NLO-only,
+but it is a showered parton-level comparison rather than a no-shower
+ME-parton comparison. It should not be mixed with `--fixed-order-powheg-no-shower`.
 
 Charged-current support would require deciding the CC helicity basis and its
 corresponding `sigma`/`delta` convention before extending the mode.

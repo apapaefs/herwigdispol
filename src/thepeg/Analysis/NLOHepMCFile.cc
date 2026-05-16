@@ -372,4 +372,3 @@ void NLOHepMCFile::Init() {
      3);
 
 }
-

@@ -24,7 +24,24 @@ from typing import Iterable, List, Sequence, Tuple
 import yoda
 
 
-DEFAULT_LABELS = ["Q2", "XBj", "Pt", "Mjj", "Eta", "Zeta", "pT1", "pT2", "pT2OverpT1", "pTAsym"]
+DEFAULT_LABELS = [
+    "Q2",
+    "XBj",
+    "Pt",
+    "Mjj",
+    "Eta",
+    "Zeta",
+    "pT1",
+    "pT2",
+    "pT1Lab",
+    "pT2Lab",
+    "pT3Lab",
+    "pT1LabPreCut",
+    "pT2LabPreCut",
+    "pT3LabPreCut",
+    "pT2OverpT1",
+    "pTAsym",
+]
 
 
 def _resolve_path(aos: dict, label: str, ref: bool) -> str:
@@ -164,7 +181,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--labels",
         default=",".join(DEFAULT_LABELS),
-        help="Comma-separated list of labels to compare (default: Q2,XBj,Pt,Mjj,Eta,Zeta,pT1,pT2,pT2OverpT1,pTAsym)",
+        help="Comma-separated list of labels to compare (default: built-in MC_DIS_BREIT label set)",
     )
     return parser.parse_args()
 

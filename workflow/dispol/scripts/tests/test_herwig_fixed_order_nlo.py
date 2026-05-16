@@ -9,13 +9,10 @@ from pathlib import Path
 
 def scripts_dir() -> Path:
     for root in Path(__file__).resolve().parents:
-        candidate = root / "workflow" / "dispol" / "scripts"
-        if candidate.exists():
-            return candidate
         candidate = root / "DISPOL" / "scripts"
         if candidate.exists():
             return candidate
-    raise RuntimeError("Could not locate DISPOL workflow scripts")
+    raise RuntimeError("Could not locate DISPOL/scripts")
 
 
 SCRIPT_DIR = scripts_dir()
@@ -890,7 +887,7 @@ class HerwigFixedOrderNLOTests(unittest.TestCase):
             mkhtml_command = calls[2][1]
             mkhtml_env = calls[2][3]
             self.assertIn("--verbose", mkhtml_command)
-            self.assertIn("Standalone Python Herwig FO", " ".join(mkhtml_command))
+            self.assertIn("Standalone Python HERWIG FO", " ".join(mkhtml_command))
             self.assertIn(str(rivet_dir), mkhtml_env["RIVET_PLOT_PATH"])
             postprocess_call = calls[3]
             self.assertEqual(base_dir / "campaigns" / "smoke" / "plots_mc_vs_poldis_all_nlo_with_polarized", postprocess_call[1])

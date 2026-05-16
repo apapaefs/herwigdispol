@@ -16,7 +16,7 @@ It does not attempt to reconstruct Herwig `00`, `PP`, `PM`, `MP`, or `MM`.
 ## Default plain39-style inputs
 
 - Beam energies: `E_e = 18 GeV`, `E_p = 275 GeV`
-- Phase space: `49 <= Q^2 <= 2500 GeV^2`, `0.2 <= y <= 0.6`
+- Phase space: `100 <= Q^2 <= 2500 GeV^2`, `0.2 <= y <= 0.6`
 - Electroweak inputs:
   - `alpha_EM(M_Z) = 0.00729927`
   - `sin^2(theta_W) = 0.221639970483740179`

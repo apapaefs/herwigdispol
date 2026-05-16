@@ -153,7 +153,7 @@ C     SET KINEMATICAL CUTS
 c     LIMITS FOR EIC       
       YMIN=0.2
       YMAX=0.6
-      Q2MIN=25
+      Q2MIN=100
       Q2MAX=2500
       END      
 C#######################################################################
@@ -243,9 +243,9 @@ C INITIALIZE VECTORS TO COMPUTE INTEGRATED X-SECTION PER HISTOGRAM
       ENDDO
 
 C     Q^2 DEPENDENCE
-       CALL GBOOK1(1,"Q2 NNLO",10,25d0,1000D0,1,0,1,1)
-       CALL GBOOK1(2,"Q2 NLO ",10,25d0,1000D0,0,0,1,1)
-       CALL GBOOK1(3,"Q2 LO  ",10,25d0,1000D0,0,0,1,1)
+       CALL GBOOK1(1,"Q2 NNLO",10,100d0,1000D0,1,0,1,1)
+       CALL GBOOK1(2,"Q2 NLO ",10,100d0,1000D0,0,0,1,1)
+       CALL GBOOK1(3,"Q2 LO  ",10,100d0,1000D0,0,0,1,1)
 C     X DEPENDENCE      
        CALL GBOOK1(4,"X NNLO",10,1d-3,1d0,1,0,1,1)
        CALL GBOOK1(5,"X NLO ",10,1d-3,1d0,0,0,1,1)

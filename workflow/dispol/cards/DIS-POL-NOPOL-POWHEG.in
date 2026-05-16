@@ -74,15 +74,20 @@ do /Herwig/Particles/b:AdjustNominalMass
 do /Herwig/Particles/bbar:AdjustNominalMass
 
 ##################################################
-# DIS physics parameters (override defaults here) 
+# DIS physics parameters (override defaults here)
 ##################################################
 
 # DISABLE HADRONIZATION
 set EventGenerator:EventHandler:HadronizationHandler  NULL
+# Disable EvtGen for parton-level/no-hadronization runs.
+cd /Herwig/Particles
+read HerwigBDecays.in
+cd /Herwig/Generators
+
 set /Herwig/Analysis/Basics:CheckQuark false
 
 ##################################################
-# Matrix Elements for lepton-hadron collisions 
+# Matrix Elements for lepton-hadron collisions
 # (by default only neutral-current switched on)
 ##################################################
 cd /Herwig/MatrixElements/
@@ -141,7 +146,7 @@ get PowhegMEDISNCPol:UseFiniteWidthSpacelikeZPropagator
 cd /Herwig/Shower
 set ShowerHandler:HardEmission POWHEG
 ###################################################
-## NLO Matrix Elements for lepton-hadron collisions 
+## NLO Matrix Elements for lepton-hadron collisions
 ## in the POWHEG approach
 ###################################################
 #

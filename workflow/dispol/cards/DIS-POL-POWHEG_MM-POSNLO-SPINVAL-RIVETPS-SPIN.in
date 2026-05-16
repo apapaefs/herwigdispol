@@ -100,6 +100,11 @@ do /Herwig/Particles/bbar:AdjustNominalMass
 
 # DISABLE HADRONIZATION
 set EventGenerator:EventHandler:HadronizationHandler  NULL
+# Disable EvtGen for parton-level/no-hadronization runs.
+cd /Herwig/Particles
+read HerwigBDecays.in
+cd /Herwig/Generators
+
 set /Herwig/Analysis/Basics:CheckQuark false
 
 # disable all shower

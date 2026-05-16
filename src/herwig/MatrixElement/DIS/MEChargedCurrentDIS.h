@@ -265,6 +265,19 @@ private:
   double me2ForPolarizations(double Pl, double Pq) const;
 
   /**
+   * Optional Rivet-weight generation uses the same explicit Born helicity path.
+   */
+  virtual double rivetWeightBornME2(double Pl, double Pq) const override;
+
+  /**
+   * Return the ThePEG propagator option for spacelike W exchange in the
+   * helicity-amplitude path.
+   */
+  int wHelicityPropagatorOption(int legacyOption) const {
+    return _useFiniteWidthSpacelikeWPropagator ? 7 : legacyOption;
+  }
+
+  /**
    * The assignment operator is private and must never be called.
    * In fact, it should not even be implemented.
    */
@@ -286,6 +299,11 @@ private:
    *  Option controlling whether outgoing quark masses are retained.
    */
   unsigned int _massopt;
+
+  /**
+   * Whether to keep the finite W width for spacelike charged-current exchange.
+   */
+  bool _useFiniteWidthSpacelikeWPropagator;
 
   /**
    * Born production matrix element cached for spin correlations.

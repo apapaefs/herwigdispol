@@ -150,7 +150,7 @@ C     DEFINE CUTS FOR THE EVENT GENERATION
       XMAX=1
       YMIN=0.2
       YMAX=0.6
-      Q2MIN=49
+      Q2MIN=100
       Q2MAX=2500
       END
 
@@ -185,8 +185,9 @@ C  TITLE is CHARACTER*10 in this codebase.
 C-----------------------------------------------------------------------
 
 C number of histograms to show
-C (30 original + 6 jet-balance + 3 F2eff(x) + 15 pre-cut observables = 54)
-      NPLOTS=54
+C (30 original + 6 jet-balance + 3 F2eff(x) + 15 pre-cut
+C  observables + 18 lab-frame jet-pT observables = 72)
+      NPLOTS=72
 
 C INITIALIZE VECTORS TO COMPUTE INTEGRATED X-SECTION PER HISTOGRAM
       DO I=1,100
@@ -205,9 +206,9 @@ C     eta1 (LAB) DISTRIBUTION  (per-bin)
       CALL GBOOK1( 6,"eta1L LO ",15,-3.5D0, 3.5D0, 0,1,0,0)
 
 C     Q2 DEPENDENCE  (per-bin; linear x)
-      CALL GBOOK1( 7,"Q2 NNLO ",100, 49D0,2500D0, 1,1,0,0)
-      CALL GBOOK1( 8,"Q2 NLO  ",100, 49D0,2500D0, 0,1,0,0)
-      CALL GBOOK1( 9,"Q2 LO   ",100, 49D0,2500D0, 0,1,0,0)
+      CALL GBOOK1( 7,"Q2 NNLO ",100, 100D0,2500D0, 1,1,0,0)
+      CALL GBOOK1( 8,"Q2 NLO  ",100, 100D0,2500D0, 0,1,0,0)
+      CALL GBOOK1( 9,"Q2 LO   ",100, 100D0,2500D0, 0,1,0,0)
 
 C     xBj DEPENDENCE  (per-bin; linear x)
       CALL GBOOK1(10,"X NNLO  ", 20,  0D0,  1D0, 1,1,0,0)
@@ -260,9 +261,9 @@ C     F2eff(x) (per-bin)
       CALL GBOOK1(39,"F2 LO   ", 20,  0D0,  1D0, 0,1,0,0)
 
 C     Pre-cut Q2 / xBj / y / pT1 / pT2 distributions
-      CALL GBOOK1(40,"Q2PreNNLO",100, 49D0,2500D0, 1,1,0,0)
-      CALL GBOOK1(41,"Q2PreNLO", 100, 49D0,2500D0, 0,1,0,0)
-      CALL GBOOK1(42,"Q2PreLO",  100, 49D0,2500D0, 0,1,0,0)
+      CALL GBOOK1(40,"Q2PreNNLO",100, 100D0,2500D0, 1,1,0,0)
+      CALL GBOOK1(41,"Q2PreNLO", 100, 100D0,2500D0, 0,1,0,0)
+      CALL GBOOK1(42,"Q2PreLO",  100, 100D0,2500D0, 0,1,0,0)
       CALL GBOOK1(43,"XPreNNLO",  20,  0D0,  1D0, 1,1,0,0)
       CALL GBOOK1(44,"XPreNLO",   20,  0D0,  1D0, 0,1,0,0)
       CALL GBOOK1(45,"XPreLO",    20,  0D0,  1D0, 0,1,0,0)
@@ -275,6 +276,28 @@ C     Pre-cut Q2 / xBj / y / pT1 / pT2 distributions
       CALL GBOOK1(52,"pt2preNNLO",30,  0D0, 30D0, 1,1,0,0)
       CALL GBOOK1(53,"pt2preNLO", 30,  0D0, 30D0, 0,1,0,0)
       CALL GBOOK1(54,"pt2preLO",  30,  0D0, 30D0, 0,1,0,0)
+
+C     Selected lab-frame jet-pT distributions
+      CALL GBOOK1(55,"pt1LabNNLO",15,  0D0, 75D0, 1,1,0,0)
+      CALL GBOOK1(56,"pt1LabNLO", 15,  0D0, 75D0, 0,1,0,0)
+      CALL GBOOK1(57,"pt1LabLO",  15,  0D0, 75D0, 0,1,0,0)
+      CALL GBOOK1(58,"pt2LabNNLO",15,  0D0, 75D0, 1,1,0,0)
+      CALL GBOOK1(59,"pt2LabNLO", 15,  0D0, 75D0, 0,1,0,0)
+      CALL GBOOK1(60,"pt2LabLO",  15,  0D0, 75D0, 0,1,0,0)
+      CALL GBOOK1(61,"pt3LabNNLO",15,  0D0, 75D0, 1,1,0,0)
+      CALL GBOOK1(62,"pt3LabNLO", 15,  0D0, 75D0, 0,1,0,0)
+      CALL GBOOK1(63,"pt3LabLO",  15,  0D0, 75D0, 0,1,0,0)
+
+C     Pre-cut lab-frame jet-pT distributions
+      CALL GBOOK1(64,"pt1LPrNNLO",15,  0D0, 75D0, 1,1,0,0)
+      CALL GBOOK1(65,"pt1LPrNLO", 15,  0D0, 75D0, 0,1,0,0)
+      CALL GBOOK1(66,"pt1LPrLO",  15,  0D0, 75D0, 0,1,0,0)
+      CALL GBOOK1(67,"pt2LPrNNLO",15,  0D0, 75D0, 1,1,0,0)
+      CALL GBOOK1(68,"pt2LPrNLO", 15,  0D0, 75D0, 0,1,0,0)
+      CALL GBOOK1(69,"pt2LPrLO",  15,  0D0, 75D0, 0,1,0,0)
+      CALL GBOOK1(70,"pt3LPrNNLO",15,  0D0, 75D0, 1,1,0,0)
+      CALL GBOOK1(71,"pt3LPrNLO", 15,  0D0, 75D0, 0,1,0,0)
+      CALL GBOOK1(72,"pt3LPrLO",  15,  0D0, 75D0, 0,1,0,0)
 
       END
 
@@ -289,6 +312,7 @@ C#######################################################################
       INTEGER SCHEME,NF,N1,N2,N3,NEV
       DOUBLE PRECISION zkt(1:3),zeta(1:3),zphi(1:3),W(0:5)
       DOUBLE PRECISION ykt(1:7),yeta(1:7),act(4),Ecurr
+      DOUBLE PRECISION yktlab(1:7)
       DOUBLE PRECISION F2effLO,F2effNLO,F2effNNLO,Broad,Broadn,Broadd
       DOUBLE PRECISION POUT(4,7),FNORM,POUT2(4,7),QQ,MM,MM2,PTM
       DOUBLE PRECISION POUT3(4,7)
@@ -343,6 +367,7 @@ C     Calculate PT's and pseudorapidities in lab frame if Breit chosen
           YETA(J-1)=0.5D0*DLOG((POUT2(4,J)+POUT2(3,J))
      $              /(POUT2(4,J)-POUT2(3,J)))
           YKT(J-1)=(POUT(1,J)**2+POUT(2,J)**2)**0.5
+          YKTLAB(J-1)=(POUT2(1,J)**2+POUT2(2,J)**2)**0.5
         ENDDO
       ENDIF
 
@@ -394,6 +419,15 @@ C     leading jets, but not the Breit pT / lab-rapidity dijet acceptance.
       CALL GFILL1(52,zkt(n2),W(2))
       CALL GFILL1(53,zkt(n2),W(1))
       CALL GFILL1(54,zkt(n2),W(0))
+      CALL GFILL1(64,yktlab(n1),W(2))
+      CALL GFILL1(65,yktlab(n1),W(1))
+      CALL GFILL1(66,yktlab(n1),W(0))
+      CALL GFILL1(67,yktlab(n2),W(2))
+      CALL GFILL1(68,yktlab(n2),W(1))
+      CALL GFILL1(69,yktlab(n2),W(0))
+      CALL GFILL1(70,yktlab(n3),W(2))
+      CALL GFILL1(71,yktlab(n3),W(1))
+      CALL GFILL1(72,yktlab(n3),W(0))
 
       IF (zkt(n1).gt.5d0.and.yeta(n1).gt.-3.5d0
      $ .and.yeta(n1).lt.3.5d0.and.zkt(n2).gt.4d0
@@ -447,6 +481,18 @@ C     pT1/pT2: match Rivet definitions explicitly (n1 hardest, n2 subleading)
         CALL GFILL1(34,(zkt(n1)-zkt(n2))/(zkt(n1)+zkt(n2)),W(2))
         CALL GFILL1(35,(zkt(n1)-zkt(n2))/(zkt(n1)+zkt(n2)),W(1))
         CALL GFILL1(36,(zkt(n1)-zkt(n2))/(zkt(n1)+zkt(n2)),W(0))
+
+        CALL GFILL1(55,yktlab(n1),W(2))
+        CALL GFILL1(56,yktlab(n1),W(1))
+        CALL GFILL1(57,yktlab(n1),W(0))
+        CALL GFILL1(58,yktlab(n2),W(2))
+        CALL GFILL1(59,yktlab(n2),W(1))
+        CALL GFILL1(60,yktlab(n2),W(0))
+        IF (zkt(n3).GT.0D0) THEN
+          CALL GFILL1(61,yktlab(n3),W(2))
+          CALL GFILL1(62,yktlab(n3),W(1))
+          CALL GFILL1(63,yktlab(n3),W(0))
+        ENDIF
 
 C     Compute inclusive dijet x-section (kept as in original)
         CS(7)=CS(7)+W(2)

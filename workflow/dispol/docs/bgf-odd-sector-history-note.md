@@ -145,9 +145,9 @@ profile-dependent to close the full polarized-NLO gap by itself.
 The newer reading is not something I found stated explicitly in an older
 markdown note. It comes from comparing:
 
-- the split derivation in [HerwigPolCodex.tex](/Users/apapaefs/Projects/HerwigPol/HerwigPolCodex.tex#L648),
+- the split derivation in [main.tex](/Users/apapaefs/Projects/HerwigPol/Polarized-Deep-Inelastic-Scattering-in-Herwig-7/main.tex#L648),
 - the BGF finite-remainder discussion in
-  [HerwigPolCodex.tex](/Users/apapaefs/Projects/HerwigPol/HerwigPolCodex.tex#L975),
+  [main.tex](/Users/apapaefs/Projects/HerwigPol/Polarized-Deep-Inelastic-Scattering-in-Herwig-7/main.tex#L975),
 - and the active single-channel `NLOWeight()` assembly in
   [DISBase.cc](/Users/apapaefs/Projects/HerwigPol/HerwigSource/Herwig-7.3.0/MatrixElement/DIS/DISBase.cc#L3141).
 

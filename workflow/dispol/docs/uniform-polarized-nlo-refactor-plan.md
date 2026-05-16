@@ -20,7 +20,7 @@ The refactored path should be introduced behind a switch and audited against the
 
 ## Motivation
 
-The intended finite representation is already documented in `HerwigPolCodex.tex`:
+The intended finite representation is already documented in `main.tex`:
 - polarized terms should be proportional to `P_z Delta f_m / f_q`
 - there should be no separate division by `Delta f_q(x_B)` in the final finite expression
 
@@ -46,7 +46,7 @@ Primary implementation files:
 - `/Users/apapaefs/Projects/HerwigPol/HerwigSource/Herwig-7.3.0/MatrixElement/DIS/DISBase.cc`
 
 Reference and validation context:
-- `/Users/apapaefs/Projects/HerwigPol/HerwigPolCodex.tex`
+- `/Users/apapaefs/Projects/HerwigPol/Polarized-Deep-Inelastic-Scattering-in-Herwig-7/main.tex`
 - `/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/plain39-recovery-note.md`
 - `/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/compare_polarized_nlo_terms.py`
 - `/Users/apapaefs/Projects/HerwigPol/HwPolNotesNew/DISPOL/polarized_nlo_audit_note.md`
@@ -322,5 +322,5 @@ Do not mix these into the same patch:
 ## Working Assumptions
 
 - The remaining polarized NLO issue is small enough that any safe refactor must begin with strict behavior preservation.
-- The intended finite form in `HerwigPolCodex.tex` is the right conceptual target, but phase 1 should only move the code into that basis where it is algebraically identical to the current implementation.
+- The intended finite form in `main.tex` is the right conceptual target, but phase 1 should only move the code into that basis where it is algebraically identical to the current implementation.
 - The previous broad finite rewrite failed because it changed more than representation. This patch should not repeat that.

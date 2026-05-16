@@ -12,28 +12,87 @@ from typing import Tuple
 
 
 PATCH_SENTINEL = "# Codex scale-envelope patch"
+FIXED_ORDER_SCALE_COLOR = "#009E73"
+LOWER_CENTER_LEGEND_OBJECTS = {
+    "/MC_DIS_BREIT/Zeta",
+    "/MC_DIS_BREIT/DZeta",
+    "/MC_DIS_PS/Zeta",
+    "/MC_DIS_PS/DZeta",
+}
 
 
 _HELPER_BLOCK = textwrap.dedent(
     """
 
     # Codex scale-envelope patch
-    scale_band_labels = {label for label in dataf['yvals'] if '.herwig_' in label}
-    reference_label = next((label for label in dataf['yvals'] if label.startswith('POLDIS')), None)
-    if reference_label is None and 'Data' in dataf['yvals']:
-        reference_label = 'Data'
-    if reference_label is None:
+    desired_reference_label = '__REFERENCE_LABEL__'
+
+    def _label_text(label):
+        return str(label).lower()
+
+    def _is_raw_overlay_label(label):
+        text = _label_text(label)
+        return '.raw_powheg_' in text or text.startswith('raw_powheg')
+
+    def _is_poldis_reference_label(label):
+        text = _label_text(label)
+        return (
+            str(label) == desired_reference_label
+            or text == 'data'
+            or text.startswith('poldis')
+            or 'poldis' in text
+            or (
+                ('reference' in text or 'ref' in text)
+                and 'herwig' not in text
+                and 'standalone' not in text
+            )
+        )
+
+    def _is_scale_band_label(label):
+        text = _label_text(label)
+        return (
+            not _is_raw_overlay_label(label)
+            and not _is_poldis_reference_label(label)
+            and (
+                '.herwig_' in text
+                or 'herwig' in text
+                or 'standalone' in text
+                or 'scale_envelope' in text
+            )
+        )
+
+    raw_overlay_labels = {label for label in dataf['yvals'] if _is_raw_overlay_label(label)}
+    poldis_reference_label = next(
+        (label for label in dataf.get('add_legend_handle', []) if _is_poldis_reference_label(label)),
+        None,
+    )
+    if poldis_reference_label is None:
+        poldis_reference_label = next((label for label in dataf['yvals'] if _is_poldis_reference_label(label)), None)
+
+    if poldis_reference_label is None:
+        scale_band_labels = {label for label in dataf['yvals'] if label not in raw_overlay_labels}
         reference_label = next(
             (
                 label
-                for label in dataf['yvals']
-                if label not in scale_band_labels
+                for label in dataf.get('add_legend_handle', [])
+                if 'NOSPIN-UNPOL' in str(label).upper()
             ),
             None,
         )
-    desired_reference_label = '__REFERENCE_LABEL__'
+        if reference_label is None:
+            reference_label = next((label for label in dataf['yvals'] if 'NOSPIN-UNPOL' in str(label).upper()), None)
+    else:
+        scale_band_labels = {label for label in dataf['yvals'] if _is_scale_band_label(label)}
+        reference_label = poldis_reference_label
+        if not scale_band_labels:
+            scale_band_labels = {
+                label
+                for label in dataf['yvals']
+                if label != reference_label and label not in raw_overlay_labels
+            }
     original_reference_label = reference_label
     scale_band_opacity = 0.5
+    fixed_order_scale_color = '__SCALE_BAND_COLOR__'
 
     def _rename_plot_label(old, new):
         if old is None or old == new or old not in dataf['yvals']:
@@ -51,9 +110,12 @@ _HELPER_BLOCK = textwrap.dedent(
             variation_mapping.update(renamed_variations)
         if isinstance(dataf.get('add_legend_handle'), list):
             dataf['add_legend_handle'] = [new if label == old else label for label in dataf['add_legend_handle']]
+        style_map = globals().get('styles')
+        if isinstance(style_map, dict) and old in style_map:
+            style_map[new] = style_map.pop(old)
         return new
 
-    if reference_label is not None:
+    if poldis_reference_label is not None:
         reference_label = _rename_plot_label(reference_label, desired_reference_label)
 
     def _copy_scale_patch_style(source_label, target_label):
@@ -73,11 +135,83 @@ _HELPER_BLOCK = textwrap.dedent(
                 styles[target_label] = dict(style)
                 return
 
+    def _apply_poldis_reference_style(label):
+        if label is None or label not in styles:
+            return
+        styles[label].update({
+            'color': 'black',
+            'linestyle': '-',
+            'lineopacity': 1.0,
+            'linewidth': 1,
+            'marker': 'o',
+            'markersize': 2,
+            'capsize': 0.0,
+            'zorder': 5,
+            'histstyle': 0,
+            'drawstyle': 'steps-pre',
+            'xerrorbars': 1,
+            'yerrorbars': 1,
+            'fillcolor': None,
+            'fillopacity': 1.0,
+            'ratio0_linestyle': '-',
+            'ratio0_lineopacity': 1.0,
+            'ratio0_linewidth': 1,
+            'ratio0_marker': 'o',
+            'ratio0_markersize': 2,
+            'ratio0_capsize': 0.0,
+            'ratio0_zorder': 5,
+            'ratio0_histstyle': 0,
+            'ratio0_drawstyle': 'steps-pre',
+            'ratio0_xerrorbars': 1,
+            'ratio0_yerrorbars': 0,
+            'ratio0_1sigmabandcolor': 'black',
+            'ratio0_1sigmabandstyle': None,
+            'ratio0_1sigmabandopacity': 0.2,
+        })
+
+    def _apply_scale_band_style(label):
+        if label is None or label not in styles:
+            return
+        styles[label].update({
+            'color': fixed_order_scale_color,
+            'linestyle': '-',
+            'lineopacity': 1.0,
+            'linewidth': 1,
+            'marker': 'none',
+            'markersize': 2,
+            'capsize': 0.0,
+            'zorder': 6,
+            'histstyle': 1,
+            'drawstyle': 'steps-pre',
+            'xerrorbars': 1,
+            'yerrorbars': 1,
+            'fillcolor': None,
+            'fillopacity': 1.0,
+            'ratio0_linestyle': '-',
+            'ratio0_lineopacity': 1.0,
+            'ratio0_linewidth': 1,
+            'ratio0_marker': 'none',
+            'ratio0_markersize': 2,
+            'ratio0_capsize': 0.0,
+            'ratio0_zorder': 6,
+            'ratio0_histstyle': 1,
+            'ratio0_drawstyle': 'steps-pre',
+            'ratio0_xerrorbars': 1,
+            'ratio0_yerrorbars': 0,
+            'ratio0_1sigmabandcolor': fixed_order_scale_color,
+            'ratio0_1sigmabandstyle': None,
+            'ratio0_1sigmabandopacity': 0.2,
+        })
+
     def _ensure_scale_patch_styles():
         if reference_label is not None:
             _copy_scale_patch_style(original_reference_label, reference_label)
         for _label in list(dataf.get('yvals', {})):
             _copy_scale_patch_style(reference_label, _label)
+        if poldis_reference_label is not None:
+            _apply_poldis_reference_style(reference_label)
+            for _label in scale_band_labels:
+                _apply_scale_band_style(_label)
 
     def _symmetrize_reference_yerrs(label):
         if label is None or label not in dataf.get('yerrs', {}):
@@ -89,8 +223,57 @@ _HELPER_BLOCK = textwrap.dedent(
         up = np.asarray(yerrs[1], dtype=float)
         if np.any(down > 0.0) and np.allclose(up, 0.0):
             dataf['yerrs'][label] = np.vstack([down, down])
+            return
+        if np.any(up > 0.0) and np.allclose(down, 0.0):
+            dataf['yerrs'][label] = np.vstack([up, up])
 
     _symmetrize_reference_yerrs(reference_label)
+
+    def _signed_plot_limits():
+        lower = []
+        upper = []
+        saw_negative = False
+        for label, yvals_raw in dataf.get('yvals', {}).items():
+            if label in raw_overlay_labels:
+                continue
+            yvals = np.asarray(yvals_raw, dtype=float)
+            finite = yvals[np.isfinite(yvals)]
+            if finite.size == 0:
+                continue
+            if np.any(finite < 0.0):
+                saw_negative = True
+            if label in dataf.get('yerrs', {}):
+                yerrs = np.asarray(dataf['yerrs'][label], dtype=float)
+                if yerrs.ndim == 2 and yerrs.shape[0] == 2:
+                    low = yvals - yerrs[0]
+                    high = yvals + yerrs[1]
+                else:
+                    low = yvals
+                    high = yvals
+            else:
+                low = yvals
+                high = yvals
+            low = low[np.isfinite(low)]
+            high = high[np.isfinite(high)]
+            if low.size:
+                lower.extend(low.tolist())
+            if high.size:
+                upper.extend(high.tolist())
+        if not lower or not upper or not saw_negative:
+            return
+        ymin = min(lower)
+        ymax = max(upper)
+        if not np.isfinite(ymin) or not np.isfinite(ymax):
+            return
+        if np.isclose(ymin, ymax):
+            span = max(abs(ymin), 1.0)
+            pad = 0.1 * span
+        else:
+            pad = 0.08 * (ymax - ymin)
+        globals()['ax_yScale'] = 'linear'
+        globals()['yLims'] = (ymin - pad, ymax + pad)
+
+    _signed_plot_limits()
 
     def _safe_ratio(num, den):
         num = np.asarray(num, dtype=float)
@@ -98,7 +281,7 @@ _HELPER_BLOCK = textwrap.dedent(
         return np.divide(num, den, out=np.full_like(num, np.nan, dtype=float), where=den != 0)
 
     def _scale_band_color(label):
-        return styles.get(label, {}).get('color', '#EE3311')
+        return styles.get(label, {}).get('color', fixed_order_scale_color)
 
     def _foreground_zorder():
         zorders = []
@@ -122,8 +305,10 @@ _HELPER_BLOCK = textwrap.dedent(
             return None, None
         yvals = np.asarray(dataf['yvals'][label], dtype=float)
         yerrs = np.asarray(dataf['yerrs'][label], dtype=float)
-        band_dn = np.maximum(yvals - yerrs[0], np.finfo(float).tiny)
-        band_up = yvals + yerrs[1]
+        raw_dn = yvals - yerrs[0]
+        raw_up = yvals + yerrs[1]
+        band_dn = np.minimum(raw_dn, raw_up)
+        band_up = np.maximum(raw_dn, raw_up)
         if styles[label]['drawstyle']:
             band_dn = np.insert(band_dn, 0, band_dn[0])
             band_up = np.insert(band_up, 0, band_up[0])
@@ -154,8 +339,10 @@ _HELPER_BLOCK = textwrap.dedent(
         yvals = np.asarray(dataf['yvals'][label], dtype=float)
         yerrs = np.asarray(dataf['yerrs'][label], dtype=float)
         ref = np.asarray(dataf['yvals'][reference_label], dtype=float)
-        band_dn = _safe_ratio(np.maximum(yvals - yerrs[0], 0.0), ref)
-        band_up = _safe_ratio(yvals + yerrs[1], ref)
+        raw_dn = _safe_ratio(yvals - yerrs[0], ref)
+        raw_up = _safe_ratio(yvals + yerrs[1], ref)
+        band_dn = np.minimum(raw_dn, raw_up)
+        band_up = np.maximum(raw_dn, raw_up)
         if styles[label]['ratio0_drawstyle']:
             band_dn = np.insert(band_dn, 0, band_dn[0])
             band_up = np.insert(band_up, 0, band_up[0])
@@ -277,11 +464,75 @@ _RATIO_PANEL_BLOCK = textwrap.dedent(
 ).strip("\n")
 
 
-def scale_envelope_helper_block(reference_label: str) -> str:
-    return _HELPER_BLOCK.replace("__REFERENCE_LABEL__", reference_label)
+def scale_envelope_helper_block(
+    reference_label: str,
+    scale_band_color: str = FIXED_ORDER_SCALE_COLOR,
+) -> str:
+    return (
+        _HELPER_BLOCK.replace("__REFERENCE_LABEL__", reference_label)
+        .replace("__SCALE_BAND_COLOR__", scale_band_color)
+    )
 
 
-def patch_scale_envelope_plot_script_text(text: str, reference_label: str = "POLDIS NLO") -> str:
+def _ensure_log_axis_formatter(text: str) -> str:
+    marker = "def _codex_log_tick_formatter(value, _pos):"
+    if marker in text:
+        return text
+
+    old_formatter_block = (
+        "if ax_yScale == 'log':\n"
+        "    ax.yaxis.set_major_formatter(mpl.ticker.LogFormatterMathtext(base=10.0))\n"
+        "    ax.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())"
+    )
+    formatter_block = (
+        "def _codex_log_tick_formatter(value, _pos):\n"
+        "    if value <= 0 or not np.isfinite(value):\n"
+        "        return ''\n"
+        "    exponent = np.log10(value)\n"
+        "    rounded = int(np.round(exponent))\n"
+        "    if not np.isclose(exponent, rounded):\n"
+        "        return ''\n"
+        "    if rounded == 0:\n"
+        "        return r'$1$'\n"
+        "    return rf'$10^{{{rounded}}}$'\n"
+        "if ax_yScale == 'log':\n"
+        "    ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(_codex_log_tick_formatter))\n"
+        "    ax.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())"
+    )
+    if old_formatter_block in text:
+        return text.replace(old_formatter_block, formatter_block, 1)
+
+    minor_locator = (
+        "ax.yaxis.set_minor_locator(mpl.ticker.LogLocator(\n"
+        "                           base=10.0, subs=np.arange(0.1, 1, 0.1), numticks=np.inf))"
+    )
+    locator_and_formatter_block = (
+        minor_locator
+        + "\n"
+        + formatter_block
+    )
+    if minor_locator not in text:
+        return text
+    return text.replace(minor_locator, locator_and_formatter_block, 1)
+
+
+def _apply_legend_position_overrides(text: str) -> str:
+    if not any(f"# Analysis object: {path}" in text for path in LOWER_CENTER_LEGEND_OBJECTS):
+        return text
+    return text.replace(
+        "loc='upper left',\n"
+        "                        bbox_to_anchor=(0.0, 0.97)))",
+        "loc='lower center',\n"
+        "                        bbox_to_anchor=(0.5, 0.03)))",
+        1,
+    )
+
+
+def patch_scale_envelope_plot_script_text(
+    text: str,
+    reference_label: str = "POLDIS NLO",
+    scale_band_color: str = FIXED_ORDER_SCALE_COLOR,
+) -> str:
     data_import_match = re.search(r"exec\(open\(prefix\+'[^']+__data\.py'\)\.read\(\), dataf\)\n", text)
     if not data_import_match:
         raise ValueError("Could not find generated data import block in Rivet plot script")
@@ -306,7 +557,7 @@ def patch_scale_envelope_plot_script_text(text: str, reference_label: str = "POL
     patched = (
         patched[: data_import_match.end()]
         + "\n\n"
-        + scale_envelope_helper_block(reference_label)
+        + scale_envelope_helper_block(reference_label, scale_band_color=scale_band_color)
         + patched[data_import_match.end() :]
     )
 
@@ -323,6 +574,8 @@ def patch_scale_envelope_plot_script_text(text: str, reference_label: str = "POL
     ratio_start = patched.find("# plots on ratio panel")
     legend_start = patched.find("legend_items = list(legend_handles.values())")
     patched = patched[:ratio_start] + _RATIO_PANEL_BLOCK + "\n\n" + patched[legend_start:]
+    patched = _ensure_log_axis_formatter(patched)
+    patched = _apply_legend_position_overrides(patched)
     return patched
 
 
@@ -330,7 +583,9 @@ def rewrite_scale_envelope_plot_scripts(
     plot_dir: Path,
     python_executable: str | None = None,
     reference_label: str = "POLDIS NLO",
+    scale_band_color: str = FIXED_ORDER_SCALE_COLOR,
 ) -> Tuple[int, int]:
+    plot_dir = Path(plot_dir).resolve()
     python_cmd = python_executable or sys.executable
     patched_count = 0
     rerendered_count = 0
@@ -339,7 +594,11 @@ def rewrite_scale_envelope_plot_scripts(
         if script_path.name.endswith("__data.py"):
             continue
         original = script_path.read_text()
-        updated = patch_scale_envelope_plot_script_text(original, reference_label=reference_label)
+        updated = patch_scale_envelope_plot_script_text(
+            original,
+            reference_label=reference_label,
+            scale_band_color=scale_band_color,
+        )
         if updated != original:
             script_path.write_text(updated)
             patched_count += 1
@@ -554,10 +813,12 @@ def patch_no_scale_ratio_script_text(text: str) -> str:
     if min(ratio_start, legend_start) < 0:
         raise ValueError("Could not locate the ratio plotting block in Rivet plot script")
     patched = patched[:ratio_start] + _NOSCALE_RATIO_PANEL_BLOCK + "\n\n" + patched[legend_start:]
+    patched = _apply_legend_position_overrides(patched)
     return patched
 
 
 def rewrite_no_scale_ratio_plot_scripts(plot_dir: Path, python_executable: str | None = None) -> Tuple[int, int]:
+    plot_dir = Path(plot_dir).resolve()
     python_cmd = python_executable or sys.executable
     patched_count = 0
     rerendered_count = 0

@@ -163,6 +163,12 @@ def title_to_rivet_name(title: str) -> Optional[str]:
         return "XBjPreCut"
     if t.startswith("ypre"):
         return "YPreCut"
+    if t.startswith("pt1lpr"):
+        return "pT1LabPreCut"
+    if t.startswith("pt2lpr"):
+        return "pT2LabPreCut"
+    if t.startswith("pt3lpr"):
+        return "pT3LabPreCut"
     if t.startswith("pt1pre"):
         return "pT1PreCut"
     if t.startswith("pt2pre"):
@@ -179,6 +185,12 @@ def title_to_rivet_name(title: str) -> Optional[str]:
         return "Eta"
     if t.startswith("zeta") or t.startswith("log(e2)") or t.startswith("log10(") or t.startswith("log10"):
         return "Zeta"
+    if t.startswith("pt1lab"):
+        return "pT1Lab"
+    if t.startswith("pt2lab"):
+        return "pT2Lab"
+    if t.startswith("pt3lab"):
+        return "pT3Lab"
     if t.startswith("pt1"):
         return "pT1"
     if t.startswith("pt2"):
@@ -301,6 +313,7 @@ def _estimate_edges(obj: object) -> List[float]:
 def combine_ref_object_sets(
     ref_object_sets: List[Dict[str, object]],
     generated_events: Optional[List[int]] = None,
+    order: str = "NLO",
 ) -> Dict[str, object]:
     if not ref_object_sets:
         raise ValueError("Need at least one reference-object set to combine.")
@@ -354,7 +367,7 @@ def combine_ref_object_sets(
             raise RuntimeError("Estimate object has no setPath method")
         fill_estimate(estimate, combined_values, combined_errors)
         try:
-            estimate.setAnnotation("Legend", "POLDIS NLO")
+            estimate.setAnnotation("Legend", f"POLDIS {order.upper()}")
         except Exception:
             pass
         combined[path] = estimate

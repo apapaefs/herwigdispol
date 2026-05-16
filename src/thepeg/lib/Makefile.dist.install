@@ -1,0 +1,5 @@
+OBJECTS =
+
+CLEANFILES =
+
+include @THEPEGLIB@/Makefile.common

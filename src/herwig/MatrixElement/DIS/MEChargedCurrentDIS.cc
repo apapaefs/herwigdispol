@@ -187,7 +187,8 @@ bool collectRealEmissionLegs(const RealEmissionProcessPtr & proc,
 // Configure charged-current defaults. The outgoing-quark mass option is kept
 // configurable for heavy-flavour channels such as top production.
 MEChargedCurrentDIS::MEChargedCurrentDIS() 
-  : _maxflavour(5), _massopt(0) {
+  : _maxflavour(5), _massopt(0),
+    _useFiniteWidthSpacelikeWPropagator(false) {
   vector<unsigned int> mopt(2,1);
   mopt[1] = _massopt;
   massOption(mopt);
@@ -297,20 +298,25 @@ MEChargedCurrentDIS::colourGeometries(tcDiagPtr diag) const {
   return sel;
 }
 
-// Persist the charged-current vertex, flavour bound, W data, and mass option.
+// Persist the charged-current vertex, flavour bound, W data, mass option, and
+// finite-width W option used by the helicity-amplitude path.
 void MEChargedCurrentDIS::persistentOutput(PersistentOStream & os) const {
-  os << _theFFWVertex << _maxflavour << _wp << _wm << _massopt;
+  os << _theFFWVertex << _maxflavour << _wp << _wm << _massopt
+     << _useFiniteWidthSpacelikeWPropagator;
 }
 
-// Read the charged-current persistent state.
-void MEChargedCurrentDIS::persistentInput(PersistentIStream & is, int) {
+// Read the charged-current persistent state, defaulting the finite-width W
+// switch for files written before that release field existed.
+void MEChargedCurrentDIS::persistentInput(PersistentIStream & is, int version) {
   is >> _theFFWVertex >> _maxflavour >> _wp >> _wm >> _massopt;
+  if(version == 0) _useFiniteWidthSpacelikeWPropagator = false;
+  else is >> _useFiniteWidthSpacelikeWPropagator;
 }
 
 // The following static variable is needed for the type
 // description system in ThePEG.
 DescribeClass<MEChargedCurrentDIS,DISBase>
-describeHerwigMEChargedCurrentDIS("Herwig::MEChargedCurrentDIS", "HwMEDIS.so");
+describeHerwigMEChargedCurrentDIS("Herwig::MEChargedCurrentDIS", "HwMEDIS.so", 1);
 
 // Register user-facing charged-current controls.
 void MEChargedCurrentDIS::Init() {
@@ -339,6 +345,27 @@ void MEChargedCurrentDIS::Init() {
      "Massive",
      "Treat the outgoing quarks as massive",
      1);
+
+  static Switch<MEChargedCurrentDIS,bool>
+    interfaceUseFiniteWidthSpacelikeWPropagator
+    ("UseFiniteWidthSpacelikeWPropagator",
+     "Whether to keep a finite width for spacelike W exchange in the "
+     "helicity-amplitude path. This affects the Born and real-emission DIS "
+     "charged-current amplitude construction only. The default No preserves "
+     "the legacy zero-width spacelike W behavior, while Yes uses the finite-"
+     "width ThePEG propagator option iopt=7.",
+     &MEChargedCurrentDIS::_useFiniteWidthSpacelikeWPropagator,
+     false, false, false);
+  static SwitchOption interfaceUseFiniteWidthSpacelikeWPropagatorYes
+    (interfaceUseFiniteWidthSpacelikeWPropagator,
+     "Yes",
+     "Use the finite-width spacelike W propagator in the helicity-amplitude path.",
+     true);
+  static SwitchOption interfaceUseFiniteWidthSpacelikeWPropagatorNo
+    (interfaceUseFiniteWidthSpacelikeWPropagator,
+     "No",
+     "Use the legacy zero-width spacelike W propagator in the helicity-amplitude path.",
+     false);
 
 }
 
@@ -370,7 +397,8 @@ double MEChargedCurrentDIS::helicityME(const pair<RhoDMatrix,RhoDMatrix> & rhoin
   unsigned int lhel1,lhel2,qhel1,qhel2;
   for(lhel1=0;lhel1<2;++lhel1) {
     for(lhel2=0;lhel2<2;++lhel2) {
-      inter = _theFFWVertex->evaluate(mb2,3,ipart,f1[lhel1],a1[lhel2]);
+      inter = _theFFWVertex->evaluate(mb2,wHelicityPropagatorOption(3),
+                                      ipart,f1[lhel1],a1[lhel2]);
       for(qhel1=0;qhel1<2;++qhel1) {
 	for(qhel2=0;qhel2<2;++qhel2) {
 	  hel[0] = lhel1;
@@ -515,7 +543,7 @@ ProductionMatrixElement MEChargedCurrentDIS::qcdcRealEmissionME(PPtr lin, PPtr q
       const unsigned int helInL = leptonLine.incomingIsFermion ? lhelF : lhelA;
       const unsigned int helOutL = leptonLine.incomingIsFermion ? lhelA : lhelF;
       VectorWaveFunction inter =
-        _theFFWVertex->evaluate(q2, 1, mediator,
+        _theFFWVertex->evaluate(q2, wHelicityPropagatorOption(1), mediator,
                                 leptonLine.fermion[lhelF],
                                 leptonLine.antifermion[lhelA]);
 
@@ -583,7 +611,7 @@ ProductionMatrixElement MEChargedCurrentDIS::bgfRealEmissionME(PPtr lin, PPtr gi
       const unsigned int helInL = leptonLine.incomingIsFermion ? lhelF : lhelA;
       const unsigned int helOutL = leptonLine.incomingIsFermion ? lhelA : lhelF;
       VectorWaveFunction inter =
-        _theFFWVertex->evaluate(q2, 1, mediator,
+        _theFFWVertex->evaluate(q2, wHelicityPropagatorOption(1), mediator,
                                 leptonLine.fermion[lhelF],
                                 leptonLine.antifermion[lhelA]);
 
@@ -724,4 +752,8 @@ double MEChargedCurrentDIS::me2ForPolarizations(double Pl, double Pq) const {
     make_pair(longitudinalRhoMatrix(mePartonData()[0], Pl),
               longitudinalRhoMatrix(mePartonData()[1], Pq));
   return helicityME(rhoin,f1,f2,a1,a2,lorder,qorder,false);
+}
+
+double MEChargedCurrentDIS::rivetWeightBornME2(double Pl, double Pq) const {
+  return me2ForPolarizations(Pl, Pq);
 }

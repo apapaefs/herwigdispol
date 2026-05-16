@@ -151,7 +151,7 @@ C     DEFINE CUTS FOR THE EVENT GENERATION
       XMAX=1
       YMIN=0.2
       YMAX=0.6
-      Q2MIN=49
+      Q2MIN=100
       Q2MAX=2500
       END
 
@@ -215,9 +215,9 @@ C     eta1 (LAB) DISTRIBUTION  (per-bin)
       CALL GBOOK1( 6,"eta1L LO ",15,-3.5D0, 3.5D0, 0,1,0,0)
 
 C     Q2 DEPENDENCE  (per-bin; linear x)
-      CALL GBOOK1( 7,"Q2 NNLO ",100, 49D0,2500D0, 1,1,0,0)
-      CALL GBOOK1( 8,"Q2 NLO  ",100, 49D0,2500D0, 0,1,0,0)
-      CALL GBOOK1( 9,"Q2 LO   ",100, 49D0,2500D0, 0,1,0,0)
+      CALL GBOOK1( 7,"Q2 NNLO ",100, 100D0,2500D0, 1,1,0,0)
+      CALL GBOOK1( 8,"Q2 NLO  ",100, 100D0,2500D0, 0,1,0,0)
+      CALL GBOOK1( 9,"Q2 LO   ",100, 100D0,2500D0, 0,1,0,0)
 
 C     xBj DEPENDENCE  (per-bin; linear x)
       CALL GBOOK1(10,"X NNLO  ", 20,  0D0,  1D0, 1,1,0,0)
@@ -270,9 +270,9 @@ C     F2eff(x) (per-bin)
       CALL GBOOK1(39,"F2 LO   ", 20,  0D0,  1D0, 0,1,0,0)
 
 C     Pre-cut Q2 / xBj / y / pT1 / pT2 distributions
-      CALL GBOOK1(40,"Q2PreNNLO",100, 49D0,2500D0, 1,1,0,0)
-      CALL GBOOK1(41,"Q2PreNLO", 100, 49D0,2500D0, 0,1,0,0)
-      CALL GBOOK1(42,"Q2PreLO",  100, 49D0,2500D0, 0,1,0,0)
+      CALL GBOOK1(40,"Q2PreNNLO",100, 100D0,2500D0, 1,1,0,0)
+      CALL GBOOK1(41,"Q2PreNLO", 100, 100D0,2500D0, 0,1,0,0)
+      CALL GBOOK1(42,"Q2PreLO",  100, 100D0,2500D0, 0,1,0,0)
       CALL GBOOK1(43,"XPreNNLO",  20,  0D0,  1D0, 1,1,0,0)
       CALL GBOOK1(44,"XPreNLO",   20,  0D0,  1D0, 0,1,0,0)
       CALL GBOOK1(45,"XPreLO",    20,  0D0,  1D0, 0,1,0,0)

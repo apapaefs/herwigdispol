@@ -153,7 +153,7 @@ C     SET KINEMATICAL CUTS
 c     LIMITS FOR EIC      
       YMIN=0.2
       YMAX=0.6    
-      Q2MIN=25
+      Q2MIN=100
       Q2MAX=2500
       END      
 C#######################################################################
@@ -251,9 +251,9 @@ C     ETA_1 DISTRIBUTION
        CALL GBOOK1(5,"eta1L NLO ",15,-3.5d0,3.5D0,0,0,0,0)
        CALL GBOOK1(6,"eta1L LO  ",15,-3.5d0,3.5D0,0,0,0,0)
 C     Q2 DEPENDENCE
-       CALL GBOOK1(7,"Q2 NNLO",15,25d0,2500d0,1,0,1,0)
-       CALL GBOOK1(8,"Q2 NLO ",15,25d0,2500d0,0,0,1,0)
-       CALL GBOOK1(9,"Q2 LO  ",15,25d0,2500d0,0,0,1,0)
+       CALL GBOOK1(7,"Q2 NNLO",15,100d0,2500d0,1,0,1,0)
+       CALL GBOOK1(8,"Q2 NLO ",15,100d0,2500d0,0,0,1,0)
+       CALL GBOOK1(9,"Q2 LO  ",15,100d0,2500d0,0,0,1,0)
 C     X DEPENDENCE
        CALL GBOOK1(10,"X NNLO",15,0.01d0,1.0d0,1,0,1,0)
        CALL GBOOK1(11,"X NLO ",15,0.01d0,1.0d0,0,0,1,0)

@@ -68,7 +68,7 @@ derived artifacts from the working area have been intentionally omitted.
 - `workflow/dispol/cards/`: checked-in DIS Herwig cards and templates
 - `workflow/dispol/scripts/`: DIS workflow drivers and post-processing tools
 - `workflow/dispol/docs/`: workflow notes and technical investigations
-- `docs/paper/`: paper source, including `HerwigPolCodex.tex` and `biblio.bib`
+- `docs/paper/`: paper source, including `main.tex` and `biblio.bib`
 
 ## External Prerequisites
 
@@ -486,7 +486,7 @@ Additional workflow details are documented in
 
 The paper draft lives in:
 
-- `docs/paper/HerwigPolCodex.tex`
+- `docs/paper/main.tex`
 - `docs/paper/biblio.bib`
 
 Only the TeX and bibliography sources are versioned. Rendered figure PDFs and
@@ -534,7 +534,7 @@ The repository is source-first. The main excluded categories are:
 - `HwPolNotesNew/DISPOL` -> `workflow/dispol`
 - DIS pieces from `HwPolNotesNew/analyses` -> `analyses/rivet/dis`
 - `POLDIS/POLDIS-public` plus retained DIS helpers -> `poldis`
-- `HerwigPolCodex.tex` and `biblio.bib` -> `docs/paper`
+- `main.tex` and `biblio.bib` -> `docs/paper`
 
 The canonical public entry points in this repository are the repo-relative
 paths under `workflow/dispol/scripts/`, especially:

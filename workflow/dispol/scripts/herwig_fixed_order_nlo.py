@@ -55,7 +55,7 @@ POLARIZED_REAL_WEIGHT_MODES = ("projected-nlo", "local-real")
 DEFAULT_POLARIZED_REAL_WEIGHT_MODE = "local-real"
 REAL_CONTRIBUTIONS = frozenset(("qcdc", "qcdc_counter", "bgf", "bgf_counter"))
 DEFAULT_STANDALONE_POLDIS_REFERENCE = Path(
-    "workflow/dispol/campaigns/rivetweights_noshowerMac03/"
+    "macwork/workflow/dispol/scripts/campaigns/rivetweights_noshowerMac03/"
     "analysis/_rivetplot_inputs/reference.scale.reference_all.sanitized.yoda.gz"
 )
 DEFAULT_STANDALONE_CAMPAIGN_MATCH = (
@@ -323,7 +323,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     add_polarized_run_options(standalone_campaign)
     standalone_campaign.add_argument("-t", "--tag", required=True, help="Campaign tag under --base-dir/campaigns.")
-    standalone_campaign.add_argument("--base-dir", type=Path, default=Path("workflow/dispol"), help="DISPOL workflow base directory.")
+    standalone_campaign.add_argument("--base-dir", type=Path, default=Path("DISPOL"), help="DISPOL base directory.")
     standalone_campaign.add_argument("--campaign-dir", type=Path, default=None, help="Override the full campaign output directory.")
     standalone_campaign.add_argument("--events", type=int, default=20000, help="Number of Monte Carlo phase-space seeds.")
     standalone_campaign.add_argument("--jobs", type=int, default=1, help="Parallel shard jobs for standalone FO generation.")
@@ -380,7 +380,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     standalone_campaign.add_argument("--output-stem", default=None, help="Stem for standalone YODA products.")
     standalone_campaign.add_argument("--poldis-output-stem", default=None, help="Stem for plot-safe POLDIS YODA.")
     standalone_campaign.add_argument("--match", default=DEFAULT_STANDALONE_CAMPAIGN_MATCH, help="rivet-mkhtml --match expression.")
-    standalone_campaign.add_argument("--herwig-title", default="Standalone Python Herwig FO", help="Title for the standalone curve.")
+    standalone_campaign.add_argument("--herwig-title", default="Standalone Python HERWIG FO", help="Title for the standalone curve.")
     standalone_campaign.add_argument("--poldis-title", default="POLDIS NLO", help="Title for the POLDIS curve.")
     standalone_campaign.add_argument("--reflabel", default="POLDIS NLO", help="rivet-mkhtml reference label.")
     standalone_campaign.add_argument("--ratiolabel", default="Python FO/POLDIS", help="rivet-mkhtml ratio label.")
@@ -1710,11 +1710,6 @@ def command_plot_prep(args: argparse.Namespace) -> int:
 
 
 def _repo_root_from_script() -> Path:
-    for parent in Path(__file__).resolve().parents:
-        if (parent / "workflow" / "dispol").exists() and (parent / "README.md").exists():
-            return parent
-        if (parent / "DISPOL").exists() and (parent / "README.md").exists():
-            return parent
     return Path(__file__).resolve().parents[2]
 
 

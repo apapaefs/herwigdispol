@@ -98,6 +98,11 @@ do /Herwig/Particles/bbar:AdjustNominalMass
 
 # DISABLE HADRONIZATION
 set EventGenerator:EventHandler:HadronizationHandler  NULL
+# Disable EvtGen for parton-level/no-hadronization runs.
+cd /Herwig/Particles
+read HerwigBDecays.in
+cd /Herwig/Generators
+
 set /Herwig/Analysis/Basics:CheckQuark false
 
 # disable all shower
@@ -138,6 +143,12 @@ get PowhegMEDISNC:UseFiniteWidthSpacelikeZPropagator
 get PowhegMEDISNCPol:UseFiniteWidthSpacelikeZPropagator
 set PowhegMEDISNCPol:UseFiniteWidthSpacelikeZPropagator Yes
 get PowhegMEDISNCPol:UseFiniteWidthSpacelikeZPropagator
+get MEDISCC:UseFiniteWidthSpacelikeWPropagator
+set MEDISCC:UseFiniteWidthSpacelikeWPropagator Yes
+get MEDISCC:UseFiniteWidthSpacelikeWPropagator
+get PowhegMEDISCC:UseFiniteWidthSpacelikeWPropagator
+set PowhegMEDISCC:UseFiniteWidthSpacelikeWPropagator Yes
+get PowhegMEDISCC:UseFiniteWidthSpacelikeWPropagator
 
 # set MEDISNC:SamplingPower 0.2
 # set MEDISNCPol:SamplingPower 0.2

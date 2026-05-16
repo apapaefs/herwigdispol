@@ -436,7 +436,7 @@ YLabel=$C_{2}^{\mathrm{hard}}(r_{\mathrm{cut}})$
 LogY=0
 YMax=0
 RatioPlotYMin=0.5
-RatioPlotYMax=8
+RatioPlotYMax=10.0
 # END PLOT
 
 # BEGIN PLOT /MC_DIS_PS/ALLCos2DeltaPhiHardJ3Cumulative

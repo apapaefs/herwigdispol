@@ -1,9 +1,9 @@
 // -*- C++ -*-
 #include "Rivet/Analysis.hh"
 #include "Rivet/AnalysisHandler.hh"
+#include "Rivet/Math/Constants.hh"
 #include "Rivet/Projections/FinalState.hh"
-#include "Rivet/Projections/DISKinematics.hh"
-#include "Rivet/Projections/DISLepton.hh"
+#include "Rivet/Tools/Beams.hh"
 #include "Rivet/Tools/RivetHepMC.hh"
 #include "HepMC3/Attribute.h"
 #include "fastjet/ClusterSequence.hh"
@@ -79,6 +79,30 @@ namespace Rivet {
       MEPARTONS
     };
 
+    enum class LocalDISMode {
+      L2L,
+      L2NU
+    };
+
+    struct DISKinematicsView {
+      bool valid = false;
+      double Q2 = -1.0;
+      double W2 = -1.0;
+      double x = -1.0;
+      double y = -1.0;
+      double s = -1.0;
+      double gammaHad = -1.0;
+      Particle inHadron;
+      Particle inLepton;
+      Particle outLepton;
+      LorentzTransform hcm;
+      LorentzTransform breit;
+
+      int orientation() const {
+        return sign(inHadron.pz());
+      }
+    };
+
     void init() {
       const string jetinputopt = toUpper(getOption("JETINPUT", "FULL"));
       if (jetinputopt == "FULL") {
@@ -113,20 +137,18 @@ namespace Rivet {
       }
 
       const string dismodeopt = toUpper(getOption("DISMODE", "NC"));
-      DISMode dismode = DISMode::L2L;
       if (dismodeopt == "NC") {
-        dismode = DISMode::L2L;
+        _disMode = LocalDISMode::L2L;
       } else if (dismodeopt == "CC") {
-        dismode = DISMode::L2NU;
+        _disMode = LocalDISMode::L2NU;
       } else {
         MSG_WARNING("Unknown DISMODE option " + dismodeopt + ". Defaulting to NC.");
+        _disMode = LocalDISMode::L2L;
       }
 
-      // DIS kinematics (gives Q2, x, y, and the Breit/Lab boosts)
-      const DISLepton dislep(Cuts::OPEN, LeptonReco::ALL, ObjOrdering::ENERGY,
-                             0.0, 0.0, 0.0, dismode);
-      const DISKinematics diskin(dislep);
-      declare(diskin, "Kinematics");
+      // Lab final state; DIS kinematics and Breit boosts are computed locally
+      // to avoid the DISLepton/VetoedFinalState constructor path in the Python
+      // Rivet frontend while preserving the same formulas.
       declare(FinalState(), "LabFS");
 
       // Histograms (no Q2-binned sets)
@@ -186,14 +208,15 @@ namespace Rivet {
     }
 
     void analyze(const Event& event) {
-      const DISKinematics& dis = apply<DISKinematics>(event, "Kinematics");
+      const DISKinematicsView dis = disKinematics(event);
+      if (!dis.valid) vetoEvent;
       const AnalysisWeights analysisWeights = eventAnalysisWeights(event);
       const double weight = analysisWeights.sigma;
       const double deltaWeight = analysisWeights.deltaLL;
 
-      const double Q2  = dis.Q2();
-      const double xbj = dis.x();
-      const double y   = dis.y();
+      const double Q2  = dis.Q2;
+      const double xbj = dis.x;
+      const double y   = dis.y;
 
       // Kinematic window: 100 < Q^2 < 2500 GeV^2 and 0.2 < y < 0.6
       if (!inRange(Q2, 100*GeV2, 2500*GeV2)) vetoEvent;
@@ -201,15 +224,15 @@ namespace Rivet {
 
       vector<ClusteredJet> jets;
       if (_jetInputMode == JetInputMode::HARDPARTONS) {
-        jets = clusterHardPartonJets(event);
+        jets = clusterHardPartonJets(event, dis);
       } else if (_jetInputMode == JetInputMode::TOP2PARTONS) {
-        jets = clusterTopHardPartonJets(event, 2);
+        jets = clusterTopHardPartonJets(event, dis, 2);
       } else if (_jetInputMode == JetInputMode::TOP3PARTONS) {
-        jets = clusterTopHardPartonJets(event, 3);
+        jets = clusterTopHardPartonJets(event, dis, 3);
       } else if (_jetInputMode == JetInputMode::MEPARTONS) {
-        jets = clusterMEPartonJets(event);
+        jets = clusterMEPartonJets(event, dis);
       } else {
-        jets = clusterFullFinalStateJets(event);
+        jets = clusterFullFinalStateJets(event, dis);
       }
 
       // Match the POLDIS "pre-cut" logic: fill after the DIS cuts even when
@@ -446,8 +469,10 @@ namespace Rivet {
 
     AnalysisWeights eventAnalysisWeights(const Event& event) {
       AnalysisWeights out;
-      const double defaultWeight = defaultEventWeight(event);
-      out.sigma = defaultWeight;
+      // Rivet applies the selected nominal event weight internally when
+      // histogram fills are collapsed. The explicit fill weight is therefore
+      // a multiplier on that event weight: unity for the nominal stream.
+      out.sigma = 1.0;
       if (!_rivetWeightsMode) return out;
 
       ++_rivetWeightsEvents;
@@ -474,12 +499,113 @@ namespace Rivet {
       return out;
     }
 
-    vector<ClusteredJet> clusterFullFinalStateJets(const Event& event) const {
-      return clusterJetInputs(collectBreitFinalStateInputs(event));
+    Particle scatteredLepton(const Event& event, const ParticlePair& beams) const {
+      Particle incoming;
+      const bool firstIsLepton = PID::isLepton(beams.first.pid());
+      const bool secondIsLepton = PID::isLepton(beams.second.pid());
+      if (firstIsLepton && !secondIsLepton) {
+        incoming = beams.first;
+      } else if (!firstIsLepton && secondIsLepton) {
+        incoming = beams.second;
+      } else {
+        return Particle();
+      }
+
+      PdgId outgoingPID = incoming.pid();
+      if (_disMode == LocalDISMode::L2L && PID::isNeutrino(incoming.pid())) {
+        return Particle();
+      } else if (_disMode == LocalDISMode::L2NU && PID::isNeutrino(incoming.pid())) {
+        return Particle();
+      } else if (_disMode == LocalDISMode::L2NU) {
+        outgoingPID += incoming.pid() > 0 ? 1 : -1;
+      }
+
+      Particles leptons;
+      for (const Particle& particle : apply<FinalState>(event, "LabFS").particles()) {
+        if (PID::isLepton(particle.pid())) {
+          leptons.push_back(particle);
+        }
+      }
+      std::sort(leptons.begin(), leptons.end(),
+                [](const Particle& a, const Particle& b) {
+                  return a.E() > b.E();
+                });
+
+      for (const Particle& particle : leptons) {
+        if (particle.pid() == outgoingPID) return particle;
+      }
+      return leptons.empty() ? Particle() : leptons.front();
     }
 
-    vector<ClusteredJet> clusterHardPartonJets(const Event& event) const {
-      const vector<JetInputParticle> allInputs = collectBreitFinalStateInputs(event);
+    DISKinematicsView disKinematics(const Event& event) const {
+      DISKinematicsView out;
+      const ParticlePair inc = Rivet::beams(event);
+
+      const bool firstIsHadron = PID::isHadron(inc.first.pid());
+      const bool secondIsHadron = PID::isHadron(inc.second.pid());
+      const bool firstIsLepton = PID::isLepton(inc.first.pid());
+      const bool secondIsLepton = PID::isLepton(inc.second.pid());
+      if (firstIsHadron && secondIsLepton) {
+        out.inHadron = inc.first;
+        out.inLepton = inc.second;
+      } else if (secondIsHadron && firstIsLepton) {
+        out.inHadron = inc.second;
+        out.inLepton = inc.first;
+      } else {
+        return out;
+      }
+
+      out.outLepton = scatteredLepton(event, inc);
+      if (out.outLepton.pid() == PID::ANY) return out;
+
+      const FourMomentum pHad = out.inHadron.momentum();
+      const FourMomentum pLepIn = out.inLepton.momentum();
+      const FourMomentum pLepOut = out.outLepton.momentum();
+      const FourMomentum pGamma = pLepIn - pLepOut;
+      const FourMomentum tothad = pGamma + pHad;
+      out.Q2 = -pGamma.mass2();
+      out.W2 = tothad.mass2();
+      if (isZero(out.Q2) || !std::isfinite(out.Q2)) return out;
+
+      out.x = out.Q2/(out.Q2 + out.W2);
+      if (out.x != 0) {
+        out.y = out.Q2/((pLepIn * pHad) * 2.0 * out.x);
+      } else {
+        out.y = (pGamma * pHad)/(pLepIn * pHad);
+      }
+      out.s = invariant(pLepIn + pHad);
+
+      const double ghDenom = (1.0 - out.y) * out.x * pHad.E() + out.y * pLepIn.E();
+      if (!isZero(ghDenom)) {
+        double cosgammah = ((1.0 - out.y) * out.x * pHad.E() - out.y * pLepIn.E()) / ghDenom;
+        cosgammah = std::max(-1.0, std::min(1.0, cosgammah));
+        out.gammaHad = std::acos(cosgammah);
+      }
+
+      LorentzTransform tmp;
+      tmp.setBetaVec(-tothad.betaVec());
+      FourMomentum pGammaHCM = tmp.transform(pGamma);
+      tmp.preMult(Matrix3(Vector3::mkZ(), -pGammaHCM.azimuthalAngle()));
+      pGammaHCM = tmp.transform(pGamma);
+      const double rotAngle = -std::atan2(pGammaHCM.x(), pGammaHCM.z());
+      tmp.preMult(Matrix3(Vector3::mkY(), rotAngle));
+      const FourMomentum pLepOutHCM = tmp.transform(pLepOut);
+      tmp.preMult(Matrix3(Vector3::mkZ(), -pLepOutHCM.azimuthalAngle()));
+      out.hcm = tmp;
+
+      tmp.preMult(Matrix3(Vector3::mkX(), PI));
+      const double bz = 1.0 - 2.0*out.x;
+      out.breit = LorentzTransform::mkObjTransformFromBeta(Vector3::mkZ() * bz).combine(tmp);
+      out.valid = std::isfinite(out.x) && std::isfinite(out.y) && std::isfinite(out.Q2);
+      return out;
+    }
+
+    vector<ClusteredJet> clusterFullFinalStateJets(const Event& event, const DISKinematicsView& dis) const {
+      return clusterJetInputs(collectBreitFinalStateInputs(event, dis));
+    }
+
+    vector<ClusteredJet> clusterHardPartonJets(const Event& event, const DISKinematicsView& dis) const {
+      const vector<JetInputParticle> allInputs = collectBreitFinalStateInputs(event, dis);
       vector<JetInputParticle> inputs;
       inputs.reserve(allInputs.size());
       for (const JetInputParticle& input : allInputs) {
@@ -490,9 +616,9 @@ namespace Rivet {
       return clusterJetInputs(inputs);
     }
 
-    vector<ClusteredJet> clusterTopHardPartonJets(const Event& event, size_t maxPartons) const {
+    vector<ClusteredJet> clusterTopHardPartonJets(const Event& event, const DISKinematicsView& dis, size_t maxPartons) const {
       vector<JetInputParticle> inputs;
-      for (const JetInputParticle& input : collectBreitFinalStateInputs(event)) {
+      for (const JetInputParticle& input : collectBreitFinalStateInputs(event, dis)) {
         if (isHardParton(input.pid)) {
           inputs.push_back(input);
         }
@@ -509,16 +635,16 @@ namespace Rivet {
       return clusterJetInputs(inputs);
     }
 
-    vector<ClusteredJet> clusterMEPartonJets(const Event& event) {
+    vector<ClusteredJet> clusterMEPartonJets(const Event& event, const DISKinematicsView& dis) {
       _lastMEPartonDebug = MEPartonDebug();
-      const vector<JetInputParticle> inputs = collectMEPartonInputs(event);
+      const vector<JetInputParticle> inputs = collectMEPartonInputs(event, dis);
       _lastMEPartonDebug.inputPartons = inputs.size();
       return clusterJetInputs(inputs);
     }
 
-    vector<JetInputParticle> jetInputsFromGenParticles(const DISKinematics& dis,
+    vector<JetInputParticle> jetInputsFromGenParticles(const DISKinematicsView& dis,
                                                        const vector<ConstGenParticlePtr>& particles) const {
-      const LorentzTransform& breitBoost = dis.boostBreit();
+      const LorentzTransform& breitBoost = dis.breit;
       vector<JetInputParticle> inputs;
       inputs.reserve(particles.size());
 
@@ -531,13 +657,12 @@ namespace Rivet {
       return inputs;
     }
 
-    vector<JetInputParticle> collectBreitFinalStateInputs(const Event& event) const {
-      const DISKinematics& dis = apply<DISKinematics>(event, "Kinematics");
+    vector<JetInputParticle> collectBreitFinalStateInputs(const Event& event, const DISKinematicsView& dis) const {
       const Particles& labParticles = apply<FinalState>(event, "LabFS").particles();
       vector<JetInputParticle> inputs;
       inputs.reserve(labParticles.size());
-      const auto scatteredLepton = dis.scatteredLepton().genParticle();
-      const LorentzTransform& breitBoost = dis.boostBreit();
+      const auto scatteredLepton = dis.outLepton.genParticle();
+      const LorentzTransform& breitBoost = dis.breit;
 
       for (const Particle& pLab : labParticles) {
         if (pLab.genParticle() == scatteredLepton) continue;
@@ -547,8 +672,7 @@ namespace Rivet {
       return inputs;
     }
 
-    vector<JetInputParticle> collectMEPartonInputs(const Event& event) {
-      const DISKinematics& dis = apply<DISKinematics>(event, "Kinematics");
+    vector<JetInputParticle> collectMEPartonInputs(const Event& event, const DISKinematicsView& dis) {
       const GenEvent* ge = event.genEvent();
       if (ge == nullptr) {
         warnMEPartonSelection("GenEvent pointer is null");
@@ -999,6 +1123,7 @@ namespace Rivet {
     MEPartonDebug _lastMEPartonDebug;
     MEPartonDebugTotals _mePartonDebugTotals;
     JetInputMode _jetInputMode = JetInputMode::FULL;
+    LocalDISMode _disMode = LocalDISMode::L2L;
     bool _rivetWeightsMode = false;
     bool _rivetWeightsEventNorm = false;
     bool _warnedMEPartonSelection = false;

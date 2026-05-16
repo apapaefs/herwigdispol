@@ -14,7 +14,7 @@ The helper:
 
 The default target is the broad GAMMA window used by the residual follow-up
 study:
-  Q^2 in [49,2500] GeV^2, y in [0.2,0.6]
+  Q^2 in [100,2500] GeV^2, y in [0.2,0.6]
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ class CutWindow:
     y_max: float
 
 
-BROAD_WINDOW = CutWindow(label="broad", q2_min=49.0, q2_max=2500.0, y_min=0.2, y_max=0.6)
+BROAD_WINDOW = CutWindow(label="broad", q2_min=100.0, q2_max=2500.0, y_min=0.2, y_max=0.6)
 INTERIOR_WINDOW = CutWindow(label="interior", q2_min=100.0, q2_max=1000.0, y_min=0.3, y_max=0.5)
 WINDOWS = {"broad": BROAD_WINDOW, "interior": INTERIOR_WINDOW}
 
