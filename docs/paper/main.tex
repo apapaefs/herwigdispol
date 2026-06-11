@@ -1534,6 +1534,7 @@ smaller.
 
 \FloatBarrier
 \subsection{Real-Emission Spin Information in the Shower}
+\label{sec:real-emission-spin-shower}
 \subsubsection{Spin-Density Construction for the Accepted Real Emission}
 In the present \Herwig\ polarized-shower treatment, the spin information of
 the incoming lepton and the Born-level hard process is propagated through the
@@ -1767,6 +1768,27 @@ while the accepted-emission density matrix is not resolved as a separate effect.
 We also checked additional fourth-jet angular and asymmetry observables, which
 led to the same conclusion.
 
+The absence of a resolvable difference between the \textbf{Full} and
+\textbf{Born-Only} configurations is consistent with the structure of the
+construction. The two settings share identical hardest-emission kinematics,
+azimuthal orientation, flavour channels, and event weights, so any
+difference must arise from correlations between the second resolved
+emission and the hardest-emission system, and these are suppressed for
+several independent reasons. The small-$r_3$ region that dominates the
+third-jet rate is governed by soft-gluon emission, which at leading power
+is independent of the spin state of the emitters. The additional
+information in the accepted real-emission state resides mainly in the
+polarization of the emitted gluon, whose azimuthal imprint on a subsequent
+branching carries the kernel coefficients of Table~\ref{tab:branch2},
+which vanish in the soft region and are sizable only for rare symmetric
+splittings. For longitudinal beam polarization the spin-dependent
+azimuthal weights vanish identically ($H_{i+-}=H_{i-+}=0$), so the
+polarized observables are sensitive to the new information only through
+higher links of the spin-correlation chain. Finally, only third jets
+descending from the hardest-emission parton carry the new correlation,
+which angular-ordered evolution, jet clustering, and hadronization further
+dilute.
+
 \FloatBarrier
 \section{Summary and Outlook}\label{sec:conclusions}
 
@@ -1803,13 +1825,18 @@ shower-sensitive observables, while the additional spin information from the
 accepted real-emission configuration is not resolved as a separate effect within
 the present observable set. We also checked fourth-jet angular and asymmetry
 observables, omitted here for clarity, and found the same conclusion.
+As discussed in Section~\ref{sec:real-emission-spin-shower}, this outcome
+is expected from the structure of the construction, in which the hardest
+emission is identical in the two settings and the residual correlations
+are soft-suppressed, kernel-suppressed for longitudinal polarization, and
+further diluted by showering, clustering, and hadronization.
 
-Several extensions now follow naturally. A broader comparison across more
-exclusive shower and jet observables is needed to determine where measurements
-are most sensitive to the Born-level spin-density initialization and whether
-they can resolve the extra real-emission density matrix, together with a
-quantitative study of the stability of the spin-on versus spin-disabled
-differences under variations of shower and hadronization settings. More
+Several extensions now follow naturally. A broader survey of exclusive
+shower and jet observables, beyond the exploratory set considered here,
+would map out where measurements are most sensitive to the Born-level
+spin-density initialization, and a quantitative study of the stability of
+the spin-on versus spin-disabled differences under variations of shower
+and hadronization settings would sharpen this comparison. More
 broadly, the formalism developed here provides the ingredients required to treat
 polarized hard scattering in \Herwig\ beyond DIS, opening the way to polarized
 processes at hadron-hadron and lepton-hadron colliders.
@@ -1838,7 +1865,8 @@ are compared.
 The physics setup is identical to that used in the neutral-current validation in
 the main text.  We take $E_e=18~\mathrm{GeV}$ and $E_p=275~\mathrm{GeV}$,
 impose $100~\mathrm{GeV}^2<Q^2\le2500~\mathrm{GeV}^2$ and $0.2\le y\le0.6$, and use
-the NNPDF4.0 NLO unpolarized and NNPDFpol2.0 NLO polarized PDF sets.  The
+the unpolarized proton set \texttt{NNPDF40\_nlo\_pch\_as\_01180} and the
+polarized-difference set \texttt{NNPDFpol20\_nlo\_as\_01180}.  The
 electroweak input parameters, the $\gamma$, $Z$, and $\gamma Z$ neutral-current
 coefficients, the polarized Born analysing powers, the PDF ratios, and the
 running coupling with $\alpha_s(M_Z)=0.118$ are matched to the \Herwig\
