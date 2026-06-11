@@ -215,6 +215,7 @@ In the present study we restrict attention to longitudinal beam polarization, fo
 The branching probability, averaged over $\phi$ as before, can therefore be generated with the additional azimuthally averaged weight
 \begin{equation}
   W_{\langle\phi\rangle} = \frac{1+A}{2H_{j\tau\tau'}(x,Q^2) D_{\tau\tau'}}\;,
+\label{eq:Wphi}
 \end{equation}
 which can be included in the normal weight for the PDF term. The azimuthal angle can then be generated using the full distribution in Eq.~\eqref{eqn:corr} rather than
 using only the $1+B$ distribution that applies in the unpolarized case. The decay matrix $D$ is then updated to include the branching and used to initialize the next emission. Once the backward evolution terminates, the spin-averaged density matrix $\rho$, in the notation of Ref.\,\cite{Richardson:2018pvo}, is replaced by the full hadronic spin-density matrix $H_{i\lambda\lambda'}$. The chain is then traversed in the forward direction to initialize the final-state showers of the radiated partons.
@@ -1768,7 +1769,26 @@ while the accepted-emission density matrix is not resolved as a separate effect.
 We also checked additional fourth-jet angular and asymmetry observables, which
 led to the same conclusion.
 
-The absence of a resolvable difference between the \textbf{Full} and
+The visible differences between the \textbf{Born-Only} and \textbf{None}
+configurations are also of the expected type. Enabling the Born-seeded
+spin chain activates the azimuthally averaged branching weight of
+Eq.~\eqref{eq:Wphi}, which corrects each initial-state branching for the
+helicity dependence of the parent parton distribution through the spin
+weights of Table~\ref{tab:branch1}. This changes the amount of radiation
+rather than its azimuthal orientation, at first order in the beam
+polarizations: the weight survives azimuthal integration, its
+coefficients are of order unity across the sampled $z$ range, and its
+effect accumulates along the backward evolution, which probes the
+polarized distributions at successively shifted momentum fractions where
+$\Delta f/f$ varies appreciably. Enabling the chain also switches on the
+azimuthal correlations between successive shower emissions, which are
+present even for unpolarized beams. Both mechanisms act together in the
+comparisons shown here. Since the dijet system is fixed by the hard
+process, which is common to all three configurations, these effects first
+become visible in the radiation that resolves a third jet, consistent
+with the pattern observed above.
+
+By contrast, the absence of a resolvable difference between the \textbf{Full} and
 \textbf{Born-Only} configurations is consistent with the structure of the
 construction. The two settings share identical hardest-emission kinematics,
 azimuthal orientation, flavour channels, and event weights, so any
