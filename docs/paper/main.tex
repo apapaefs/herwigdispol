@@ -1605,7 +1605,7 @@ $R=1.0$ as in the parton-level validation.
 
 The spin-correlation validation then compares three shower configurations:
 \begin{itemize}
-\item \textbf{Full}: the POWHEG real-spin vertex is enabled and the shower spin
+\item \textbf{Full}: both the POWHEG real-spin vertex and the shower spin
   correlations are enabled.
 \item \textbf{Born-Only}: the shower is initialized with the polarized DIS
   Born-level spin-density matrix, while the additional POWHEG real-spin vertex
@@ -1660,7 +1660,7 @@ closely connected to the accepted real emission.
 
 To probe the azimuthal structure more directly, we define the hard-emission
 reference plane as the plane spanned by the exchanged boson direction and the
-leading accepted Breit-frame jet.  The third-jet angle relative to this plane is
+leading Breit-frame jet of the dijet selection.  The third-jet angle relative to this plane is
 \begin{equation}
   \Delta\phi_{\mathrm{hard},3}
   =\left|\phi_B(j_3)-\phi_B(j_1)\right|_{\pi}\,,
@@ -1695,15 +1695,8 @@ The cumulative form reduces the sensitivity to individual low-statistics tail
 bins while preserving the dependence on increasingly hard third-jet radiation.
 
 The comparison shown below is organized so that each observable is displayed
-both before and after hadronization.  In every panel, the \textbf{Full} curve
-contains the real-emission spin-density initialization, \textbf{Born-Only}
-uses the polarized DIS Born-level spin-density initialization, and
-\textbf{None} disables the shower-spin treatment. The comparison of
-\textbf{Born-Only} with \textbf{None} therefore shows the size of the
-Born-level spin-density effect introduced by the polarized DIS implementation,
-whereas the comparison of \textbf{Full} with \textbf{Born-Only} isolates the
-incremental effect of replacing that Born-level density matrix by the accepted
-real-emission density matrix.
+both before and after hadronization, with the three configurations overlaid in
+every panel.
 
 \begin{figure}[!htbp]
   \centering
@@ -1764,13 +1757,12 @@ associated specifically with the accepted real-emission state is therefore not
 resolved for the DIS setup and observables considered here. This outcome is a
 useful validation result: it indicates that, for longitudinally polarized DIS in
 this kinematic region, the new Born-level shower-spin initialization captures
-the numerically relevant spin correlations within the present observable set,
-while the accepted-emission density matrix is not resolved as a separate effect.
+the numerically relevant spin correlations within the present observable set.
 We also checked additional fourth-jet angular and asymmetry observables, which
 led to the same conclusion.
 
 The visible differences between the \textbf{Born-Only} and \textbf{None}
-configurations are also of the expected type. Enabling the Born-seeded
+configurations are of the expected type. Enabling the Born-seeded
 spin chain activates the azimuthally averaged branching weight of
 Eq.~\eqref{eq:Wphi}, which corrects each initial-state branching for the
 helicity dependence of the parent parton distribution through the spin
