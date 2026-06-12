@@ -1109,7 +1109,7 @@ With the real-emission, virtual, and collinear NLO ingredients in place, we proc
 \subsection{Fixed-Order Benchmarks and Parton-Level Validation}
 
 \subsubsection{Validation Setup}
-We perform the fixed-order comparison using the Rivet analysis framework~\cite{Bierlich:2024vqo}, with the \Herwig/Rivet event selection matched to the \POLDIS\ setup. We use $E_e=18~\mathrm{GeV}$ and $E_p=275~\mathrm{GeV}$, with the DIS window
+We perform the fixed-order comparison using the \textsc{Rivet} analysis framework~\cite{Bierlich:2024vqo} (version 4.1.1), with the \Herwig/\textsc{Rivet} event selection matched to the \POLDIS\ setup. We use $E_e=18~\mathrm{GeV}$ and $E_p=275~\mathrm{GeV}$, with the DIS window
 $100~\mathrm{GeV}^2 < Q^2 \le 2500~\mathrm{GeV}^2$ and $0.2 \le y \le 0.6$, and with
 incoming-leg momentum fractions allowed down to $10^{-5}$. No additional
 restriction is imposed on the hadronic invariant mass $W^2 \equiv (P + q)^2$
@@ -1128,7 +1128,7 @@ On the analysis side, we follow the \POLDIS\ dijet definition. The jet inputs,
 which exclude the scattered lepton, are boosted to the Breit frame and
 clustered there with the inclusive anti-$k_T$ algorithm~\cite{Cacciari:2008gp}
 with radius parameter $R=1.0$ and $E$-scheme recombination, as implemented in
-\textsc{FastJet}~\cite{Cacciari:2011ma}. The resulting jets are ordered in
+\textsc{FastJet}~\cite{Cacciari:2011ma} (3.5.1). The resulting jets are ordered in
 Breit-frame transverse momentum, and the laboratory-frame momentum of each jet
 is obtained by summing the laboratory momenta of the same constituents. The two
 leading Breit-frame jets are identified first, and the acceptance cuts are then
@@ -1143,8 +1143,6 @@ we also consider a set of inclusive observables before the dijet selection is ap
 kinematic selection and the identification of the two leading Breit-frame jets,
 but before the Breit-frame $p_T$ thresholds and laboratory-frame rapidity cuts
 are imposed.
-The analysis and PDF interface use \textsc{Rivet}~4.1.1,
-\textsc{FastJet}~3.5.1, and \textsc{LHAPDF}~6.5.5~\cite{Buckley:2014ana}.
 
 We choose the PDFs to bring the \Herwig\ \textsc{POWHEG} setup as
 close as possible to the \POLDIS\ fixed-order reference. For the main
@@ -1152,7 +1150,7 @@ validation presented here we use the unpolarized proton set
 \texttt{NNPDF40\_nlo\_pch\_as\_01180}, based on the NNPDF4.0 determination
 of Ref.~\cite{NNPDF:2021njg}, together with the polarized-difference set
 \texttt{NNPDFpol20\_nlo\_as\_01180}, based on the NNPDFpol2.0 determination
-of Ref.~\cite{Cruz-Martinez:2025ahf}. This choice gives a consistent
+of Ref.~\cite{Cruz-Martinez:2025ahf} through the \textsc{LHAPDF}~\cite{Buckley:2014ana} interface (version 6.5.5). This choice gives a consistent
 NNPDF-family input combination for the LO and NLO comparisons against
 \POLDIS, while remaining close to the default \Herwig\ inputs. As in the rest of the validation, we intentionally
 use the same PDF inputs at LO and NLO, since our aim is to isolate
@@ -1796,10 +1794,15 @@ information in the accepted real-emission state resides mainly in the
 polarization of the emitted gluon, whose azimuthal imprint on a subsequent
 branching carries the kernel coefficients of Table~\ref{tab:branch2},
 which vanish in the soft region and are sizable only for rare symmetric
-splittings. For longitudinal beam polarization the spin-dependent
-azimuthal weights vanish identically ($H_{i+-}=H_{i-+}=0$), so the
-polarized observables are sensitive to the new information only through
-higher links of the spin-correlation chain. Finally, only third jets
+splittings. In the polarized observables the residual effect is reduced further. The
+component of the gluon polarization that can reorient subsequent radiation
+is, by parity, independent of the beam helicities and cancels in
+$\Delta\sigma$, while the component that does depend on the beam helicities
+does not affect the angular distribution of a single splitting. A
+beam-helicity-dependent azimuthal effect therefore requires at least two
+successive branchings, with longitudinal polarization offering no
+transverse spin direction ($H_{i+-}=H_{i-+}=0$) that could provide it in
+one step. Finally, only third jets
 descending from the hardest-emission parton carry the new correlation,
 which angular-ordered evolution, jet clustering, and hadronization further
 dilute.
