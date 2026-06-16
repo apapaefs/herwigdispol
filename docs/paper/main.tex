@@ -1128,7 +1128,7 @@ On the analysis side, we follow the \POLDIS\ dijet definition. The jet inputs,
 which exclude the scattered lepton, are boosted to the Breit frame and
 clustered there with the inclusive anti-$k_T$ algorithm~\cite{Cacciari:2008gp}
 with radius parameter $R=1.0$ and $E$-scheme recombination, as implemented in
-\textsc{FastJet}~\cite{Cacciari:2011ma} (3.5.1). The resulting jets are ordered in
+\textsc{FastJet}~\cite{Cacciari:2011ma} (version 3.5.1). The resulting jets are ordered in
 Breit-frame transverse momentum, and the laboratory-frame momentum of each jet
 is obtained by summing the laboratory momenta of the same constituents. The two
 leading Breit-frame jets are identified first, and the acceptance cuts are then
@@ -1747,20 +1747,20 @@ every panel.
   \label{fig:spincomp-hardplane-moments}
 \end{figure}
 
-Across these observables, the configurations with shower spin correlations
-enabled can differ visibly from \textbf{None} in some third-jet-sensitive
-quantities. This demonstrates that the polarized DIS Born-level spin-density
-initialization changes the showered prediction relative to a spin-disabled
-simulation. Within the precision of the explicit runs shown here, however,
-we find no distinguishable separation between the \textbf{Full} and
-\textbf{Born-Only} predictions. The additional spin-density information
-associated specifically with the accepted real-emission state is therefore not
-resolved for the DIS setup and observables considered here. This outcome is a
-useful validation result: it indicates that, for longitudinally polarized DIS in
-this kinematic region, the new Born-level shower-spin initialization captures
-the numerically relevant spin correlations within the present observable set.
-We also checked additional fourth-jet angular and asymmetry observables, which
-led to the same conclusion.
+The three configurations are compared in
+Figs.~\ref{fig:spincomp-pt3ratio}--\ref{fig:spincomp-hardplane-moments}. In
+several of these third-jet-sensitive observables both the \textbf{Born-Only}
+and the \textbf{Full} predictions depart visibly from \textbf{None}, showing
+that the polarized DIS Born-level spin-density initialization changes the
+showered prediction relative to a spin-disabled simulation. Within the
+precision of the runs shown here, however, \textbf{Full} and \textbf{Born-Only}
+are not distinguishable from each other, so the additional spin information
+carried by the accepted real-emission state is not resolved for the DIS setup
+and observables considered here. The same conclusion holds for the additional
+fourth-jet angular and asymmetry observables that we examined (not shown here).
+For longitudinally polarized DIS in this kinematic region, the Born-level
+shower-spin initialization therefore captures the numerically relevant spin
+correlations.
 
 The visible differences between the \textbf{Born-Only} and \textbf{None}
 configurations are of the expected type. Enabling the Born-seeded
@@ -1768,8 +1768,8 @@ spin chain activates the azimuthally averaged branching weight of
 Eq.~\eqref{eq:Wphi}, which corrects each initial-state branching for the
 helicity dependence of the parent parton distribution through the spin
 weights of Table~\ref{tab:branch1}. This changes the amount of radiation
-rather than its azimuthal orientation, at first order in the beam
-polarizations: the weight survives azimuthal integration, its
+rather than its azimuthal orientation: the weight survives azimuthal
+integration, its
 coefficients are of order unity across the sampled $z$ range, and its
 effect accumulates along the backward evolution, which probes the
 polarized distributions at successively shifted momentum fractions where
@@ -1785,13 +1785,13 @@ By contrast, the absence of a resolvable difference between the \textbf{Full} an
 \textbf{Born-Only} configurations is consistent with the structure of the
 construction. The two settings share identical hardest-emission kinematics,
 azimuthal orientation, flavour channels, and event weights, so any
-difference must arise from correlations between the second resolved
-emission and the hardest-emission system, and these are suppressed for
+difference must arise from correlations between the radiation that resolves
+a third jet and the hardest-emission system, and these are suppressed for
 several independent reasons. The small-$r_3$ region that dominates the
 third-jet rate is governed by soft-gluon emission, which at leading power
 is independent of the spin state of the emitters. The additional
 information in the accepted real-emission state resides mainly in the
-polarization of the emitted gluon, whose azimuthal imprint on a subsequent
+polarization of the emitted parton, whose azimuthal imprint on a subsequent
 branching carries the kernel coefficients of Table~\ref{tab:branch2},
 which vanish in the soft region and are sizable only for rare symmetric
 splittings. In the polarized observables the residual effect is reduced further. The
@@ -1818,8 +1818,8 @@ real-emission contributions for both the QCD Compton and boson-gluon fusion
 channels, together with the virtual corrections and collinear counterterms
 needed for NLO event generation. Integrated cross sections agree with the
 fixed-order program \POLDIS\ at the permille or better level for the dominant
-channels and, within the quoted uncertainties, at sub-percent to percent-level
-precision for the smaller polarized interference contributions.
+channels and, within the quoted uncertainties, at the sub-percent to percent
+level for the smaller polarized interference contributions.
 The parton-level comparison without subsequent shower evolution separates the
 accepted POWHEG real-emission kinematics from the shower-interface
 reconstruction, and provides the differential validation used for the inclusive
@@ -1838,11 +1838,10 @@ hard-event normalization or POWHEG emission choice. We introduced third-jet
 hardness observables, hard-plane third-jet azimuths, and azimuthal
 $\cos 2\phi$ moments as exploratory probes of this additional spin information
 in showered events. For the longitudinally polarized DIS setup considered here,
-the Born-level spin-density initialization can have a visible impact on
-shower-sensitive observables, while the additional spin information from the
+the Born-level spin-density initialization produces a visible effect in several
+third-jet-sensitive observables, while the additional spin information from the
 accepted real-emission configuration is not resolved as a separate effect within
-the present observable set. We also checked fourth-jet angular and asymmetry
-observables, omitted here for clarity, and found the same conclusion.
+the present observable set.
 As discussed in Section~\ref{sec:real-emission-spin-shower}, this outcome
 is expected from the structure of the construction, in which the hardest
 emission is identical in the two settings and the residual correlations
@@ -1854,12 +1853,12 @@ shower and jet observables, beyond the exploratory set considered here,
 would map out where measurements are most sensitive to the Born-level
 spin-density initialization, and a quantitative study of the stability of
 the spin-on versus spin-disabled differences under variations of shower
-and hadronization settings would sharpen this comparison. More
+and hadronization settings would sharpen this comparison.
+The polarized DIS hard process and the spin-correlation treatment described
+here will be made publicly available in a future \Herwig\ release. More
 broadly, the formalism developed here provides the ingredients required to treat
 polarized hard scattering in \Herwig\ beyond DIS, opening the way to polarized
 processes at hadron-hadron and lepton-hadron colliders.
-The polarized DIS hard process and the spin-correlation treatment described
-here will be made publicly available in a future \Herwig\ release.
 
 \section*{Acknowledgments}
 We thank Daniel de Florian for useful discussions and for providing the \POLDIS\ reference calculation used for validation. AP acknowledges support from the US Department of Energy, Office of Science, Office of Nuclear Physics under Award Number DE-SC0025728 and from the National Science Foundation under Grant No.\ PHY 2210161.
