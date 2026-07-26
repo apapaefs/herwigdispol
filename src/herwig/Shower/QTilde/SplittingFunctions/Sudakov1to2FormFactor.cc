@@ -851,7 +851,8 @@ double Sudakov1to2FormFactor::generatePhiBackward(ShowerParticle & particle,
     return Constants::twopi*UseRandom::rnd();
   // get the kinematic variables
   double z = kinematics->z();
-  Energy2 t = (1.-z)*sqr(kinematics->scale())/z;
+  const Energy2 qtilde2 = sqr(kinematics->scale());
+  Energy2 t = (1.-z)*qtilde2/z;
   Energy pT = kinematics->pT();
   // if soft correlations
   bool softAllowed = dynamic_ptr_cast<tcQTildeShowerHandlerPtr>(ShowerHandler::currentHandler())->softCorrelations() &&
@@ -931,7 +932,8 @@ double Sudakov1to2FormFactor::generatePhiBackward(ShowerParticle & particle,
     if(!isPolarized())
       wgts = backwardPhiWeights(z,t,ids,rho);
     else {
-      RhoDMatrix H = calculateHMatrix(beam,ids[0],x,t);
+      RhoDMatrix H =
+        calculateHMatrix(beam,ids[0],x/z,effectivePDFScale(qtilde2));
       wgts = backwardPhiWeights(z,t,ids,rho,H);
     }
   }

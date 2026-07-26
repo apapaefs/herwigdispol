@@ -21,6 +21,7 @@
 #include "ThePEG/Persistency/PersistentIStream.h"
 #include "ThePEG/Utilities/EnumIO.h"
 #include "Herwig/Shower/QTilde/QTildeShowerHandler.h"
+#include <cmath>
 
 using namespace Herwig;
 
@@ -326,13 +327,18 @@ bool SudakovFormFactor::PDFVeto(const Energy2 t, const double x, const double z,
   return UseRandom::rnd() > ratio;
 }
 
+Energy2 SudakovFormFactor::effectivePDFScale(Energy2 t, double factor) const {
+  Energy2 scale =
+    t*sqr(ShowerHandler::currentHandler()->factorizationScaleFactor()*factor);
+  return max(scale,sqr(freeze_));
+}
+
 double SudakovFormFactor::PDFVetoRatio(const Energy2 t, const double x, const double z,
                                        const tcPDPtr parton0, const tcPDPtr parton1,
                                        Ptr<BeamParticleData>::transient_const_pointer beam,
                                        const RhoDMatrix & rho, double factor) const {
   assert(pdf_);
-  Energy2 theScale = t * sqr(ShowerHandler::currentHandler()->factorizationScaleFactor()*factor);
-  if (theScale < sqr(freeze_)) theScale = sqr(freeze_);
+  const Energy2 theScale = effectivePDFScale(t,factor);
 
   const double newpdf=pdf_->xfx(beam,parton0,theScale,x/z);
   if(newpdf<=0.) return 0.;
@@ -400,7 +406,59 @@ double SudakovFormFactor::PDFVetoRatio(const Energy2 t, const double x, const do
       for(unsigned int iy=0;iy<ispin;++iy)
         den += HOld(ix,iy)*rho(ix,iy);
     // numerator of the weight
-    ratio *= initialStatePolarizationWeight(z,HNew,rho);
+    const double numerator = initialStatePolarizationWeight(z,HNew,rho);
+    const double denReal = den.real();
+    const double denImag = den.imag();
+    const double realityTolerance = 1e-10*denReal;
+    if(!std::isfinite(numerator) ||
+       !std::isfinite(denReal) || !std::isfinite(denImag) ||
+       denReal<=0. || abs(denImag)>realityTolerance ||
+       numerator < -1e-12) {
+      throw Exception()
+        << "SudakovFormFactor::PDFVetoRatio invalid polarized PDF "
+        << "normalization: numerator=" << numerator
+        << ", HOld:rho=" << den
+        << ", reality tolerance=" << realityTolerance
+        << ", Sudakov=" << name()
+        << ", parent=" << parton0->PDGName()
+        << ", child=" << parton1->PDGName()
+        << ", x=" << x << ", z=" << z
+        << ", qtilde2=" << t/GeV2 << " GeV2"
+        << ", PDF scale=" << theScale/GeV2 << " GeV2"
+        << Exception::runerror;
+    }
+    // Analytically the numerator is non-negative.  Permit only round-off
+    // excursions below zero at the physical boundary.
+    const double physicalNumerator = numerator < 0. ? 0. : numerator;
+    const double polarizedRatio = physicalNumerator/(2.*denReal);
+    if(!std::isfinite(polarizedRatio) || polarizedRatio<0.) {
+      throw Exception()
+        << "SudakovFormFactor::PDFVetoRatio invalid polarized PDF "
+        << "ratio: numerator=" << numerator
+        << ", HOld:rho=" << den
+        << ", Sudakov=" << name()
+        << ", parent=" << parton0->PDGName()
+        << ", child=" << parton1->PDGName()
+        << ", x=" << x << ", z=" << z
+        << ", qtilde2=" << t/GeV2 << " GeV2"
+        << ", PDF scale=" << theScale/GeV2 << " GeV2"
+        << Exception::runerror;
+    }
+    ratio *= polarizedRatio;
+    if(!std::isfinite(ratio) || ratio<0.) {
+      throw Exception()
+        << "SudakovFormFactor::PDFVetoRatio invalid final PDF ratio="
+        << ratio << ", spin factor=" << polarizedRatio
+        << ", numerator=" << numerator
+        << ", HOld:rho=" << den
+        << ", Sudakov=" << name()
+        << ", parent=" << parton0->PDGName()
+        << ", child=" << parton1->PDGName()
+        << ", x=" << x << ", z=" << z
+        << ", qtilde2=" << t/GeV2 << " GeV2"
+        << ", PDF scale=" << theScale/GeV2 << " GeV2"
+        << Exception::runerror;
+    }
   }
 
   if (ratio > maxpdf) {

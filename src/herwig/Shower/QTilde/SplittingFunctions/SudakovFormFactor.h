@@ -302,6 +302,12 @@ public:
    */
   RhoDMatrix calculateHMatrix(tcPDPtr beam, const tcPDPtr parton, double x, Energy2 scale);
 
+  /**
+   * Return the factorization-scaled, frozen PDF scale for an ISR
+   * evolution scale.
+   */
+  Energy2 effectivePDFScale(Energy2 t, double factor = 1.) const;
+
 protected:
 
   /**
