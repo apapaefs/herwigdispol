@@ -40,7 +40,7 @@
 \emailAdd{apapaefs@kennesaw.edu}
 \emailAdd{peter.richardson@durham.ac.uk}
 
-\abstract{We investigate polarized deep-inelastic scattering (DIS) in the context of fully exclusive Monte Carlo simulations for the Electron-Ion Collider (EIC). We present a next-to-leading-order (NLO) treatment of polarized DIS in \HerwigSeven\ using the POWHEG matching scheme, including neutral-current $\gamma/Z$ exchange and charged-current scattering. We also construct a spin-correlation treatment for NLO-matched events, first by initializing the shower from the spin-density matrix of the polarized DIS Born process and then by propagating the spin-density matrix of the accepted real-emission configuration without changing the POWHEG event weight or hardest-emission choice. We validate the integrated cross sections against fixed-order calculations, use parton-level comparisons without subsequent shower evolution to isolate the accepted POWHEG real-emission kinematics, and employ shower-level observables to test the numerical importance of the Born-level and real-emission spin information. We find that the Born-level spin-density initialization can have a visible impact on shower-sensitive observables, while the additional spin information from the accepted real-emission configuration is not resolved for the longitudinally polarized observables considered here.}
+\abstract{We investigate polarized deep-inelastic scattering (DIS) in the context of fully exclusive Monte Carlo simulations for the Electron-Ion Collider (EIC). We present a next-to-leading-order (NLO) treatment of polarized DIS in \HerwigSeven\ using the POWHEG matching scheme, including neutral-current $\gamma/Z$ exchange and charged-current scattering. We also construct a spin-correlation treatment for NLO-matched events, first by initializing the shower from the spin-density matrix of the polarized DIS Born process and then by propagating the spin-density matrix of the accepted real-emission configuration without changing the POWHEG event weight or hardest-emission choice. We validate the integrated cross sections against fixed-order calculations, use parton-level comparisons without subsequent shower evolution to isolate the accepted POWHEG real-emission kinematics, and employ shower-level observables to test the numerical importance of the Born-level and real-emission spin information. We find that the Born-level spin-density initialization can have a visible impact on shower-sensitive observables, while the additional spin information from the accepted real-emission configuration is not resolved as a robust separate effect within the independent-sample Monte Carlo precision for the longitudinally polarized observables considered here.}
 
 \begin{document}
 \begin{flushright}
@@ -1203,16 +1203,23 @@ $\mu_{R,\mathrm{em}}^2=(p_{T}^{B})^2=Q^2 x_\perp^2/4$, while the numerator PDF i
 real-emission ratio is evaluated at
 $\mu_{F,\mathrm{em}}^2=Q^2+(p_{T}^{B})^2
 =Q^2[1+(1-x_p)(1-z_p)z_p/x_p]$. The denominator PDF remains at the
-underlying-Born scale $Q^2$.  The displayed \Herwig\ scale envelope is obtained
-by applying the same factors $\kappa=1/2,1,2$ to these native scales.  This is
-different from the \POLDIS\ and independent fixed-order reference convention,
-where the central scale is $\mu_R^2=\mu_F^2=Q^2$ and the whole calculation is
-varied uniformly.
+underlying-Born scale $Q^2$.  The mapped incoming-parton polarization that
+multiplies this unpolarized carrier is constructed from
+$P_z\,\Delta f/f$ at the hard scale $Q^2$ and is kept fixed at this scale when
+$\kappa$ is varied.  Changing the scale of this ratio would first modify the
+$\mathcal{O}(\alpha_s)$ emission kernel beyond NLO.  The displayed \Herwig\
+scale envelope is therefore obtained by applying the same factors
+$\kappa=1/2,1,2$ to the generator-native coupling and ordinary-PDF scales,
+while retaining the hard-$Q^2$ polarized fraction.  This is different from the
+\POLDIS\ and independent fixed-order reference convention, where the central
+scale is $\mu_R^2=\mu_F^2=Q^2$ and the whole calculation, including the
+polarized PDFs, is varied uniformly.
 The integrated cross sections below are formed from the positive- and
 negative-weight samples for each helicity configuration. The correlated
-helicity weights used for the differential parton-level and shower-level
-validation plots are defined in
-Section~\ref{sec:correlated-helicity-weights}.
+helicity weights used for the differential parton-level validation plots are
+defined in Section~\ref{sec:correlated-helicity-weights}. The shower-level
+comparison instead uses independently generated physical-helicity samples, as
+described below.
 
 \subsubsection{Total DIS Cross Section}
 We validate the total DIS cross section at fixed cuts for the three
@@ -1619,9 +1626,24 @@ This separation allows us to disentangle two contributions. The comparison of
 polarized DIS spin-density initialization itself, while the comparison of
 \textbf{Full} with \textbf{Born-Only} tests the additional spin information
 carried by the accepted real-emission state.
-The shower-level analysis uses the same correlated-weight construction as the
-parton-level differential validation, following
-Section~\ref{sec:correlated-helicity-weights}.
+For the shower-level analysis, the four physical beam-helicity configurations
+are generated as independent hard-process samples for each of the three shower
+settings. This is required so that the hard process maintains the polarization
+information needed for the correct initialization of the polarized parton
+shower. An analysis-level correlated helicity weight on a shared hard-event
+history changes the weight used to fill a histogram, but it does not replace
+the spin-density matrix with which the shower was initialized and is therefore
+not a substitute for this test.
+
+For each physical helicity $h$, the NLO prediction is first formed as
+$\sigma_h=\sigma_h^{(+)}-\sigma_h^{(-)}$, after which the combinations in
+Eq.~\eqref{eq:helicity-combinations} are constructed. Statistical uncertainties
+are evaluated by subdividing each simulation into equivalent subsamples. In
+ratios and cumulative moments, the numerator and denominator are formed within
+each subsample before the ratio-of-means uncertainty is evaluated, retaining
+their Monte Carlo covariance. The three shower settings use the same generator
+definitions and run conditions but separate event samples; their realized
+event kinematics are not identified event by event.
 
 The shower-level observables are chosen to test the part of the event in which
 additional spin information from the accepted POWHEG emission would have the
@@ -1694,6 +1716,9 @@ For the spin-dependent moment we use the same unpolarized denominator,
 \end{equation}
 The cumulative form reduces the sensitivity to individual low-statistics tail
 bins while preserving the dependence on increasingly hard third-jet radiation.
+Each cumulative point contains all events above its threshold. Neighbouring
+points therefore share many of the same events and are statistically
+correlated; the uncertainty calculation accounts for this overlap.
 
 The comparison shown below is organized so that each observable is displayed
 both before and after hadronization, with the three configurations overlaid in
@@ -1706,7 +1731,8 @@ every panel.
   \includegraphics[width=0.47\linewidth]{figures/spinhad_ALLpT3OverpT1.pdf}
   \caption{Double-spin asymmetry in the resolved-emission hardness ratio
   $r_3=p_{T,3}^{B}/p_{T,1}^{B}$. Left: shower-level comparison before
-  hadronization. Right: the same comparison after hadronization.}
+  hadronization. Right: the same comparison after hadronization. The lower
+  panels give the ratio to \textbf{None}.}
   \label{fig:spincomp-pt3ratio}
 \end{figure}
 
@@ -1724,7 +1750,10 @@ every panel.
   $\mathrm{d}\sigma/\mathrm{d}\Delta\phi_{\mathrm{hard},3}$ and the lower row
   shows
   $\mathrm{d}\Delta\sigma/\mathrm{d}\Delta\phi_{\mathrm{hard},3}$. Left panels
-  are before hadronization. Right panels are after hadronization.}
+  are before hadronization. Right panels are after hadronization. The lower
+  panel within each plot gives the ratio to \textbf{None}. In the upper row,
+  the \textbf{Full} markers lie almost exactly underneath the
+  \textbf{Born-Only} markers and are therefore largely obscured.}
   \label{fig:spincomp-hardplane-angle}
 \end{figure}
 
@@ -1743,7 +1772,13 @@ every panel.
   unpolarized moment $C_{2}^{\mathrm{hard}}(r_{\mathrm{cut}})$ and the lower row
   shows the spin-dependent moment
   $\Delta C_{2}^{\mathrm{hard}}(r_{\mathrm{cut}})$. Left panels are before
-  hadronization. Right panels are after hadronization.}
+  hadronization. Right panels are after hadronization. Since the reference
+  moments can pass through zero, the lower panel within each plot shows the
+  absolute difference from \textbf{None}, rather than a ratio. These are
+  absolute shifts of the dimensionless moments: for example, $10^{-2}$ denotes
+  a shift of $0.01$, not a one-per-cent relative change. Neighbouring threshold
+  points are statistically correlated because their cumulative event samples
+  overlap.}
   \label{fig:spincomp-hardplane-moments}
 \end{figure}
 
@@ -1752,18 +1787,32 @@ Figs.~\ref{fig:spincomp-pt3ratio}--\ref{fig:spincomp-hardplane-moments}. In
 several of these third-jet-sensitive observables both the \textbf{Born-Only}
 and the \textbf{Full} predictions depart visibly from \textbf{None}, showing
 that the polarized DIS Born-level spin-density initialization changes the
-showered prediction relative to a spin-disabled simulation. Quantitatively, in
-the hard-third-jet region ($p_{T,B}^{\mathrm{jet3}}/p_{T,B}^{\mathrm{jet1}}\gtrsim0.7$)
-the shower spin correlations reduce $A_{LL}(r_3)$ by up to $\sim$4\% relative to
-\textbf{None}, both before and after hadronization. Within the
-precision of the runs shown here, however, \textbf{Full} and \textbf{Born-Only}
-agree to within $\sim$1\% and remain statistically indistinguishable, so the
-additional spin information carried by the accepted real-emission state is not
-resolved for the DIS setup and observables considered here. The same conclusion holds for the additional
-fourth-jet angular and asymmetry observables that we examined (not shown here).
+showered prediction relative to a spin-disabled simulation. In the three
+displayed bins above $r_3=8/15$, \textbf{Born-Only} reduces $A_{LL}(r_3)$ by
+$4.6$--$5.5\%$ relative to \textbf{None} before hadronization and by
+$4.5$--$8.1\%$ after hadronization. The covariance-aware comparison of the full
+$r_3$ distributions does not establish a statistically significant separation
+between \textbf{Full} and \textbf{Born-Only}. The largest local excursion is in
+the post-hadronization bin $2/3<r_3<4/5$, where \textbf{Full} is $4.9\%$ above
+\textbf{Born-Only}, corresponding to $2.9$ standard deviations before any
+account of the several correlated bins and observables examined. It is not
+reproduced before hadronization and is therefore not interpreted as a robust
+separate real-emission-spin effect. The additional fourth-jet angular and
+asymmetry observables that we examined (not shown) likewise reveal no coherent
+separation, although their lower rates limit the strength of that statement.
 For longitudinally polarized DIS in this kinematic region, the Born-level
 shower-spin initialization therefore captures the numerically relevant spin
 correlations.
+
+The polarized hard-plane azimuthal distribution in the lower row of
+Fig.~\ref{fig:spincomp-hardplane-angle} is particularly stable: within the
+Monte Carlo precision, it shows no appreciable shape separation among the
+three shower settings. This weak sensitivity is consistent with longitudinal
+helicity states providing no transverse spin direction at a single branching,
+while the third-jet sample is dominated by soft radiation whose leading
+contribution is spin independent. A helicity-dependent azimuthal reshaping must
+therefore be transmitted through at least one subsequent non-soft branching
+and is further diluted by shower evolution, jet clustering, and hadronization.
 
 The visible differences between the \textbf{Born-Only} and \textbf{None}
 configurations are of the expected type. Enabling the Born-seeded
@@ -1780,17 +1829,21 @@ $\Delta f/f$ varies appreciably. Enabling the chain also switches on the
 azimuthal correlations between successive shower emissions, which are
 present even for unpolarized beams. Both mechanisms act together in the
 comparisons shown here. Since the dijet system is fixed by the hard
-process, which is common to all three configurations, these effects first
-become visible in the radiation that resolves a third jet, consistent
+process definition, which is common to all three configurations, these effects
+first become visible in the radiation that resolves a third jet, consistent
 with the pattern observed above.
 
 By contrast, the absence of a resolvable difference between the \textbf{Full} and
 \textbf{Born-Only} configurations is consistent with the structure of the
-construction. The two settings share identical hardest-emission kinematics,
-azimuthal orientation, flavour channels, and event weights, so any
-difference must arise from correlations between the radiation that resolves
-a third jet and the hardest-emission system, and these are suppressed for
-several independent reasons. The small-$r_3$ region that dominates the
+construction. At the level of the generator probability law, the two settings
+use the same hard-event construction, flavour channels, event-weight
+prescription, and POWHEG hardest-emission distribution; only the spin-density
+information passed to the subsequent shower differs. They are generated as
+separate samples and therefore do not share identical realized event
+kinematics. A distribution-level difference must arise from correlations
+between the radiation that resolves a third jet and the hardest-emission
+system, and these are suppressed for several independent reasons. The
+small-$r_3$ region that dominates the
 third-jet rate is governed by soft-gluon emission, which at leading power
 is independent of the spin state of the emitters. The additional
 information in the accepted real-emission state resides mainly in the
@@ -1843,13 +1896,16 @@ $\cos 2\phi$ moments as exploratory probes of this additional spin information
 in showered events. For the longitudinally polarized DIS setup considered here,
 the Born-level spin-density initialization produces a visible effect in several
 third-jet-sensitive observables, while the additional spin information from the
-accepted real-emission configuration is not resolved as a separate effect within
-the present observable set.
+accepted real-emission configuration is not resolved as a robust separate
+effect within the independent-sample Monte Carlo precision of the present
+observable set. A local post-hadronization fluctuation in one hard-$r_3$ bin is
+not accompanied by a significant distribution-level separation or a coherent
+pre-hadronization counterpart.
 As discussed in Section~\ref{sec:real-emission-spin-shower}, this outcome
 is expected from the structure of the construction, in which the hardest
-emission is identical in the two settings and the residual correlations
-are soft-suppressed, kernel-suppressed for longitudinal polarization, and
-further diluted by showering, clustering, and hadronization.
+emission follows the same probability law in the two settings and the residual
+correlations are soft-suppressed, kernel-suppressed for longitudinal
+polarization, and further diluted by showering, clustering, and hadronization.
 
 A broader set of exclusive shower and jet observables would pin down where
 measurements are most sensitive to the Born-level spin-density initialization,
