@@ -9,10 +9,13 @@ from pathlib import Path
 
 def scripts_dir() -> Path:
     for root in Path(__file__).resolve().parents:
-        candidate = root / "DISPOL" / "scripts"
-        if candidate.exists():
-            return candidate
-    raise RuntimeError("Could not locate DISPOL/scripts")
+        for candidate in (
+            root / "DISPOL" / "scripts",
+            root / "workflow" / "dispol" / "scripts",
+        ):
+            if candidate.exists():
+                return candidate
+    raise RuntimeError("Could not locate the DIS workflow scripts")
 
 
 SCRIPT_DIR = scripts_dir()

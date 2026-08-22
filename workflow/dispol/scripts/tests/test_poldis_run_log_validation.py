@@ -7,16 +7,22 @@ from pathlib import Path
 
 def load_poldis_reference_module():
     for root in Path(__file__).resolve().parents:
-        script = root / "DISPOL" / "scripts" / "run_poldis_window_reference.py"
-        if script.exists():
-            sys.path.insert(0, str(script.parent))
-            spec = importlib.util.spec_from_file_location("run_poldis_window_reference", script)
-            module = importlib.util.module_from_spec(spec)
-            assert spec.loader is not None
-            sys.modules[spec.name] = module
-            spec.loader.exec_module(module)
-            return module
-    raise RuntimeError("Could not locate DISPOL/scripts/run_poldis_window_reference.py")
+        for script in (
+            root / "DISPOL" / "scripts" / "run_poldis_window_reference.py",
+            root / "workflow" / "dispol" / "scripts"
+            / "run_poldis_window_reference.py",
+        ):
+            if script.exists():
+                sys.path.insert(0, str(script.parent))
+                spec = importlib.util.spec_from_file_location(
+                    "run_poldis_window_reference", script
+                )
+                module = importlib.util.module_from_spec(spec)
+                assert spec.loader is not None
+                sys.modules[spec.name] = module
+                spec.loader.exec_module(module)
+                return module
+    raise RuntimeError("Could not locate run_poldis_window_reference.py")
 
 
 class POLDISRunLogValidationTests(unittest.TestCase):

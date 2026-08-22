@@ -10,10 +10,13 @@ import numpy as np
 
 def scripts_dir() -> Path:
     for root in Path(__file__).resolve().parents:
-        candidate = root / "DISPOL" / "scripts"
-        if (candidate / "analyze_DIS_polarized.py").exists():
-            return candidate
-    raise RuntimeError("Could not locate DISPOL/scripts")
+        for candidate in (
+            root / "DISPOL" / "scripts",
+            root / "workflow" / "dispol" / "scripts",
+        ):
+            if (candidate / "analyze_DIS_polarized.py").exists():
+                return candidate
+    raise RuntimeError("Could not locate the DIS workflow scripts")
 
 
 def load_rivet_postprocess_module():
