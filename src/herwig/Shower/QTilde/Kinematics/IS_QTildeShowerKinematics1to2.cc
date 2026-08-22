@@ -248,7 +248,10 @@ updateLast(tcPDPtr beam, const tShowerParticlePtr theLast,
     + theLast->x() * pVector + beta * ntemp;
   plast.rescaleMass();
   theLast->set5Momentum(plast);
-  theLast->spinInfo()->rhoMatrix(SudakovFormFactor()->calculateHMatrix(beam,theLast->dataPtr(),theLast->x(),sqr(scale())));
+  theLast->spinInfo()->rhoMatrix
+    (SudakovFormFactor()->calculateHMatrix
+     (beam,theLast->dataPtr(),theLast->x(),
+      SudakovFormFactor()->effectivePDFScale(sqr(scale()))));
 }
 
 
