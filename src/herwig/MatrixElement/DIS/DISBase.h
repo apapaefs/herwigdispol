@@ -22,6 +22,11 @@ using namespace ThePEG;
  * correlated helicity weights. Neutral- and charged-current subclasses
  * provide the current-specific Born and real-emission response factors.
  *
+ * In practice this is the shared map of a DIS event: which density was
+ * sampled, which scales were used, and how optional helicity weights sit on
+ * top of that event. The subclasses should only need to answer what current
+ * was exchanged and how its helicity algebra responds.
+ *
  * @see \ref DISBaseInterfaces "The interfaces"
  * defined for DISBase.
  */
@@ -129,7 +134,8 @@ public:
   virtual CrossSection dSigHatDR() const;
 
   /**
-   * Optional named event weights propagated through ThePEG/HepMC.
+   * Optional named event weights propagated through ThePEG/HepMC. These are
+   * multipliers for the already-sampled event, not standalone cross sections.
    */
   virtual std::map<std::string,double> generateOptionalWeights();
   //@}
@@ -191,6 +197,19 @@ protected:
   double longPol(const ThePEG::RhoDMatrix& rho) const;
 
   /**
+   * Polarization inputs for the physical extractor side containing hadron_.
+   * A non-unique match is deliberately returned as unpolarized with no
+   * difference PDF.
+   */
+  struct HadronBeamPolarizationData {
+    bool matched;
+    double longitudinal;
+    tcPDFPtr differencePDF;
+  };
+
+  HadronBeamPolarizationData hadronBeamPolarizationData() const;
+
+  /**
    * Return incoming rho matrices with the hadron-side longitudinal
    * polarization rebuilt from the same PDF ratio used in NLOWeight().
    * This keeps the Born ME and the analytic NLO terms aligned when
@@ -200,14 +219,15 @@ protected:
   std::pair<RhoDMatrix,RhoDMatrix> correctedLongitudinalRhoMatrices() const;
 
   /**
-   * Collinear projector weights for the quark and gluon counterterms.
-   * The default implementation reproduces the legacy scalar f_pol blend.
+   * Reduced collinear projectors for the quark and gluon counterterms.
+   * The polarized entries multiply Pz*Delta f/q directly and therefore
+   * remain finite when the Born difference PDF crosses zero.
    */
   struct CollinearBlendWeights {
     double qUnpolarized;
-    double qPolarized;
+    double qPolarizedReduced;
     double gUnpolarized;
-    double gPolarized;
+    double gPolarizedReduced;
   };
 
   /**
@@ -252,34 +272,11 @@ protected:
   virtual bool useMappedPolarizedEmissionKernel() const;
 
   /**
-   * Event-local neutral-current response coefficients used by the common NLO
-   * term assembly. The default DISBase fallback is sufficient for photon-like
-   * channels; full neutral-current DIS overrides this to keep gamma/Z parity
-   * structures separated.
-   */
-  struct NeutralCurrentResponse {
-    double qOddResponse;
-    double gOddResponse;
-  };
-
-  /**
-   * Extract event-local neutral-current response coefficients. Returns false
-   * when the common photon-like fallback should be used.
-   */
-  virtual bool neutralCurrentResponse(tcPDPtr lin, tcPDPtr lout,
-                                      tcPDPtr qin, tcPDPtr qout,
-                                      Energy2 scale,
-                                      double Pl,
-                                      double PqBorn,
-                                      double PqMapped,
-                                      double ell,
-                                      NeutralCurrentResponse &out) const;
-
-  /**
    * Return the alphaS scale used in the POWHEG hardest-emission
    * generation. By default this is the native POWHEG transverse-momentum
    * scale pT^2 = q2*xT^2/4. Optionally it can be forced to Q^2 for direct
-   * comparison to fixed-order reference calculations.
+   * comparison to fixed-order reference calculations. The configured
+   * ScaleFactor wraps either choice so variations remain a common convention.
   */
   Energy2 powhegEmissionAlphaSScale(Energy2 q2, double xT) const;
 
@@ -287,9 +284,17 @@ protected:
    * Return the PDF numerator scale used in the POWHEG/MEC emission kernels.
    * By default this remains the native mapped emission scale. Optionally it
    * can be forced to Q^2 together with the alphaS scale for direct comparison
-   * to fixed-order reference calculations.
+   * to fixed-order reference calculations. ScaleFactor is applied after that
+   * central-scale choice, matching powhegEmissionAlphaSScale().
    */
   Energy2 powhegEmissionPDFScale(Energy2 q2, Energy2 mappedScale) const;
+
+  /**
+   * Apply the optional common lower boundary to a squared perturbative or
+   * PDF scale.  The default zero boundary leaves all historical choices
+   * unchanged.
+   */
+  Energy2 flooredScale(Energy2 value) const;
 
   /**
    * Return the fixed-order alphaS value used for POWHEG/MEC emission
@@ -419,7 +424,8 @@ protected:
                                     double partonPolarization) const;
 
   /**
-   * Build correlated helicity weights for Rivet.
+   * Build correlated helicity weights for Rivet. The weights are normalized to
+   * the sampled event density; ThePEG applies the carrier event weight later.
    */
   std::map<std::string,double> generateRivetWeights() const;
 
@@ -746,6 +752,12 @@ private:
    *  Multiplicative factor for the dynamic scale option.
    */
   double scaleFact_;
+
+  /**
+   * Optional common lower boundary for factorization, renormalization, and
+   * POWHEG-emission PDF scales.
+   */
+  Energy minimumScale_;
 
   /**
    *  Whether to generate the leading, positive NLO, or negative NLO stream.

@@ -26,8 +26,59 @@
 #include "ThePEG/Handlers/StandardXComb.h"
 #include "ThePEG/Cuts/Cuts.h"
 #include "Herwig/MatrixElement/HardVertex.h"
+#include <algorithm>
 
-using namespace Herwig;MEQCD2to2::MEQCD2to2():_maxflavour(5),_process(0) {
+using namespace Herwig;
+
+namespace {
+
+RhoDMatrix physicalIncomingRho(const RhoDMatrix & rho) {
+  if(rho.iSpin()!=3) return rho;
+
+  // RhoDMatrix initializes a generic spin-one state as I/3. Incoming QCD
+  // gluons are massless, so project away the unphysical helicity-zero state
+  // and normalize the transverse 2x2 block. PolarizedPartonExtractor already
+  // supplies this form, while this projection preserves the legacy
+  // unpolarized result for an ordinary PartonExtractor.
+  RhoDMatrix physical(PDT::Spin1,false);
+  const unsigned int transverse[2] = {0,2};
+  double trace = 0.;
+  for(unsigned int ix=0;ix<2;++ix)
+    trace += real(rho(transverse[ix],transverse[ix]));
+  if(trace<=0.) return physical;
+  for(unsigned int ix=0;ix<2;++ix)
+    for(unsigned int iy=0;iy<2;++iy)
+      physical(transverse[ix],transverse[iy]) =
+        rho(transverse[ix],transverse[iy])/trace;
+  return physical;
+}
+
+pair<RhoDMatrix,RhoDMatrix> physicalIncomingRhos(
+    const pair<RhoDMatrix,RhoDMatrix> & rhoin) {
+  return make_pair(physicalIncomingRho(rhoin.first),
+                   physicalIncomingRho(rhoin.second));
+}
+
+double contractedNorm(
+    const ProductionMatrixElement & me,
+    const pair<RhoDMatrix,RhoDMatrix> & rhoin) {
+  // Preserve the legacy raw incoming-helicity sum for rho=I/2. For a pure
+  // helicity state this gives a physical helicity cross section whose
+  // average over PP, PM, MP and MM is the unpolarized result.
+  return std::max(0.,4.*me.average(rhoin.first,rhoin.second));
+}
+
+double contractedInterference(
+    const ProductionMatrixElement & first,
+    const ProductionMatrixElement & second,
+    const pair<RhoDMatrix,RhoDMatrix> & rhoin) {
+  return 4.*real(first.average(second,rhoin.first,rhoin.second));
+}
+
+}
+
+MEQCD2to2::MEQCD2to2()
+  : _maxflavour(5), _process(0), _scalePreFactor(1.) {
   massOption(vector<unsigned int>(2,0));
 }
 
@@ -60,6 +111,10 @@ IVector MEQCD2to2::getReferences() {
 void MEQCD2to2::doinit() {
   // call the base class
   HwMEBase::doinit();
+  if(_scalePreFactor <= 0.)
+    throw InitException()
+      << "MEQCD2to2::ScalePreFactor must be strictly positive."
+      << Exception::runerror;
   // get the vedrtex pointers from the SM object
   tcHwSMPtr hwsm= dynamic_ptr_cast<tcHwSMPtr>(standardModel());
   // do the initialisation
@@ -81,17 +136,19 @@ void MEQCD2to2::doinit() {
 
 Energy2 MEQCD2to2::scale() const {
   Energy2 s(sHat()),u(uHat()),t(tHat());
-  return 2.*s*t*u/(s*s+t*t+u*u);
+  return _scalePreFactor*2.*s*t*u/(s*s+t*t+u*u);
 }
 
 void MEQCD2to2::persistentOutput(PersistentOStream & os) const {
   os << _ggggvertex << _gggvertex << _qqgvertex << _maxflavour 
-     << _process << _gluon << _quark << _antiquark;
+     << _process << _gluon << _quark << _antiquark << _scalePreFactor;
 }
 
-void MEQCD2to2::persistentInput(PersistentIStream & is, int) {
+void MEQCD2to2::persistentInput(PersistentIStream & is, int version) {
   is >> _ggggvertex >> _gggvertex >> _qqgvertex >> _maxflavour 
      >> _process >> _gluon >> _quark >> _antiquark;
+  _scalePreFactor = 1.;
+  if(version >= 1) is >> _scalePreFactor;
 }
 
 unsigned int MEQCD2to2::orderInAlphaS() const {
@@ -105,7 +162,7 @@ unsigned int MEQCD2to2::orderInAlphaEW() const {
 // The following static variable is needed for the type
 // description system in ThePEG.
 DescribeClass<MEQCD2to2,HwMEBase>
-describeHerwigMEQCD2to2("Herwig::MEQCD2to2", "HwMEHadron.so");
+describeHerwigMEQCD2to2("Herwig::MEQCD2to2", "HwMEHadron.so", 1);
 
 void MEQCD2to2::Init() {
 
@@ -117,6 +174,12 @@ void MEQCD2to2::Init() {
     ("MaximumFlavour",
      "The maximum flavour of the quarks in the process",
      &MEQCD2to2::_maxflavour, 5, 1, 5,
+     false, false, Interface::limited);
+
+  static Parameter<MEQCD2to2,double> interfaceScalePreFactor
+    ("ScalePreFactor",
+     "Positive multiplicative prefactor for the squared hard scale.",
+     &MEQCD2to2::_scalePreFactor, 1.0, 0.0, 10.0,
      false, false, Interface::limited);
 
   static Switch<MEQCD2to2,unsigned int> interfaceProcess
@@ -188,11 +251,18 @@ double MEQCD2to2::gg2qqbarME(vector<VectorWaveFunction> &g1,
 			     unsigned int iflow) const {
   // scale
   Energy2 mt(scale());
-  // matrix element to be stored
-  if(iflow!=0) _me.reset(ProductionMatrixElement(PDT::Spin1,PDT::Spin1,
-						 PDT::Spin1Half,PDT::Spin1Half));
-  // calculate the matrix element
-  double output(0.),sumdiag[3]={0.,0.,0.},sumflow[2]={0.,0.};
+  ProductionMatrixElement diagME[3] = {
+    ProductionMatrixElement(PDT::Spin1,PDT::Spin1,
+                            PDT::Spin1Half,PDT::Spin1Half),
+    ProductionMatrixElement(PDT::Spin1,PDT::Spin1,
+                            PDT::Spin1Half,PDT::Spin1Half),
+    ProductionMatrixElement(PDT::Spin1,PDT::Spin1,
+                            PDT::Spin1Half,PDT::Spin1Half)};
+  ProductionMatrixElement flowME[2] = {
+    ProductionMatrixElement(PDT::Spin1,PDT::Spin1,
+                            PDT::Spin1Half,PDT::Spin1Half),
+    ProductionMatrixElement(PDT::Spin1,PDT::Spin1,
+                            PDT::Spin1Half,PDT::Spin1Half)};
   Complex diag[3],flow[2];
   VectorWaveFunction interv;
   SpinorWaveFunction inters;
@@ -214,18 +284,25 @@ double MEQCD2to2::gg2qqbarME(vector<VectorWaveFunction> &g1,
 	  // colour flows
 	  flow[0]=diag[0]+diag[2];
 	  flow[1]=diag[1]-diag[2];
-	  // sums
-	  for(unsigned int ix=0;ix<3;++ix) sumdiag[ix] += norm(diag[ix]);
-	  for(unsigned int ix=0;ix<2;++ix) sumflow[ix] += norm(flow[ix]);
-	  // total
-	  output +=real(flow[0]*conj(flow[0])+flow[1]*conj(flow[1])
-			-0.25*flow[0]*conj(flow[1]));
-	  // store the me if needed
-	  if(iflow!=0) _me(2*ihel1,2*ihel2,ohel1,ohel2)=flow[iflow-1];
+	  for(unsigned int ix=0;ix<3;++ix)
+	    diagME[ix](2*ihel1,2*ihel2,ohel1,ohel2)=diag[ix];
+	  for(unsigned int ix=0;ix<2;++ix)
+	    flowME[ix](2*ihel1,2*ihel2,ohel1,ohel2)=flow[ix];
 	}
       }
     }
   }
+  const pair<RhoDMatrix,RhoDMatrix> rhoin =
+    physicalIncomingRhos(getRhoMatrices());
+  double sumdiag[3],sumflow[2];
+  for(unsigned int ix=0;ix<3;++ix)
+    sumdiag[ix]=contractedNorm(diagME[ix],rhoin);
+  for(unsigned int ix=0;ix<2;++ix)
+    sumflow[ix]=contractedNorm(flowME[ix],rhoin);
+  const double output =
+    sumflow[0]+sumflow[1]
+    -0.25*contractedInterference(flowME[0],flowME[1],rhoin);
+  if(iflow!=0) _me.reset(flowME[iflow-1]);
   // test code vs me from ESW
   //Energy2 u(uHat()),t(tHat()),s(sHat());
   //double alphas(4.*pi*SM().alphaS(mt));
@@ -247,11 +324,18 @@ double MEQCD2to2::qqbar2ggME(vector<SpinorWaveFunction> & q,
 			     unsigned int iflow) const {
   // scale
   Energy2 mt(scale());
-  // matrix element to be stored
-  if(iflow!=0) _me.reset(ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1Half,
-						 PDT::Spin1,PDT::Spin1));
-  // calculate the matrix element
-  double output(0.),sumdiag[3]={0.,0.,0.},sumflow[2]={0.,0.};
+  ProductionMatrixElement diagME[3] = {
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1Half,
+                            PDT::Spin1,PDT::Spin1),
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1Half,
+                            PDT::Spin1,PDT::Spin1),
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1Half,
+                            PDT::Spin1,PDT::Spin1)};
+  ProductionMatrixElement flowME[2] = {
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1Half,
+                            PDT::Spin1,PDT::Spin1),
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1Half,
+                            PDT::Spin1,PDT::Spin1)};
   Complex diag[3],flow[2];
   VectorWaveFunction interv;
   SpinorWaveFunction inters;
@@ -273,18 +357,25 @@ double MEQCD2to2::qqbar2ggME(vector<SpinorWaveFunction> & q,
 	  // colour flows
 	  flow[0]=diag[0]-diag[2];
 	  flow[1]=diag[1]+diag[2];
-	  // sums
-	  for(unsigned int ix=0;ix<3;++ix) sumdiag[ix] += norm(diag[ix]);
-	  for(unsigned int ix=0;ix<2;++ix) sumflow[ix] += norm(flow[ix]);
-	  // total
-	  output +=real(flow[0]*conj(flow[0])+flow[1]*conj(flow[1])
-			-0.25*flow[0]*conj(flow[1]));
-	  // store the me if needed
-	  if(iflow!=0) _me(ihel1,ihel2,2*ohel1,2*ohel2)=flow[iflow-1];
+	  for(unsigned int ix=0;ix<3;++ix)
+	    diagME[ix](ihel1,ihel2,2*ohel1,2*ohel2)=diag[ix];
+	  for(unsigned int ix=0;ix<2;++ix)
+	    flowME[ix](ihel1,ihel2,2*ohel1,2*ohel2)=flow[ix];
 	}
       }
     }
   }
+  const pair<RhoDMatrix,RhoDMatrix> rhoin =
+    physicalIncomingRhos(getRhoMatrices());
+  double sumdiag[3],sumflow[2];
+  for(unsigned int ix=0;ix<3;++ix)
+    sumdiag[ix]=contractedNorm(diagME[ix],rhoin);
+  for(unsigned int ix=0;ix<2;++ix)
+    sumflow[ix]=contractedNorm(flowME[ix],rhoin);
+  const double output =
+    sumflow[0]+sumflow[1]
+    -0.25*contractedInterference(flowME[0],flowME[1],rhoin);
+  if(iflow!=0) _me.reset(flowME[iflow-1]);
   // test code vs me from ESW
   //Energy2 u(uHat()),t(tHat()),s(sHat());
   //double alphas(4.*pi*SM().alphaS(mt));
@@ -306,11 +397,18 @@ double MEQCD2to2::qg2qgME(vector<SpinorWaveFunction> & qin,
 			  unsigned int iflow) const {
   // scale
   Energy2 mt(scale());
-  // matrix element to be stored
-  if(iflow!=0) _me.reset(ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1,
-						 PDT::Spin1Half,PDT::Spin1));
-  // calculate the matrix element
-  double output(0.),sumdiag[3]={0.,0.,0.},sumflow[2]={0.,0.};
+  ProductionMatrixElement diagME[3] = {
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1,
+                            PDT::Spin1Half,PDT::Spin1),
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1,
+                            PDT::Spin1Half,PDT::Spin1),
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1,
+                            PDT::Spin1Half,PDT::Spin1)};
+  ProductionMatrixElement flowME[2] = {
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1,
+                            PDT::Spin1Half,PDT::Spin1),
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1,
+                            PDT::Spin1Half,PDT::Spin1)};
   Complex diag[3],flow[2];
   VectorWaveFunction interv;
   SpinorWaveFunction inters,inters2;
@@ -332,18 +430,25 @@ double MEQCD2to2::qg2qgME(vector<SpinorWaveFunction> & qin,
 	  // colour flows
 	  flow[0]=diag[0]-diag[2];
 	  flow[1]=diag[1]+diag[2];
-	  // sums
-	  for(unsigned int ix=0;ix<3;++ix) sumdiag[ix] += norm(diag[ix]);
-	  for(unsigned int ix=0;ix<2;++ix) sumflow[ix] += norm(flow[ix]);
-	  // total
-	  output +=real(flow[0]*conj(flow[0])+flow[1]*conj(flow[1])
-			-0.25*flow[0]*conj(flow[1]));
-	  // store the me if needed
-	  if(iflow!=0) _me(ihel1,2*ihel2,ohel1,2*ohel2)=flow[iflow-1];
+	  for(unsigned int ix=0;ix<3;++ix)
+	    diagME[ix](ihel1,2*ihel2,ohel1,2*ohel2)=diag[ix];
+	  for(unsigned int ix=0;ix<2;++ix)
+	    flowME[ix](ihel1,2*ihel2,ohel1,2*ohel2)=flow[ix];
 	}
       }
     }
   }
+  const pair<RhoDMatrix,RhoDMatrix> rhoin =
+    physicalIncomingRhos(getRhoMatrices());
+  double sumdiag[3],sumflow[2];
+  for(unsigned int ix=0;ix<3;++ix)
+    sumdiag[ix]=contractedNorm(diagME[ix],rhoin);
+  for(unsigned int ix=0;ix<2;++ix)
+    sumflow[ix]=contractedNorm(flowME[ix],rhoin);
+  const double output =
+    sumflow[0]+sumflow[1]
+    -0.25*contractedInterference(flowME[0],flowME[1],rhoin);
+  if(iflow!=0) _me.reset(flowME[iflow-1]);
   // test code vs me from ESW
   //Energy2 u(uHat()),t(tHat()),s(sHat());
   //double alphas(4.*pi*SM().alphaS(mt));
@@ -366,11 +471,14 @@ double MEQCD2to2::gg2ggME(vector<VectorWaveFunction> &g1,vector<VectorWaveFuncti
   static const double c2 = 4.*(-0.25*9.                 +1.-0.75/9.);
   // scale
   Energy2 mt(scale());
-  //    // matrix element to be stored
-  if(iflow!=0) _me.reset(ProductionMatrixElement(PDT::Spin1,PDT::Spin1,
-						 PDT::Spin1,PDT::Spin1));
-  // calculate the matrix element
-  double output(0.),sumdiag[3]={0.,0.,0.},sumflow[3]={0.,0.,0.};
+  ProductionMatrixElement diagME[3] = {
+    ProductionMatrixElement(PDT::Spin1,PDT::Spin1,PDT::Spin1,PDT::Spin1),
+    ProductionMatrixElement(PDT::Spin1,PDT::Spin1,PDT::Spin1,PDT::Spin1),
+    ProductionMatrixElement(PDT::Spin1,PDT::Spin1,PDT::Spin1,PDT::Spin1)};
+  ProductionMatrixElement flowME[3] = {
+    ProductionMatrixElement(PDT::Spin1,PDT::Spin1,PDT::Spin1,PDT::Spin1),
+    ProductionMatrixElement(PDT::Spin1,PDT::Spin1,PDT::Spin1,PDT::Spin1),
+    ProductionMatrixElement(PDT::Spin1,PDT::Spin1,PDT::Spin1,PDT::Spin1)};
   Complex diag[3],flow[3];
   for(unsigned int ihel1=0;ihel1<2;++ihel1) { 
     for(unsigned int ihel2=0;ihel2<2;++ihel2) {
@@ -389,21 +497,28 @@ double MEQCD2to2::gg2ggME(vector<VectorWaveFunction> &g1,vector<VectorWaveFuncti
 	  flow[0] =  diag[0]-diag[2];
 	  flow[1] = -diag[0]-diag[1];
 	  flow[2] =  diag[1]+diag[2];
-	  // sums
 	  for(unsigned int ix=0;ix<3;++ix) {
-	    sumdiag[ix] += norm(diag[ix]);
-	    sumflow[ix] += norm(flow[ix]);
+	    diagME[ix](2*ihel1,2*ihel2,2*ohel1,2*ohel2)=diag[ix];
+	    flowME[ix](2*ihel1,2*ihel2,2*ohel1,2*ohel2)=flow[ix];
 	  }
-	  // total 
-	  output += c1*(norm(flow[0])+norm(flow[1])+norm(flow[2]))
-	    +2.*c2*real(flow[0]*conj(flow[1])+flow[0]*conj(flow[2])+
-			flow[1]*conj(flow[2]));
-	  // store the me if needed
-	  if(iflow!=0) _me(2*ihel1,2*ihel2,2*ohel1,2*ohel2)=flow[iflow-1];
 	}
       }
     }
   }
+  const pair<RhoDMatrix,RhoDMatrix> rhoin =
+    physicalIncomingRhos(getRhoMatrices());
+  double sumdiag[3],sumflow[3];
+  for(unsigned int ix=0;ix<3;++ix) {
+    sumdiag[ix]=contractedNorm(diagME[ix],rhoin);
+    sumflow[ix]=contractedNorm(flowME[ix],rhoin);
+  }
+  double output =
+    c1*(sumflow[0]+sumflow[1]+sumflow[2])
+    +2.*c2*(
+      contractedInterference(flowME[0],flowME[1],rhoin)
+      +contractedInterference(flowME[0],flowME[2],rhoin)
+      +contractedInterference(flowME[1],flowME[2],rhoin));
+  if(iflow!=0) _me.reset(flowME[iflow-1]);
   // spin, colour and identical particle factorsxs
   output /= 4.*64.*2.;
   // test code vs me from ESW
@@ -429,11 +544,18 @@ double MEQCD2to2::qbarg2qbargME(vector<SpinorBarWaveFunction> & qin,
 				unsigned int iflow) const {
   // scale
   Energy2 mt(scale());
-  // matrix element to be stored
-  if(iflow!=0) _me.reset(ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1,
-						 PDT::Spin1Half,PDT::Spin1));
-  // calculate the matrix element
-  double output(0.),sumdiag[3]={0.,0.,0.},sumflow[2]={0.,0.};
+  ProductionMatrixElement diagME[3] = {
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1,
+                            PDT::Spin1Half,PDT::Spin1),
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1,
+                            PDT::Spin1Half,PDT::Spin1),
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1,
+                            PDT::Spin1Half,PDT::Spin1)};
+  ProductionMatrixElement flowME[2] = {
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1,
+                            PDT::Spin1Half,PDT::Spin1),
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1,
+                            PDT::Spin1Half,PDT::Spin1)};
   Complex diag[3],flow[2];
   VectorWaveFunction interv;
   SpinorBarWaveFunction inters,inters2;
@@ -455,18 +577,25 @@ double MEQCD2to2::qbarg2qbargME(vector<SpinorBarWaveFunction> & qin,
 	  // colour flows
 	  flow[0]=diag[0]+diag[2];
 	  flow[1]=diag[1]-diag[2];
-	  // sums
-	  for(unsigned int ix=0;ix<3;++ix) sumdiag[ix] += norm(diag[ix]);
-	  for(unsigned int ix=0;ix<2;++ix) sumflow[ix] += norm(flow[ix]);
-	  // total
-	  output +=real(flow[0]*conj(flow[0])+flow[1]*conj(flow[1])
-			-0.25*flow[0]*conj(flow[1]));
-	  // store the me if needed
-	  if(iflow!=0) _me(ihel1,2*ihel2,ohel1,2*ohel2)=flow[iflow-1];
+	  for(unsigned int ix=0;ix<3;++ix)
+	    diagME[ix](ihel1,2*ihel2,ohel1,2*ohel2)=diag[ix];
+	  for(unsigned int ix=0;ix<2;++ix)
+	    flowME[ix](ihel1,2*ihel2,ohel1,2*ohel2)=flow[ix];
 	}
       }
     }
   }
+  const pair<RhoDMatrix,RhoDMatrix> rhoin =
+    physicalIncomingRhos(getRhoMatrices());
+  double sumdiag[3],sumflow[2];
+  for(unsigned int ix=0;ix<3;++ix)
+    sumdiag[ix]=contractedNorm(diagME[ix],rhoin);
+  for(unsigned int ix=0;ix<2;++ix)
+    sumflow[ix]=contractedNorm(flowME[ix],rhoin);
+  const double output =
+    sumflow[0]+sumflow[1]
+    -0.25*contractedInterference(flowME[0],flowME[1],rhoin);
+  if(iflow!=0) _me.reset(flowME[iflow-1]);
   // test code vs me from ESW
   //Energy2 u(uHat()),t(tHat()),s(sHat());
   //double alphas(4.*pi*SM().alphaS(mt));
@@ -490,11 +619,11 @@ double MEQCD2to2::qq2qqME(vector<SpinorWaveFunction> & q1,
   bool identical(q1[0].id()==q2[0].id());
   // scale
   Energy2 mt(scale());
-  // matrix element to be stored
-  if(iflow!=0) _me.reset(ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1Half,
-						 PDT::Spin1Half,PDT::Spin1Half));
-  // calculate the matrix element
-  double output(0.),sumdiag[2]={0.,0.};
+  ProductionMatrixElement diagME[2] = {
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1Half,
+                            PDT::Spin1Half,PDT::Spin1Half),
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1Half,
+                            PDT::Spin1Half,PDT::Spin1Half)};
   Complex diag[2];
   VectorWaveFunction interv;
   for(unsigned int ihel1=0;ihel1<2;++ihel1) { 
@@ -510,17 +639,21 @@ double MEQCD2to2::qq2qqME(vector<SpinorWaveFunction> & q1,
 	    diag[1]=_qqgvertex->evaluate(mt,q2[ihel2],q3[ohel1],interv);
 	  }
 	  else diag[1]=0.;
-	  // sum of diagrams
-	  for(unsigned int ix=0;ix<2;++ix) sumdiag[ix] += norm(diag[ix]);
-	  // total
-	  output +=real(diag[0]*conj(diag[0])+diag[1]*conj(diag[1])
-			+2./3.*diag[0]*conj(diag[1]));
-	  // store the me if needed
-	  if(iflow!=0) _me(ihel1,ihel2,ohel1,ohel2)=diag[iflow-1];
+	  for(unsigned int ix=0;ix<2;++ix)
+	    diagME[ix](ihel1,ihel2,ohel1,ohel2)=diag[ix];
 	}
       }
     }
   }
+  const pair<RhoDMatrix,RhoDMatrix> rhoin =
+    physicalIncomingRhos(getRhoMatrices());
+  double sumdiag[2] = {
+    contractedNorm(diagME[0],rhoin),
+    contractedNorm(diagME[1],rhoin)};
+  double output =
+    sumdiag[0]+sumdiag[1]
+    +2./3.*contractedInterference(diagME[0],diagME[1],rhoin);
+  if(iflow!=0) _me.reset(diagME[iflow-1]);
   // identical particle symmetry factor if needed
   if(identical) output*=0.5;
   // test code vs me from ESW
@@ -551,12 +684,11 @@ double MEQCD2to2::qbarqbar2qbarqbarME(vector<SpinorBarWaveFunction> & q1,
   bool identical(q1[0].id()==q2[0].id());
   // scale
   Energy2 mt(scale());
-  // matrix element to be stored
-  if(iflow!=0)
-    {_me.reset(ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1Half,
-				       PDT::Spin1Half,PDT::Spin1Half));}
-  // calculate the matrix element
-  double output(0.),sumdiag[2]={0.,0.};
+  ProductionMatrixElement diagME[2] = {
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1Half,
+                            PDT::Spin1Half,PDT::Spin1Half),
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1Half,
+                            PDT::Spin1Half,PDT::Spin1Half)};
   Complex diag[2];
   VectorWaveFunction interv;
   for(unsigned int ihel1=0;ihel1<2;++ihel1) { 
@@ -572,17 +704,21 @@ double MEQCD2to2::qbarqbar2qbarqbarME(vector<SpinorBarWaveFunction> & q1,
 	    diag[1]=_qqgvertex->evaluate(mt,q3[ohel1],q2[ihel2],interv);
 	  }
 	  else diag[1]=0.;
-	  // sum of diagrams
-	  for(unsigned int ix=0;ix<2;++ix) sumdiag[ix] += norm(diag[ix]);
-	  // total
-	  output +=real(diag[0]*conj(diag[0])+diag[1]*conj(diag[1])
-			+2./3.*diag[0]*conj(diag[1]));
-	  // store the me if needed
-	  if(iflow!=0) _me(ihel1,ihel2,ohel1,ohel2)=diag[iflow-1];
+	  for(unsigned int ix=0;ix<2;++ix)
+	    diagME[ix](ihel1,ihel2,ohel1,ohel2)=diag[ix];
 	}
       }
     }
   }
+  const pair<RhoDMatrix,RhoDMatrix> rhoin =
+    physicalIncomingRhos(getRhoMatrices());
+  double sumdiag[2] = {
+    contractedNorm(diagME[0],rhoin),
+    contractedNorm(diagME[1],rhoin)};
+  double output =
+    sumdiag[0]+sumdiag[1]
+    +2./3.*contractedInterference(diagME[0],diagME[1],rhoin);
+  if(iflow!=0) _me.reset(diagME[iflow-1]);
   // identical particle symmetry factor if needed
   if(identical){output*=0.5;}
   // test code vs me from ESW
@@ -614,11 +750,11 @@ double MEQCD2to2::qqbar2qqbarME(vector<SpinorWaveFunction>    & q1,
 		  q1[0].id()== -q3[0].id()};
   // scale
   Energy2 mt(scale());
-  // matrix element to be stored
-  if(iflow!=0) _me.reset(ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1Half,
-						 PDT::Spin1Half,PDT::Spin1Half));
-  // calculate the matrix element
-  double output(0.),sumdiag[2]={0.,0.};
+  ProductionMatrixElement diagME[2] = {
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1Half,
+                            PDT::Spin1Half,PDT::Spin1Half),
+    ProductionMatrixElement(PDT::Spin1Half,PDT::Spin1Half,
+                            PDT::Spin1Half,PDT::Spin1Half)};
   Complex diag[2];
   VectorWaveFunction interv;
   for(unsigned int ihel1=0;ihel1<2;++ihel1) { 
@@ -637,17 +773,21 @@ double MEQCD2to2::qqbar2qqbarME(vector<SpinorWaveFunction>    & q1,
 	    diag[1]=_qqgvertex->evaluate(mt,q4[ohel2],q2[ihel2],interv);
 	  }
 	  else diag[1]=0.;
-	  // sum of diagrams
-	  for(unsigned int ix=0;ix<2;++ix) sumdiag[ix] += norm(diag[ix]);
-	  // total
-	  output +=real(diag[0]*conj(diag[0])+diag[1]*conj(diag[1])
-			+2./3.*diag[0]*conj(diag[1]));
-	  // store the me if needed
-	  if(iflow!=0){_me(ihel1,ihel2,ohel1,ohel2)=diag[iflow-1];}
+	  for(unsigned int ix=0;ix<2;++ix)
+	    diagME[ix](ihel1,ihel2,ohel1,ohel2)=diag[ix];
 	}
       }
     }
   }
+  const pair<RhoDMatrix,RhoDMatrix> rhoin =
+    physicalIncomingRhos(getRhoMatrices());
+  double sumdiag[2] = {
+    contractedNorm(diagME[0],rhoin),
+    contractedNorm(diagME[1],rhoin)};
+  const double output =
+    sumdiag[0]+sumdiag[1]
+    +2./3.*contractedInterference(diagME[0],diagME[1],rhoin);
+  if(iflow!=0) _me.reset(diagME[iflow-1]);
   // test code vs me from ESW
 //   Energy2 u(uHat()),t(tHat()),s(sHat());
 //   double alphas(4.*pi*SM().alphaS(mt));
@@ -1067,6 +1207,8 @@ void MEQCD2to2::constructVertex(tSubProPtr sub) {
   ParticleVector hard;
   hard.push_back(sub->incoming().first);hard.push_back(sub->incoming().second);
   hard.push_back(sub->outgoing()[0]);hard.push_back(sub->outgoing()[1]);
+  const pair<RhoDMatrix,RhoDMatrix> rhoin =
+    physicalIncomingRhos(getRhoMatrices());
   // order of particles
   unsigned int order[4]={0,1,2,3};
   // identify the process and calculate the matrix element
@@ -1172,6 +1314,16 @@ void MEQCD2to2::constructVertex(tSubProPtr sub) {
   }
   else throw Exception() << "Unknown process in MEQCD2to2::constructVertex()"
 			 << Exception::runerror;
+  hard[order[0]]->spinInfo()->rhoMatrix(rhoin.first);
+  hard[order[1]]->spinInfo()->rhoMatrix(rhoin.second);
+  for(unsigned int ix=2;ix<4;++ix) {
+    if(hard[ix]->id()==ParticleID::g) {
+      RhoDMatrix physical(hard[ix]->dataPtr()->iSpin());
+      physical(0,0)=physical(2,2)=0.5;
+      physical(1,1)=0.;
+      hard[ix]->spinInfo()->DMatrix(physical);
+    }
+  }
   // construct the vertex
   HardVertexPtr hardvertex=new_ptr(HardVertex());
   // set the matrix element for the vertex

@@ -239,6 +239,12 @@ private:
   //@}
 
   /**
+   * Multiplicative prefactor applied to the squared hard scale.  A value of
+   * one reproduces the historical choice mu_F^2 = sHat().
+   */
+  double _scalePreFactor;
+
+  /**
    * Matrix element for spin correlations
    */
   ProductionMatrixElement _me;

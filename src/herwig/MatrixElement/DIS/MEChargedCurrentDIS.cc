@@ -125,6 +125,13 @@ vector<VectorWaveFunction> buildMasslessVectorWaves(const PPtr & part,
   return waves;
 }
 
+// ParticleData charges are stored in units of e/3. Select the exchanged W
+// solely from the charge transfer along the physical lepton line.
+tcPDPtr chargedCurrentMediator(tcPDPtr lin, tcPDPtr lout,
+                               tcPDPtr wplus, tcPDPtr wminus) {
+  return lin->iCharge() - lout->iCharge() == 3 ? wplus : wminus;
+}
+
 struct RealEmissionLegs {
   PPtr lin;
   PPtr pin;
@@ -252,9 +259,13 @@ void MEChargedCurrentDIS::getDiagrams() const {
   for(int il1=11;il1<=14;++il1) {
     int il2 = il1%2==0 ? il1-1 : il1+1;
     for(unsigned int iz=0;iz<2;++iz) {
+      // The lepton charge chooses W+ or W-. The quark-pair list then adds both
+      // particle and antiparticle branches, so later code can treat diagrams
+      // uniformly.
       tcPDPtr lepin  = iz==1 ? getParticleData(il1) : getParticleData(-il1);
       tcPDPtr lepout = iz==1 ? getParticleData(il2) : getParticleData(-il2);
-      tcPDPtr inter  = lepin->iCharge()-lepout->iCharge()==3 ? _wp : _wm;
+      tcPDPtr inter =
+        chargedCurrentMediator(lepin, lepout, _wp, _wm);
       for(unsigned int iq=0;iq<quarkpair.size();++iq) {
 	tcPDPtr first  = getParticleData(quarkpair[iq].first );
 	tcPDPtr second = getParticleData(quarkpair[iq].second);
@@ -388,8 +399,10 @@ double MEChargedCurrentDIS::helicityME(const pair<RhoDMatrix,RhoDMatrix> & rhoin
   Energy2 mb2(scale());
   ProductionMatrixElement menew(PDT::Spin1Half,PDT::Spin1Half,
 				PDT::Spin1Half,PDT::Spin1Half);
-  tcPDPtr ipart = (mePartonData()[0]->iCharge()-mePartonData()[1]->iCharge())==3 ?
-    _wp : _wm;
+  tcPDPtr ipart = chargedCurrentMediator(mePartonData()[0],
+                                         mePartonData()[2], _wp, _wm);
+  // Pick the W sign from the actual charge flow. That keeps lepton and
+  // antilepton DIS on the same helicity-amplitude path.
   VectorWaveFunction inter;
   double me(0.);
   Complex diag;
@@ -454,10 +467,10 @@ void MEChargedCurrentDIS::constructVertex(tSubProPtr sub) {
   helicityME(rhoin,f1,f2,a1,a2,lorder,qorder,true);
   HardVertexPtr hardvertex=new_ptr(HardVertex());
   hardvertex->ME(_me);
-  // Store the rho matrices used in the amplitude and point all hard legs at
-  // the shared production vertex.
-  hard[order[0]]->spinInfo()->rhoMatrix(rhoin.first );
-  hard[order[1]]->spinInfo()->rhoMatrix(rhoin.second);
+  // order[] follows crossed fermion flow for wavefunctions and ME indices;
+  // rhoin belongs to the two physical incoming legs after lepton/quark sorting.
+  hard[0]->spinInfo()->rhoMatrix(rhoin.first );
+  hard[1]->spinInfo()->rhoMatrix(rhoin.second);
   for(unsigned int ix=0;ix<4;++ix)
     hard[ix]->spinInfo()->productionVertex(hardvertex);
 }
@@ -532,8 +545,8 @@ ProductionMatrixElement MEChargedCurrentDIS::qcdcRealEmissionME(PPtr lin, PPtr q
   const FermionLineWaves quarkLine = buildFermionLineWaves(qin, qout);
   const vector<VectorWaveFunction> gluonWaves =
     buildMasslessVectorWaves(gout, outgoing);
-  const tcPDPtr mediator = (lin->dataPtr()->iCharge() - lout->dataPtr()->iCharge() == 3) ?
-    _wp : _wm;
+  const tcPDPtr mediator =
+    chargedCurrentMediator(lin->dataPtr(), lout->dataPtr(), _wp, _wm);
 
   ProductionMatrixElement prodme(PDT::Spin1Half, PDT::Spin1Half,
                                  PDT::Spin1Half, PDT::Spin1Half, PDT::Spin1);
@@ -589,8 +602,8 @@ ProductionMatrixElement MEChargedCurrentDIS::bgfRealEmissionME(PPtr lin, PPtr gi
   const FermionLineWaves leptonLine = buildFermionLineWaves(lin, lout);
   const vector<VectorWaveFunction> gluonWaves =
     buildMasslessVectorWaves(gin, incoming);
-  const tcPDPtr mediator = (lin->dataPtr()->iCharge() - lout->dataPtr()->iCharge() == 3) ?
-    _wp : _wm;
+  const tcPDPtr mediator =
+    chargedCurrentMediator(lin->dataPtr(), lout->dataPtr(), _wp, _wm);
 
   vector<SpinorWaveFunction> qbWaves;
   vector<SpinorBarWaveFunction> qWaves;
@@ -672,10 +685,12 @@ MEChargedCurrentDIS::collinearBlendWeights(tcPDPtr, tcPDPtr,
     return {1.0, 0.0, 1.0, 0.0};
   }
 
+  // Keep the incoming polarization outside the reduced Delta-f projector.
   const double etaQ = (qin->id() < 0) ? -1.0 : 1.0;
   const double unpolarized = 1.0 / denom;
-  const double polarized = (-etaQ * Pq) / denom;
-  return {unpolarized, polarized, unpolarized, polarized};
+  const double polarizedReduced = -etaQ / denom;
+  return {unpolarized, polarizedReduced,
+          unpolarized, polarizedReduced};
 }
 
 // Correct QCDC denominators when the mapped incoming-parton polarization differs
@@ -706,7 +721,9 @@ bool MEChargedCurrentDIS::useMappedPolarizedEmissionKernel() const {
   return true;
 }
 
-// Hadron-side spin factor for V-A charged-current scattering.
+// Hadron-side spin factor for V-A charged-current scattering. Keeping the
+// convention here makes the Born, QCDC, and BGF mapping corrections read from
+// the same little piece of physics.
 double MEChargedCurrentDIS::ccHadronSpinFactor(tcPDPtr qin, double Pq) const {
   const double etaQ = (qin->id() < 0) ? -1.0 : 1.0;
   return 1.0 - etaQ * Pq;

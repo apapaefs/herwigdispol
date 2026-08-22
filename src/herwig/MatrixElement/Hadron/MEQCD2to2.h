@@ -324,6 +324,11 @@ private:
   unsigned int _process;
 
   /**
+   * Multiplicative prefactor for the squared hard scale.
+   */
+  double _scalePreFactor;
+
+  /**
    *  Colour flow
    */
   mutable unsigned int _flow;

@@ -18,10 +18,14 @@ def scripts_dir() -> Path:
     raise RuntimeError("Could not locate run_validation_campaign.py")
 
 
-def repo_root() -> Path:
+def herwig_source_root() -> Path:
     for root in Path(__file__).resolve().parents:
-        if (root / "HerwigSource" / "Herwig-7.3.0").exists():
-            return root
+        for candidate in (
+            root / "HerwigSource" / "Herwig-7.3.0",
+            root / "src" / "herwig",
+        ):
+            if candidate.exists():
+                return candidate
     raise RuntimeError("Could not locate Herwig source root")
 
 
@@ -273,19 +277,15 @@ class RivetWeightsShowerExtractorTests(unittest.TestCase):
 class ChargedCurrentRivetWeightsSourceTests(unittest.TestCase):
 
     def test_charged_current_matrix_element_overrides_rivet_weight_born_me2(self):
-        root = repo_root()
+        root = herwig_source_root()
         header = (
             root
-            / "HerwigSource"
-            / "Herwig-7.3.0"
             / "MatrixElement"
             / "DIS"
             / "MEChargedCurrentDIS.h"
         ).read_text()
         source = (
             root
-            / "HerwigSource"
-            / "Herwig-7.3.0"
             / "MatrixElement"
             / "DIS"
             / "MEChargedCurrentDIS.cc"
@@ -296,11 +296,9 @@ class ChargedCurrentRivetWeightsSourceTests(unittest.TestCase):
         self.assertIn("return me2ForPolarizations(Pl, Pq);", source)
 
     def test_rivet_weight_values_are_default_weight_multipliers(self):
-        root = repo_root()
+        root = herwig_source_root()
         source = (
             root
-            / "HerwigSource"
-            / "Herwig-7.3.0"
             / "MatrixElement"
             / "DIS"
             / "DISBase.cc"
@@ -310,31 +308,39 @@ class ChargedCurrentRivetWeightsSourceTests(unittest.TestCase):
         self.assertNotIn("eventWeight * born * raw / sampledDenominator", source)
 
     def test_powheg_emission_scales_follow_scale_factor(self):
-        root = repo_root()
+        root = herwig_source_root()
         source = (
             root
-            / "HerwigSource"
-            / "Herwig-7.3.0"
             / "MatrixElement"
             / "DIS"
             / "DISBase.cc"
         ).read_text()
 
+        compact = "".join(source.split())
         self.assertIn(
-            "return sqr(scaleFact_) * (useQ2ScaleInPOWHEGEmission_ ? q2 : 0.25*q2*sqr(xT));",
-            source,
+            "returnflooredScale(sqr(scaleFact_)*"
+            "(useQ2ScaleInPOWHEGEmission_?q2:0.25*q2*sqr(xT)));",
+            compact,
         )
         self.assertIn(
-            "return sqr(scaleFact_) * (useQ2ScaleInPOWHEGEmission_ ? q2 : mappedScale);",
-            source,
+            "returnflooredScale(sqr(scaleFact_)*"
+            "(useQ2ScaleInPOWHEGEmission_?q2:mappedScale));",
+            compact,
         )
         self.assertIn(
-            "Energy2 alphaScale = sqr(scaleFact_) * (useQ2ScaleInPOWHEGEmission_ ? q2_ : scale);",
-            source,
+            "Energy2alphaScale=flooredScale(sqr(scaleFact_)*"
+            "(useQ2ScaleInPOWHEGEmission_?q2_:scale));",
+            compact,
         )
-        self.assertIn("Energy2 bornPDFScale = sqr(scaleFact_) * q2_;", source)
-        self.assertNotIn("pdfScale, q2_,", source)
-        self.assertNotIn("Energy2 alphaScale = useQ2ScaleInPOWHEGEmission_ ? q2_ : scale;", source)
+        self.assertIn(
+            "Energy2bornPDFScale=flooredScale(sqr(scaleFact_)*q2_);",
+            compact,
+        )
+        self.assertNotIn("pdfScale,q2_,", compact)
+        self.assertNotIn(
+            "Energy2alphaScale=useQ2ScaleInPOWHEGEmission_?q2_:scale;",
+            compact,
+        )
 
 
 if __name__ == "__main__":

@@ -31,7 +31,8 @@
 
 using namespace Herwig;
 
-MEqq2W2ff::MEqq2W2ff() : _maxflavour(5), _plusminus(0), _process(0) {
+MEqq2W2ff::MEqq2W2ff()
+  : _maxflavour(5), _plusminus(0), _process(0), _scalePreFactor(1.) {
   massOption(vector<unsigned int>(2,1));
 }
 
@@ -133,7 +134,7 @@ void MEqq2W2ff::getDiagrams() const {
 }
 
 Energy2 MEqq2W2ff::scale() const {
-  return sHat();
+  return _scalePreFactor*sHat();
 }
 
 double MEqq2W2ff::me2() const {
@@ -179,17 +180,20 @@ MEqq2W2ff::colourGeometries(tcDiagPtr) const {
 }
 
 void MEqq2W2ff::persistentOutput(PersistentOStream & os) const {
-  os << _maxflavour << _plusminus << _process << _theFFWVertex << _wp << _wm;
+  os << _maxflavour << _plusminus << _process << _theFFWVertex << _wp << _wm
+     << _scalePreFactor;
 }
 
-void MEqq2W2ff::persistentInput(PersistentIStream & is, int) {
+void MEqq2W2ff::persistentInput(PersistentIStream & is, int version) {
   is >> _maxflavour >> _plusminus >> _process >> _theFFWVertex >> _wp >> _wm;
+  _scalePreFactor = 1.;
+  if (version >= 1) is >> _scalePreFactor;
 }
 
 // The following static variable is needed for the type
 // description system in ThePEG.
 DescribeClass<MEqq2W2ff,DrellYanBase>
-describeHerwigMEqq2W2ff("Herwig::MEqq2W2ff", "HwMEHadron.so");
+describeHerwigMEqq2W2ff("Herwig::MEqq2W2ff", "HwMEHadron.so", 1);
 
 void MEqq2W2ff::Init() {
 
@@ -203,6 +207,12 @@ void MEqq2W2ff::Init() {
       "The heaviest incoming quark flavour this matrix element is allowed to handle "
       "(if applicable).",
       &MEqq2W2ff::_maxflavour, 5, 0, 5, false, false, true);
+
+  static Parameter<MEqq2W2ff,double> interfaceScalePreFactor
+    ("ScalePreFactor",
+     "Multiplicative prefactor for the squared factorization scale.",
+     &MEqq2W2ff::_scalePreFactor, 1.0, 0.0, 10.0,
+     false, false, Interface::limited);
 
   static Switch<MEqq2W2ff,unsigned int> interfacePlusMinus
     ("Wcharge",

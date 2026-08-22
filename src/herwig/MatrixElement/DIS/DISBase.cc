@@ -15,7 +15,6 @@
 #include "ThePEG/PDT/EnumParticles.h"
 #include "ThePEG/MatrixElement/Tree2toNDiagram.h"
 #include "Herwig/Utilities/Maths.h"
-#include "ThePEG/PDT/EnumParticles.h"
 #include "ThePEG/PDT/StandardMatchers.h"
 #include "ThePEG/Cuts/Cuts.h"
 #include "ThePEG/Repository/BaseRepository.h"
@@ -148,6 +147,7 @@ DISBase::DISBase()  : initial_(6.), final_(3.),
 		      comptonWeight_(50.), BGFWeight_(150.), 
 		      pTmin_(0.1*GeV), 
 		      scaleOpt_(1),  muF_(100.*GeV), scaleFact_(1.),
+		      minimumScale_(0.*GeV),
 		      contrib_(0),
 		      useFixedOrderAlphaSInPOWHEGEmission_(false),
 		      useQ2ScaleInPOWHEGEmission_(false),
@@ -168,11 +168,13 @@ DISBase::DISBase()  : initial_(6.), final_(3.),
 DISBase::~DISBase() {}
 
 // Persist only the current release-facing fields. Retired validation-only
-// fields were intentionally dropped with class version 14.
+// fields were intentionally dropped with class version 14. Version 15 adds
+// the default-off common lower scale boundary.
 void DISBase::persistentOutput(PersistentOStream & os) const {
   os << comptonInt_ << bgfInt_ << procProb_ << initial_ << final_ << alpha_
      << ounit(pTmin_,GeV) << comptonWeight_ << BGFWeight_ << gluon_
-     << ounit(muF_,GeV) << scaleFact_ << scaleOpt_ << contrib_
+     << ounit(muF_,GeV) << scaleFact_ << ounit(minimumScale_,GeV)
+     << scaleOpt_ << contrib_
      << useFixedOrderAlphaSInPOWHEGEmission_
      << useQ2ScaleInPOWHEGEmission_
      << useNativeDISWindowGeneration_
@@ -185,7 +187,7 @@ void DISBase::persistentOutput(PersistentOStream & os) const {
 // Read the current persistent layout. Older .run files are rejected explicitly
 // so they cannot be silently misread after the release interface cleanup.
 void DISBase::persistentInput(PersistentIStream & is, int version) {
-  if(version != 14) {
+  if(version != 15) {
     throw Exception()
       << "DISBase persistent input version " << version
       << " is no longer supported after the release interface cleanup. "
@@ -195,7 +197,8 @@ void DISBase::persistentInput(PersistentIStream & is, int version) {
 
   is >> comptonInt_ >> bgfInt_ >> procProb_  >> initial_ >> final_ >> alpha_
      >> iunit(pTmin_,GeV) >> comptonWeight_ >> BGFWeight_ >> gluon_
-     >> iunit(muF_,GeV) >> scaleFact_ >> scaleOpt_ >> contrib_
+     >> iunit(muF_,GeV) >> scaleFact_ >> iunit(minimumScale_,GeV)
+     >> scaleOpt_ >> contrib_
      >> useFixedOrderAlphaSInPOWHEGEmission_
      >> useQ2ScaleInPOWHEGEmission_
      >> useNativeDISWindowGeneration_
@@ -216,7 +219,7 @@ void DISBase::persistentInput(PersistentIStream & is, int version) {
 // The following static variable is needed for the type
 // description system in ThePEG.
 DescribeAbstractClass<DISBase,HwMEBase>
-  describeHerwigDISBase("Herwig::DISBase", "HwMEDIS.so", 14);
+  describeHerwigDISBase("Herwig::DISBase", "HwMEDIS.so", 15);
 
 // Extract longitudinal polarisation for spin-1/2: P = (rho++ - rho--)/(rho++ + rho--).
 // ThePEG convention (PolarizedPartonExtractor): index 0 = NEGATIVE helicity,
@@ -227,6 +230,33 @@ double DISBase::longPol(const ThePEG::RhoDMatrix& rho) const {
   const double rhoPP = std::max(0.0, std::real(rho(1,1)));  // index 1 = plus
   const double norm  = (rhoPP + rhoMM) > 0.0 ? (rhoPP + rhoMM) : 1.0;
   return (rhoPP - rhoMM) / norm;
+}
+
+// Match hadron_ to the physical extractor side. This must not be inferred from
+// matrix-element ordering, which can be mirrored independently of the beams.
+DISBase::HadronBeamPolarizationData
+DISBase::hadronBeamPolarizationData() const {
+  HadronBeamPolarizationData out{false, 0.0, tcPDFPtr()};
+  if (!hadron_ || !lastXCombPtr()) return out;
+
+  ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr ppe =
+    ThePEG::dynamic_ptr_cast<
+      ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr>(lastExtractor());
+  if (!ppe) return out;
+
+  const auto & pbins = lastXComb().partonBinInstances();
+  const bool firstMatches =
+    pbins.first && pbins.first->particleData() == hadron_;
+  const bool secondMatches =
+    pbins.second && pbins.second->particleData() == hadron_;
+  if (firstMatches == secondMatches) return out;
+
+  const bool first = firstMatches;
+  const auto differencePDFs = ppe->longitudinalDifferencePDF();
+  out.matched = true;
+  out.longitudinal = getBeamPolarization(first).z();
+  out.differencePDF = first ? differencePDFs.first : differencePDFs.second;
+  return out;
 }
 
 // Build a diagonal longitudinal spin-density matrix for the particle type used
@@ -273,18 +303,16 @@ DISBase::mappedIncomingSpinDensity(tcPDPtr parton,
   if (!hadron_) return out;
   if (x <= 0.0 || x >= 1.0) return out;
 
-  const double Pz = getBeamPolarization(false).z();
+  const HadronBeamPolarizationData beamData =
+    hadronBeamPolarizationData();
+  if (!beamData.matched) return out;
+  const double Pz = beamData.longitudinal;
   if (std::abs(Pz) <= 1e-12) return out;
 
   ThePEG::tcPDFPtr sumPdf = hadron_->pdf();
   if (!sumPdf) return out;
 
-  ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr ppe =
-    ThePEG::dynamic_ptr_cast<
-      ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr>(lastExtractor());
-  if (!ppe) return out;
-
-  ThePEG::tcPDFPtr diffPdf = ppe->longitudinalDifferencePDF().second;
+  ThePEG::tcPDFPtr diffPdf = beamData.differencePDF;
   if (!diffPdf) return out;
 
   const double sum = sumPdf->xfx(hadron_, parton, mu2, x) / x;
@@ -313,15 +341,16 @@ pair<RhoDMatrix,RhoDMatrix> DISBase::correctedLongitudinalRhoMatrices() const {
   // information on the hadron leg, so rebuild that entry from Pz*Delta q/q.
   if (contrib_ == 0 || !hadron_ || xB_ <= 0.0) return rho;
 
-  const double Pz = getBeamPolarization(false).z();
+  const HadronBeamPolarizationData beamData =
+    hadronBeamPolarizationData();
+  if (!beamData.matched) {
+    rho.second = longitudinalRhoMatrix(mePartonData()[1], 0.0);
+    return rho;
+  }
+  const double Pz = beamData.longitudinal;
   if (std::abs(Pz) <= 1e-12) return rho;
 
-  ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr ppe =
-    ThePEG::dynamic_ptr_cast<
-      ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr>(lastExtractor());
-  if (!ppe) return rho;
-
-  ThePEG::tcPDFPtr diffPdf = ppe->longitudinalDifferencePDF().second;
+  ThePEG::tcPDFPtr diffPdf = beamData.differencePDF;
   ThePEG::tcPDFPtr sumPdf = hadron_->pdf();
   if (!diffPdf || !sumPdf || !mePartonData()[1]) return rho;
 
@@ -345,8 +374,8 @@ pair<RhoDMatrix,RhoDMatrix> DISBase::correctedLongitudinalRhoMatrices() const {
   return rho;
 }
 
-// Default collinear projector: the legacy scalar blend used by photon-like
-// channels. Neutral/charged current implementations override where needed.
+// Photon-like reduced projectors. Keeping the factor of Pq outside the
+// polarized entries avoids a removable division at a difference-PDF node.
 DISBase::CollinearBlendWeights
 DISBase::collinearBlendWeights(tcPDPtr lin, tcPDPtr lout,
                                tcPDPtr qin, tcPDPtr qout,
@@ -355,7 +384,10 @@ DISBase::collinearBlendWeights(tcPDPtr lin, tcPDPtr lout,
   const double a = A_pol(lin, lout, qin, qout, scale, Pl, Pq);
   const double denom = 1. + a * ell + sqr(ell);
   const double f = (std::abs(denom) > 1e-30) ? a * ell / denom : 0.0;
-  return {1.0 - f, f, 1.0 - f, f};
+  const double polarizedReduced =
+    (std::abs(denom) > 1e-30) ? 2. * Pl * ell / denom : 0.0;
+  return {1.0 - f, polarizedReduced,
+          1.0 - f, polarizedReduced};
 }
 
 // Default mapped-denominator correction for QCDC real emission.
@@ -381,19 +413,6 @@ double DISBase::realEmissionDenominatorFactor(tcPDPtr, tcPDPtr,
 // The base class keeps real-emission spin kernels on the Born polarization
 // unless a current-specific implementation opts into mapped polarizations.
 bool DISBase::useMappedPolarizedEmissionKernel() const {
-  return false;
-}
-
-// Default neutral-current response hook. Returning false tells the common NLO
-// assembly to use the photon-like fallback projectors.
-bool DISBase::neutralCurrentResponse(tcPDPtr, tcPDPtr,
-                                     tcPDPtr, tcPDPtr,
-                                     Energy2,
-                                     double,
-                                     double,
-                                     double,
-                                     double,
-                                     NeutralCurrentResponse &) const {
   return false;
 }
 
@@ -639,6 +658,12 @@ void DISBase::Init() {
      &DISBase::scaleFact_, 1.0, 0.0, 10.0,
      false, false, Interface::limited);
 
+  static Parameter<DISBase,Energy> interfaceMinimumScale
+    ("MinimumScale",
+     "Common lower boundary for factorization, renormalization, and POWHEG-emission PDF scales. A zero value disables the floor.",
+     &DISBase::minimumScale_, GeV, 0.0*GeV, 0.0*GeV, 100.0*GeV,
+     false, false, Interface::limited);
+
   static Parameter<DISBase,double> interfaceSamplingPower
     ("SamplingPower",
      "Power for the sampling of xp",
@@ -763,14 +788,23 @@ void DISBase::doinit() {
   gluon_ = getParticleData(ParticleID::g);
 }
 
-// Choose the alphaS scale for accepted real-emission generation.
+// Choose the alphaS scale for accepted real-emission generation. The scale
+// factor deliberately wraps both the native and Q2-forced central choices.
 Energy2 DISBase::powhegEmissionAlphaSScale(Energy2 q2, double xT) const {
-  return sqr(scaleFact_) * (useQ2ScaleInPOWHEGEmission_ ? q2 : 0.25*q2*sqr(xT));
+  return flooredScale(
+    sqr(scaleFact_) * (useQ2ScaleInPOWHEGEmission_ ? q2 : 0.25*q2*sqr(xT)));
 }
 
-// Choose the PDF numerator scale for emission PDF ratios.
+// Choose the PDF numerator scale for emission PDF ratios. Keep this paired
+// with the alphaS-scale convention so scale bands move coherently.
 Energy2 DISBase::powhegEmissionPDFScale(Energy2 q2, Energy2 mappedScale) const {
-  return sqr(scaleFact_) * (useQ2ScaleInPOWHEGEmission_ ? q2 : mappedScale);
+  return flooredScale(
+    sqr(scaleFact_) * (useQ2ScaleInPOWHEGEmission_ ? q2 : mappedScale));
+}
+
+Energy2 DISBase::flooredScale(Energy2 value) const {
+  const Energy2 boundary = sqr(minimumScale_);
+  return value < boundary ? boundary : value;
 }
 
 // Fixed-order alphaS source used by release comparison modes when requested.
@@ -1080,8 +1114,11 @@ RealEmissionProcessPtr DISBase::applyHardMatrixElementCorrection(RealEmissionPro
     // common pieces
     Energy2 scale = q2_*((1.-xp)*(1-zp)*zp/xp+1.);
     Energy2 pdfScale = powhegEmissionPDFScale(q2_, scale);
-    Energy2 bornPDFScale = sqr(scaleFact_) * q2_;
-    Energy2 alphaScale = sqr(scaleFact_) * (useQ2ScaleInPOWHEGEmission_ ? q2_ : scale);
+    // The numerator follows the emitted parton, while the denominator stays on
+    // the underlying Born density with the same ScaleFactor convention.
+    Energy2 bornPDFScale = flooredScale(sqr(scaleFact_) * q2_);
+    Energy2 alphaScale = flooredScale(
+      sqr(scaleFact_) * (useQ2ScaleInPOWHEGEmission_ ? q2_ : scale));
     wgt *= 2./3./Constants::pi*powhegEmissionAlphaSValue(alphaScale)/procProb_;
     // PDF piece
     double pdfRatioGen = 0.0;
@@ -1109,8 +1146,11 @@ RealEmissionProcessPtr DISBase::applyHardMatrixElementCorrection(RealEmissionPro
     // common pieces 
     Energy2 scale = q2_*((1.-xp)*(1-zp)*zp/xp+1);
     Energy2 pdfScale = powhegEmissionPDFScale(q2_, scale);
-    Energy2 bornPDFScale = sqr(scaleFact_) * q2_;
-    Energy2 alphaScale = sqr(scaleFact_) * (useQ2ScaleInPOWHEGEmission_ ? q2_ : scale);
+    // The numerator follows the emitted gluon branch; the Born denominator is
+    // kept separate so the PDF ratio is a genuine mapped/Born comparison.
+    Energy2 bornPDFScale = flooredScale(sqr(scaleFact_) * q2_);
+    Energy2 alphaScale = flooredScale(
+      sqr(scaleFact_) * (useQ2ScaleInPOWHEGEmission_ ? q2_ : scale));
     wgt *= 0.25/Constants::pi*powhegEmissionAlphaSValue(alphaScale)/(1.-procProb_);
     // PDF piece
     double pdfRatioGen = 0.0;
@@ -1396,8 +1436,12 @@ DISBase::ComptonME(double xp, double x2, double xperp,
   double cos2 =   x2 /sqrt(sqr(x2)+sqr(xperp));
   double sin2 = xperp/sqrt(sqr(x2)+sqr(xperp));
   double root = sqrt(std::max(0.0, sqr(l_)-1.));
+  // Freeze Delta f/f at the hard DIS scale. The ordinary POWHEG PDF ratio
+  // retains its native mapped-emission scale in the generation routines.
+  const Energy2 polarizationScale = q2_;
   const double PqBorn =
-    mappedIncomingLongitudinalPolarization(partons_[0], xB_, q2_);
+    mappedIncomingLongitudinalPolarization(partons_[0], xB_,
+                                           polarizationScale);
   const double aZero = A_pol(leptons_[0], leptons_[1],
                              partons_[0], partons_[1],
                              q2_, leptonPolarization_, 0.0);
@@ -1410,7 +1454,8 @@ DISBase::ComptonME(double xp, double x2, double xperp,
   double mappedDenRatio = 1.0;
   if (useMappedPolarizedEmissionKernel() && xp > 0.0) {
     const double PqMapped =
-      mappedIncomingLongitudinalPolarization(partons_[0], xB_/xp, q2_);
+      mappedIncomingLongitudinalPolarization(partons_[0], xB_/xp,
+                                             polarizationScale);
     const double dBorn =
       realEmissionDenominatorFactor(leptons_[0], leptons_[1],
                                     partons_[0], partons_[1],
@@ -1439,6 +1484,9 @@ DISBase::ComptonME(double xp, double x2, double xperp,
   if (std::abs(lo) <= 1e-30) lo = (lo < 0.0 ? -1.0 : 1.0) * 1e-30;
   double denom = norm ? 1.+sqr(xp)*(sqr(x2)+1.5*sqr(xperp)) : 1.;
   double mappedLo = 1.+aMapped*l_+sqr(l_);
+  // The azimuth-independent leading term carries the mapped Born denominator
+  // too; otherwise the spin/PDF mapping would only affect the phi-dependent
+  // tail of the QCDC kernel.
   double leading = mappedDenRatio*mappedLo/lo;
   double fact  = mappedDenRatio*sqr(xp)*(sqr(x2)+sqr(xperp))/lo;
   output.c0 = (leading + fact*(sqr(cos2)+aMapped*cos2*l_+sqr(l_)))/denom;
@@ -1461,8 +1509,12 @@ DISBase::BGFME(double xp, double x2, double x3,
   double fact3 = sqr(xp)*(sqr(x3)+sqr(xperp));
   double root = sqrt(std::max(0.0, sqr(l_)-1.));
 
+  // As in QCDC, only Delta f/f is frozen at Q^2; mapped unpolarized PDFs keep
+  // the native POWHEG emission scale.
+  const Energy2 polarizationScale = q2_;
   const double PqBorn =
-    mappedIncomingLongitudinalPolarization(partons_[0], xB_, q2_);
+    mappedIncomingLongitudinalPolarization(partons_[0], xB_,
+                                           polarizationScale);
   const double aZero = A_pol(leptons_[0], leptons_[1],
                              partons_[0], partons_[1],
                              q2_, leptonPolarization_, 0.0);
@@ -1478,7 +1530,8 @@ DISBase::BGFME(double xp, double x2, double x3,
 
   if (useMappedPolarizedEmissionKernel() && xp > 0.0) {
     const double PgMapped =
-      mappedIncomingLongitudinalPolarization(gluon_, xB_/xp, q2_);
+      mappedIncomingLongitudinalPolarization(gluon_, xB_/xp,
+                                             polarizationScale);
     tcPDPtr qbarIn;
     if (partons_[0]) qbarIn = partons_[0]->CC();
     tcPDPtr qbarOut;
@@ -1564,7 +1617,7 @@ void DISBase::generateCompton() {
   AzimuthalKernelCoefficients azicoeff;
   while(true) {
     wgt = 0.;
-    // intergration variables dxT/xT^3
+    // integration variables dxT/xT^3
     xT *= 1./sqrt(1.-2.*log(UseRandom::rnd())/a*sqr(xT));
     // zp
     zp = UseRandom::rnd();
@@ -1579,7 +1632,9 @@ void DISBase::generateCompton() {
     // PDF piece of the weight
     Energy2 scale = q2_*((1.-xp)*(1-zp)*zp/xp+1.);
     Energy2 pdfScale = powhegEmissionPDFScale(q2_, scale);
-    Energy2 bornPDFScale = sqr(scaleFact_) * q2_;
+    // Trial generation compares the mapped numerator PDF against the same Born
+    // denominator density that selected the event in the first place.
+    Energy2 bornPDFScale = flooredScale(sqr(scaleFact_) * q2_);
     double pdfRatioGen = 0.0;
     if (!powhegEmissionPDFRatioForGeneration(pdf_, beam_,
                                              partons_[0], partons_[0],
@@ -1663,8 +1718,9 @@ void DISBase::generateCompton() {
 void DISBase::generateBGF() {
   bgfRawXP_ = 0.0;
   bgfRawZP_ = 0.0;
-  // maximum value of the xT
-  double xT = (1.-xB_)/xB_;
+  // Since xp = 1/(1+xT^2/[4 zp(1-zp)]), xp >= xB and
+  // 4 zp(1-zp) <= 1 imply xT <= sqrt((1-xB)/xB).
+  double xT = sqrt((1.-xB_)/xB_);
   double xTMin = 2.*max(pTmin_,pTCompton_)/sqrt(q2_);
   double zp;
   Energy2 alphaRefScale = powhegEmissionAlphaSScale(q2_,xTMin);
@@ -1675,7 +1731,7 @@ void DISBase::generateBGF() {
   AzimuthalKernelCoefficients azicoeff;
   while(true) {
     wgt = 0.;
-    // intergration variables dxT/xT^3
+    // integration variables dxT/xT^3
     xT *= 1./sqrt(1.-2.*log(UseRandom::rnd())/a*sqr(xT));
     // zp
     zp = UseRandom::rnd();
@@ -1690,7 +1746,9 @@ void DISBase::generateBGF() {
     // PDF piece of the weight
     Energy2 scale = q2_*((1.-xp)*(1-zp)*zp/xp+1.);
     Energy2 pdfScale = powhegEmissionPDFScale(q2_, scale);
-    Energy2 bornPDFScale = sqr(scaleFact_) * q2_;
+    // As in QCDC, keep the mapped numerator and underlying Born denominator
+    // explicit; this matters when ScaleFactor or signed PDFs are varied.
+    Energy2 bornPDFScale = flooredScale(sqr(scaleFact_) * q2_);
     double pdfRatioGen = 0.0;
     if (!powhegEmissionPDFRatioForGeneration(pdf_, beam_,
                                              gluon_, partons_[0],
@@ -1842,8 +1900,8 @@ bool DISBase::generateKinematics(const double * r) {
 
 // Factorization/renormalization scale used by the Born and NLO weights.
 Energy2 DISBase::scale() const {
-  return scaleOpt_ == 1 ? 
-    -sqr(scaleFact_)*tHat() : sqr(scaleFact_*muF_);
+  return flooredScale(scaleOpt_ == 1 ?
+    -sqr(scaleFact_)*tHat() : sqr(scaleFact_*muF_));
 }
 
 // Return the signed-order differential cross section. POS/NEG NLO samples use
@@ -1898,34 +1956,14 @@ double DISBase::NLOWeightRaw(double overrideLeptonPolarization,
 
   // Unpolarised (sum) PDF: f(x,Q^2) = f^+(x,Q^2) + f^-(x,Q^2)
   ThePEG::tcPDFPtr sumPdf = hadron_->pdf();
-  ThePEG::tcPDFPtr extractorSumPdf;
-  {
-    const auto & pbins = lastXComb().partonBinInstances();
-    if (pbins.second) extractorSumPdf = pbins.second->pdf();
-  }
+  const HadronBeamPolarizationData beamData =
+    hadronBeamPolarizationData();
+  const double Pz = beamData.matched
+    ? (overridePolarizations ? overrideHadronPolarization
+                             : beamData.longitudinal)
+    : 0.0;
+  ThePEG::tcPDFPtr diffPdf = beamData.differencePDF;
 
-  // Longitudinal hadron beam polarisation (convention: false = proton beam)
-  const double Pz =
-    overridePolarizations ? overrideHadronPolarization :
-    getBeamPolarization(false).z();
-
-  ThePEG::tcPDFPtr diffPdf;
-  {
-    // Use the same extractor path as getBeamPolarization().
-    // eventHandler()->partonExtractor() is not guaranteed to be the
-    // polarized extractor in these NLO runs.
-    ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr ppe =
-      ThePEG::dynamic_ptr_cast<
-        ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr>(lastExtractor());
-
-    if (ppe) {
-      // proton is treated as the "second" beam
-      diffPdf = ppe->longitudinalDifferencePDF().second;
-    }
-  }
-  
-
-  
   // --- Unpolarised PDFs for flux ratios ---
   double loPDF = sumPdf->xfx(hadron_, mePartonData()[1], mu2, xB_) / xB_;
   if (loPDF == 0.0) return 0.0;
@@ -1948,24 +1986,24 @@ double DISBase::NLOWeightRaw(double overrideLeptonPolarization,
     dloPDF = diffPdf->xfx(hadron_, mePartonData()[1], mu2, xB_)      / xB_;
   }
 
+  // The coefficient functions require finite Delta-f/q ratios. Keep these
+  // raw, and clamp only the parton polarizations used by spin density matrices
+  // and analysing powers below.
+  const double ratioFloor = 1e-12;
+  const bool hasFinitePolarizedRatios =
+    hasDiffPdf && std::abs(loPDF) > ratioFloor;
+  const double deltaBornOverLo =
+    hasFinitePolarizedRatios ? Pz * dloPDF / loPDF : 0.0;
+  const double deltaqOverLo =
+    hasFinitePolarizedRatios ? Pz * dqPDF / loPDF : 0.0;
+  const double deltagOverLo =
+    hasFinitePolarizedRatios ? Pz * dgPDF / loPDF : 0.0;
+
   // Born-side parton polarization at xB, matched to the corrected rho matrix
   // used by the DIS Born ME.
   if (hasDiffPdf && std::abs(loPDF) > 1e-30) {
-    Pq = Pz * dloPDF / loPDF;
-    Pq = std::max(-1.0, std::min(1.0, Pq));
+    Pq = std::max(-1.0, std::min(1.0, Pz * dloPDF / loPDF));
   }
-
-  // Protect polarized ratios against tiny denominators near PDF nodes.
-  const double ratioFloor = 1e-12;
-  const double minDlo = std::max(ratioFloor, 1e-4 * std::abs(loPDF));
-  const bool hasStableRawFiniteDelta =
-    hasDiffPdf && std::abs(loPDF) > ratioFloor;
-  const double deltaqOverLo_raw =
-    hasStableRawFiniteDelta ? Pz * dqPDF / loPDF : 0.0;
-  const double deltagOverLo_raw =
-    hasStableRawFiniteDelta ? Pz * dgPDF / loPDF : 0.0;
-  const double deltaqOverLo = deltaqOverLo_raw;
-  const double deltagOverLo = deltagOverLo_raw;
 
   // --- Effective parton polarisations at x = xB/xp_ ---
   double Pq_m = Pq;
@@ -1982,34 +2020,8 @@ double DISBase::NLOWeightRaw(double overrideLeptonPolarization,
   Pq_m = std::max(-1.0, std::min(1.0, Pq_m));
   Pg_m = std::max(-1.0, std::min(1.0, Pg_m));
 
-  // Canonical ratios used by the uniform polarized-NLO representation.
   const double qRatio = qPDF / loPDF;
   const double gRatio = gPDF / loPDF;
-  struct UniformPolarizedNLOInputs {
-    double qRatio;
-    double gRatio;
-    double deltaqOverLo;
-    double deltagOverLo;
-    double Pq;
-    double Pq_m;
-    double Pg_m;
-    double ratioFloor;
-    double minDlo;
-    bool hasDiffPdf;
-    bool hasStableDiffRatio;
-  } uniformInputs = {
-    qRatio,
-    gRatio,
-    deltaqOverLo,
-    deltagOverLo,
-    Pq,
-    Pq_m,
-    Pg_m,
-    ratioFloor,
-    minDlo,
-    hasDiffPdf,
-    hasDiffPdf && std::abs(dloPDF) > minDlo
-  };
 
   // Calculate lepton kinematic variables (needed for the Born projectors and
   // real emission).
@@ -2025,19 +2037,6 @@ double DISBase::NLOWeightRaw(double overrideLeptonPolarization,
     collinearBlendWeights(mePartonData()[0], mePartonData()[2],
                           mePartonData()[1], mePartonData()[3],
                           q2_, Pl, Pq, l);
-  NeutralCurrentResponse ncResponse;
-  const bool hasNCResponse =
-    neutralCurrentResponse(mePartonData()[0], mePartonData()[2],
-                           mePartonData()[1], mePartonData()[3],
-                           q2_, Pl, Pq, Pq_m, l, ncResponse);
-  const double qOddResponse = hasNCResponse ? ncResponse.qOddResponse : 0.0;
-  const double gOddResponse = hasNCResponse ? ncResponse.gOddResponse : 0.0;
-  const double qOddWeight =
-    hasNCResponse ? qOddResponse :
-    ((std::abs(Pq) > ratioFloor) ? (blend.qPolarized / Pq) : 0.0);
-  const double gOddWeight =
-    hasNCResponse ? gOddResponse :
-    ((std::abs(Pq) > ratioFloor) ? (blend.gPolarized / Pq) : 0.0);
 
   // Collinear counterterms:
   // The quark and gluon channels use projector weights derived from the Born
@@ -2057,22 +2056,11 @@ double DISBase::NLOWeightRaw(double overrideLeptonPolarization,
   double collg_over_born_unpol =
     TRfact/xp_*(gPDF/loPDF)*(2.*xp_*(1.-xp_) + (sqr(xp_)+sqr(1.-xp_))*logRatio);
 
-  double dqRatio = 0.0;
-  double dgRatio = 0.0;
-  if (uniformInputs.hasStableDiffRatio) {
-    dqRatio = dqPDF / dloPDF;
-    dgRatio = dgPDF / dloPDF;
-  }
-  const double deltaqOverLo_eff =
-    uniformInputs.hasStableDiffRatio ? Pq * dqRatio : 0.0;
-  const double deltagOverLo_eff =
-    uniformInputs.hasStableDiffRatio ? Pq * dgRatio : 0.0;
-
   const double collg_even =
     blend.gUnpolarized * collg_over_born_unpol;
   const double collg_odd =
-    (hasNCResponse || uniformInputs.hasStableDiffRatio)
-    ? gOddWeight * TRfact/xp_ * deltagOverLo_eff *
+    hasFinitePolarizedRatios
+    ? blend.gPolarizedReduced * TRfact/xp_ * deltagOverLo *
       (2.*(1.-xp_) + (2.*xp_-1.)*logRatio)
     : 0.0;
 
@@ -2085,16 +2073,16 @@ double DISBase::NLOWeightRaw(double overrideLeptonPolarization,
   const double collq_k2 =
     2./(1.-xp_)*log(q2_*(1.-xp_)/mu2)-1.5/(1.-xp_);
   double collq_over_born_unpol =
-    CFfact/xp_*uniformInputs.qRatio*collq_k1
-    + CFfact/xp_*(uniformInputs.qRatio-xp_)*collq_k2;
+    CFfact/xp_*qRatio*collq_k1
+    + CFfact/xp_*(qRatio-xp_)*collq_k2;
 
   const double collq_even =
     blend.qUnpolarized * collq_over_born_unpol;
   const double collq_odd =
-    uniformInputs.hasStableDiffRatio
-    ? qOddWeight *
-      (CFfact/xp_ * deltaqOverLo_eff * collq_k1
-       + CFfact/xp_ * (deltaqOverLo_eff - uniformInputs.Pq * xp_) * collq_k2)
+    hasFinitePolarizedRatios
+    ? blend.qPolarizedReduced *
+      (CFfact/xp_ * deltaqOverLo * collq_k1
+       + CFfact/xp_ * (deltaqOverLo - deltaBornOverLo * xp_) * collq_k2)
     : 0.0;
 
   // Real-emission kernels are written as sigma_real / sigma_Born.
@@ -2113,7 +2101,7 @@ double DISBase::NLOWeightRaw(double overrideLeptonPolarization,
                                q2_, Pl, Pq, Pq_m);
   const double bornFactor = 1. + a_born*l + sqr(l);
   const double realq_prefactor =
-    qcdcDenRatio * CFfact/xp_/bornFactor * uniformInputs.qRatio;
+    qcdcDenRatio * CFfact/xp_/bornFactor * qRatio;
   const double realq_even =
     realq_prefactor * (2.+2.*sqr(l)-xp_+3.*xp_*sqr(l));
   const double realq_odd =
@@ -2132,8 +2120,9 @@ double DISBase::NLOWeightRaw(double overrideLeptonPolarization,
   const double realg_even =
     blend.gUnpolarized * realg_over_born_unpol;
   const double realg_odd =
-    (hasNCResponse || uniformInputs.hasStableDiffRatio)
-    ? gOddWeight * (-1.0 * TRfact/xp_ * deltagOverLo_eff * (2.*xp_ - 1.))
+    hasFinitePolarizedRatios
+    ? blend.gPolarizedReduced *
+      (-1.0 * TRfact/xp_ * deltagOverLo * (2.*xp_ - 1.))
     : 0.0;
   const double collq_over_born = collq_even + collq_odd;
   const double collg_over_born = collg_even + collg_odd;
@@ -2167,11 +2156,10 @@ double DISBase::rivetWeightBornPartonPolarization(double hadronPolarization) con
   ThePEG::tcPDFPtr sumPdf = hadron_->pdf();
   if (!sumPdf) return 0.0;
 
-  ThePEG::tcPDFPtr diffPdf;
-  ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr ppe =
-    ThePEG::dynamic_ptr_cast<
-      ThePEG::Ptr<ThePEG::PolarizedPartonExtractor>::tptr>(lastExtractor());
-  if (ppe) diffPdf = ppe->longitudinalDifferencePDF().second;
+  const HadronBeamPolarizationData beamData =
+    hadronBeamPolarizationData();
+  if (!beamData.matched) return 0.0;
+  ThePEG::tcPDFPtr diffPdf = beamData.differencePDF;
   if (!diffPdf) return 0.0;
 
   const Energy2 mu2(scale());
@@ -2207,6 +2195,9 @@ std::map<std::string,double> DISBase::generateRivetWeights() const {
   weights["HERWIG_DIS_SIGMA"] = 0.0;
   weights["HERWIG_DIS_DELTA_LL"] = 0.0;
 
+  // Optional weights are ratios to the carrier event density. Do not multiply
+  // by the event weight here; the HepMC writer/Rivet fill path already does
+  // that once for the nominal event.
   const double sampledPq = rivetWeightBornPartonPolarization(0.0);
   const double sampledBorn = rivetWeightBornME2(0.0, sampledPq);
   const double sampledRaw = NLOWeightRaw(0.0, 0.0, true);

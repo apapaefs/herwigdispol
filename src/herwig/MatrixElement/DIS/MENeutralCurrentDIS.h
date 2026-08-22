@@ -19,6 +19,8 @@ using namespace ThePEG;
  * Neutral-current DIS matrix element with coherent photon/Z exchange,
  * exact longitudinal spin-density support, neutral-current NLO response
  * coefficients, and optional spin-only POWHEG real-emission vertices.
+ * This is where the gamma/Z interference and parity bookkeeping live; the
+ * common DISBase code only sees compact response factors.
  *
  * For consistency both the incoming and outgoing quarks are assumed to be
  * massless, matching the analytic DIS NLO and real-emission kernels.
@@ -216,19 +218,6 @@ protected:
    */
   virtual bool useMappedPolarizedEmissionKernel() const override;
 
-  /**
-   * Neutral-current response coefficients used by the polarized NLO assembly.
-   * Returning false indicates that the base photon-like expression applies.
-   */
-  virtual bool neutralCurrentResponse(tcPDPtr lin, tcPDPtr lout,
-                                      tcPDPtr qin, tcPDPtr qout,
-                                      Energy2 scale,
-                                      double Pl,
-                                      double PqBorn,
-                                      double PqMapped,
-                                      double ell,
-                                      NeutralCurrentResponse &out) const override;
-
   /** @name Standard Interfaced functions. */
   //@{
   /**
@@ -261,6 +250,8 @@ private:
   /**
    * Neutral-current coupling coefficients entering the exact Born angular
    * structure and analyzing powers, including the finite-width Z propagator.
+   * The N entries multiply the ell term; the D entries multiply the
+   * 1 + ell^2 term. Suffixes mark which incoming spin factors are present.
    */
   struct NCCoefficients {
     double N0, Nl, Nq, Nlq;
@@ -269,7 +260,8 @@ private:
 
   /**
    * Build the neutral-current coefficient set for the given incoming lepton
-   * and quark species at momentum transfer q2.
+   * and quark species at momentum transfer q2. Keeping the eta signs here
+   * prevents the NLO formulas from scattering particle/antiparticle rules.
    */
   NCCoefficients ncCoefficients(tcPDPtr lin, tcPDPtr qin, Energy2 q2) const;
 
@@ -386,8 +378,8 @@ private:
   unsigned int _gammaZ;
 
   /**
-   * Whether to keep a finite width for spacelike Z exchange in the
-   * helicity-amplitude path.
+   * Whether to keep a finite width for spacelike Z exchange in both the
+   * helicity amplitudes and analytic Born/NLO projectors.
    */
   bool _useFiniteWidthSpacelikeZPropagator;
   //@}

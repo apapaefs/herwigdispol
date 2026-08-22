@@ -31,7 +31,8 @@
 using namespace Herwig;
 
 MEqq2gZ2ff::MEqq2gZ2ff() : _minflavour(1), _maxflavour(5), 
-			   _gammaZ(0), _process(0), spinCorrelations_(true) {
+			   _gammaZ(0), _process(0), _scalePreFactor(1.),
+			   spinCorrelations_(true) {
   massOption(vector<unsigned int>(2,1));
 }
 
@@ -84,7 +85,7 @@ void MEqq2gZ2ff::getDiagrams() const {
 }
 
 Energy2 MEqq2gZ2ff::scale() const {
-  return sHat();
+  return _scalePreFactor*sHat();
 }
 
 double MEqq2gZ2ff::me2() const {
@@ -135,19 +136,21 @@ MEqq2gZ2ff::colourGeometries(tcDiagPtr) const {
 void MEqq2gZ2ff::persistentOutput(PersistentOStream & os) const {
   os << _minflavour << _maxflavour << _gammaZ << _process
      << _theFFZVertex << _theFFPVertex 
-     << _gamma << _z0 << spinCorrelations_;
+     << _gamma << _z0 << spinCorrelations_ << _scalePreFactor;
 }
 
-void MEqq2gZ2ff::persistentInput(PersistentIStream & is, int) { 
+void MEqq2gZ2ff::persistentInput(PersistentIStream & is, int version) {
   is >> _minflavour >> _maxflavour >> _gammaZ >> _process
      >> _theFFZVertex >> _theFFPVertex 
-     >> _gamma >> _z0 >> spinCorrelations_; 
+     >> _gamma >> _z0 >> spinCorrelations_;
+  _scalePreFactor = 1.;
+  if (version >= 1) is >> _scalePreFactor;
 }
 
 // The following static variable is needed for the type
 // description system in ThePEG.
 DescribeClass<MEqq2gZ2ff,DrellYanBase>
-describeHerwigMEqq2gZ2ff("Herwig::MEqq2gZ2ff", "HwMEHadron.so");
+describeHerwigMEqq2gZ2ff("Herwig::MEqq2gZ2ff", "HwMEHadron.so", 1);
 
 void MEqq2gZ2ff::Init() {
 
@@ -166,6 +169,12 @@ void MEqq2gZ2ff::Init() {
     ("MinFlavour",
      "The minimum incoming quark flavour this matrix element is allowed to handle",
      &MEqq2gZ2ff::_minflavour, 1, 1, 5,
+     false, false, Interface::limited);
+
+  static Parameter<MEqq2gZ2ff,double> interfaceScalePreFactor
+    ("ScalePreFactor",
+     "Multiplicative prefactor for the squared factorization scale.",
+     &MEqq2gZ2ff::_scalePreFactor, 1.0, 0.0, 10.0,
      false, false, Interface::limited);
 
   static Switch<MEqq2gZ2ff,unsigned int> interfaceGammaZ

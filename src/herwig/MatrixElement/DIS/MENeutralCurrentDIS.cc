@@ -265,7 +265,7 @@ MENeutralCurrentDIS::colourGeometries(tcDiagPtr diag) const {
 }
 
 // Persist the neutral-current flavour range, exchange selector, vertices, and
-// finite-width Z option used by the helicity-amplitude path.
+// finite-width Z option shared by the amplitude and analytic projector paths.
 void MENeutralCurrentDIS::persistentOutput(PersistentOStream & os) const {
   os << _minflavour << _maxflavour << _gammaZ << _theFFZVertex << _theFFPVertex
      << _theFFGVertex
@@ -331,21 +331,20 @@ void MENeutralCurrentDIS::Init() {
     interfaceUseFiniteWidthSpacelikeZPropagator
     ("UseFiniteWidthSpacelikeZPropagator",
      "Whether to keep a finite width for spacelike Z exchange in the "
-     "helicity-amplitude path. This affects the Born and real-emission DIS "
-     "neutral-current amplitude construction only. The default No preserves "
-     "the legacy zero-width spacelike Z behavior, while Yes uses the finite-"
-     "width ThePEG propagator option iopt=7.",
+     "helicity amplitudes and analytic Born/NLO projectors. The default No "
+     "preserves the legacy zero-width spacelike Z behavior, while Yes uses "
+     "the finite-width ThePEG propagator option iopt=7.",
      &MENeutralCurrentDIS::_useFiniteWidthSpacelikeZPropagator,
      false, false, false);
   static SwitchOption interfaceUseFiniteWidthSpacelikeZPropagatorYes
     (interfaceUseFiniteWidthSpacelikeZPropagator,
      "Yes",
-     "Use the finite-width spacelike Z propagator in the helicity-amplitude path.",
+     "Use the finite-width spacelike Z propagator throughout neutral-current DIS.",
      true);
   static SwitchOption interfaceUseFiniteWidthSpacelikeZPropagatorNo
     (interfaceUseFiniteWidthSpacelikeZPropagator,
      "No",
-     "Use the legacy zero-width spacelike Z propagator in the helicity-amplitude path.",
+     "Use the legacy zero-width spacelike Z propagator throughout neutral-current DIS.",
      false);
 }
 
@@ -383,6 +382,9 @@ double MENeutralCurrentDIS::helicityME(const pair<RhoDMatrix,RhoDMatrix> & rhoin
   Complex diag1,diag2;
   unsigned int hel[4];
   unsigned int lhel1,lhel2,qhel1,qhel2;
+  // Build the amplitude in the physical helicity basis and let the rho
+  // matrices do the averaging. That keeps polarization choices out of the
+  // gamma/Z interference itself.
   for(lhel1=0;lhel1<2;++lhel1) {
     for(lhel2=0;lhel2<2;++lhel2) {
       if(gam) inter[0]=_theFFPVertex->evaluate(mb2,1,_gamma,f1[lhel1],a1[lhel2]);
@@ -525,10 +527,10 @@ void MENeutralCurrentDIS::constructVertex(tSubProPtr sub) {
   helicityME(rhoin,f1,f2,a1,a2,lorder,qorder,true);
   HardVertexPtr hardvertex=new_ptr(HardVertex());
   hardvertex->ME(_me);
-  // Store the rho matrices that were used in the amplitude and point every
-  // external hard leg at the shared production vertex.
-  hard[order[0]]->spinInfo()->rhoMatrix(rhoin.first );
-  hard[order[1]]->spinInfo()->rhoMatrix(rhoin.second);
+  // order[] follows crossed fermion flow for wavefunctions and ME indices;
+  // rhoin belongs to the two physical incoming legs after lepton/quark sorting.
+  hard[0]->spinInfo()->rhoMatrix(rhoin.first );
+  hard[1]->spinInfo()->rhoMatrix(rhoin.second);
   for(unsigned int ix=0;ix<4;++ix)
     hard[ix]->spinInfo()->productionVertex(hardvertex);
 }
@@ -576,6 +578,8 @@ void MENeutralCurrentDIS::constructRealEmissionSpinVertex(RealEmissionProcessPtr
   if (proc->incoming().size() == 2) {
     xMapped = (proc->incoming()[0] == legs.pin) ? proc->x().first : proc->x().second;
   }
+  // The accepted real emission changes the incoming parton's x. Rebuild only
+  // that leg's spin density at the mapped x; the lepton keeps its Born state.
   const MappedIncomingSpinDensity mappedSpin =
     mappedIncomingSpinDensity(legs.pin->dataPtr(), xMapped, q2, "powheg-vertex");
 
@@ -791,9 +795,11 @@ MENeutralCurrentDIS::collinearBlendWeights(tcPDPtr lin, tcPDPtr,
   }
   const NCCoefficients coeff = ncCoefficients(lin, qin, q2);
   const double D_even = coeff.D0 + Pl * coeff.Dl;
-  const double D_spin = Pq * (coeff.Dq + Pl * coeff.Dlq);
+  const double D_reduced = coeff.Dq + Pl * coeff.Dlq;
+  const double D_spin = Pq * D_reduced;
   const double N_even = coeff.N0 + Pl * coeff.Nl;
-  const double N_spin = Pq * (coeff.Nq + Pl * coeff.Nlq);
+  const double N_reduced = coeff.Nq + Pl * coeff.Nlq;
+  const double N_spin = Pq * N_reduced;
 
   const double sigmaBorn =
     (1.0 + sqr(ell)) * (D_even + D_spin) +
@@ -805,17 +811,18 @@ MENeutralCurrentDIS::collinearBlendWeights(tcPDPtr lin, tcPDPtr,
 
   const double qUnpolarized =
     ((1.0 + sqr(ell)) * D_even + ell * N_even) / sigmaBorn;
-  const double qPolarized =
-    ((1.0 + sqr(ell)) * D_spin + ell * N_spin) / sigmaBorn;
+  const double qPolarizedReduced =
+    ((1.0 + sqr(ell)) * D_reduced + ell * N_reduced) / sigmaBorn;
 
   // At this order the gluon collinear counterterm only contributes to the
   // F2-like unpolarized channel and the G2-like spin-dependent channel.
   const double gUnpolarized =
     ((1.0 + sqr(ell)) * D_even) / sigmaBorn;
-  const double gPolarized =
-    (ell * N_spin) / sigmaBorn;
+  const double gPolarizedReduced =
+    (ell * N_reduced) / sigmaBorn;
 
-  return {qUnpolarized, qPolarized, gUnpolarized, gPolarized};
+  return {qUnpolarized, qPolarizedReduced,
+          gUnpolarized, gPolarizedReduced};
 }
 
 // Correct the QCDC denominator when the emission kernel uses the mapped
@@ -913,7 +920,10 @@ MENeutralCurrentDIS::ncCoefficients(tcPDPtr lin, tcPDPtr qin, Energy2 q2) const 
   double zInt = 0.0;
   double zSq = 0.0;
   if (_gammaZ == 0 || _gammaZ == 2) {
-    const Energy2 gammaZ = _z0->mass() * _z0->width();
+    // The argument q2 is positive Q^2 for spacelike DIS, so the propagator
+    // denominator appears as (Q^2 + m_Z^2)^2 plus the width term.
+    const Energy2 gammaZ = _useFiniteWidthSpacelikeZPropagator
+      ? _z0->mass() * _z0->width() : ZERO;
     const auto den = sqr(q2 + _mz2) + sqr(gammaZ);
     const double rInt = double(q2 * (q2 + _mz2) / den);
     const double rSq = double(sqr(q2) / den);
@@ -921,6 +931,8 @@ MENeutralCurrentDIS::ncCoefficients(tcPDPtr lin, tcPDPtr qin, Energy2 q2) const 
     zSq = sqr(k) * rSq;
   }
 
+  // N... multiplies ell, while D... multiplies 1+ell^2. The suffixes show
+  // which longitudinal spin factors are carried by the coefficient.
   out.N0  = etaL * etaQ * 4.0 * CAlCAq * (zInt * Ql * Qq + 2.0 * zSq * CVlCVq);
   out.Nl  = etaQ * -4.0 * CAq * (zSq * CVq * (CAl2 + CVl2) + zInt * CVl * Ql * Qq);
   out.Nq  = etaL * -4.0 * CAl * (zSq * CVl * (CAq2 + CVq2) + zInt * CVq * Ql * Qq);
@@ -936,38 +948,4 @@ MENeutralCurrentDIS::ncCoefficients(tcPDPtr lin, tcPDPtr qin, Energy2 q2) const 
   out.Dlq = etaL * etaQ * 2.0 * CAlCAq * (2.0 * zSq * CVlCVq + zInt * Ql * Qq);
 
   return out;
-}
-
-// Provide the parity-odd response needed by DISBase::NLOWeightRaw(). Returning
-// false lets photon-only running use the base photon-like expression.
-bool MENeutralCurrentDIS::neutralCurrentResponse(tcPDPtr lin, tcPDPtr,
-                                                 tcPDPtr qin, tcPDPtr,
-                                                 Energy2 q2,
-                                                 double Pl,
-                                                 double PqBorn,
-                                                 double,
-                                                 double ell,
-                                                 NeutralCurrentResponse &out) const {
-  if (!lin || !qin || _gammaZ == 1) return false;
-
-  const NCCoefficients coeff = ncCoefficients(lin, qin, q2);
-  const double D_even = coeff.D0 + Pl * coeff.Dl;
-  const double D_spin = PqBorn * (coeff.Dq + Pl * coeff.Dlq);
-  const double N_even = coeff.N0 + Pl * coeff.Nl;
-  const double N_spin = PqBorn * (coeff.Nq + Pl * coeff.Nlq);
-  const double bornFactor =
-    (1.0 + sqr(ell)) * (D_even + D_spin) + ell * (N_even + N_spin);
-
-  if (!std::isfinite(bornFactor) || std::abs(bornFactor) <= 1e-30) return false;
-
-  const double qPolarized =
-    ((1.0 + sqr(ell)) * D_spin + ell * N_spin) / bornFactor;
-  const double gPolarized =
-    (ell * N_spin) / bornFactor;
-
-  out = NeutralCurrentResponse{
-    (std::abs(PqBorn) > 1e-30) ? (qPolarized / PqBorn) : 0.0,
-    (std::abs(PqBorn) > 1e-30) ? (gPolarized / PqBorn) : 0.0
-  };
-  return true;
 }
