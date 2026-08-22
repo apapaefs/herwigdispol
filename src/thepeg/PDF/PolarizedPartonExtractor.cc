@@ -12,10 +12,49 @@
 #include "ThePEG/Repository/UseRandom.h"
 #include "ThePEG/Repository/EventGenerator.h"
 #include "ThePEG/Utilities/DescribeClass.h"
+#include "ThePEG/Utilities/Exception.h"
 #include "ThePEG/Persistency/PersistentOStream.h"
 #include "ThePEG/Persistency/PersistentIStream.h"
+#include <algorithm>
+#include <cmath>
 
 using namespace ThePEG;
+
+pair<double,Complex>
+PolarizedPartonExtractor::projectPhysicalPolarization(
+    double longitudinal, Complex transverse) {
+  const double transverseReal = transverse.real();
+  const double transverseImag = transverse.imag();
+  if(!std::isfinite(longitudinal) ||
+     !std::isfinite(transverseReal) ||
+     !std::isfinite(transverseImag)) {
+    throw Exception()
+      << "PolarizedPartonExtractor received a nonfinite polarization "
+      << "after PDF reweighting: pL=" << longitudinal
+      << ", pT=" << transverse << Exception::runerror;
+  }
+
+  const double scale =
+    std::max(std::abs(longitudinal),
+             std::max(std::abs(transverseReal),std::abs(transverseImag)));
+  if(scale == 0.) return make_pair(longitudinal,transverse);
+
+  const double scaledLongitudinal = longitudinal/scale;
+  const double scaledTransverseReal = transverseReal/scale;
+  const double scaledTransverseImag = transverseImag/scale;
+  const double scaledMagnitude =
+    std::sqrt(scaledLongitudinal*scaledLongitudinal +
+              scaledTransverseReal*scaledTransverseReal +
+              scaledTransverseImag*scaledTransverseImag);
+
+  if(scale > 1./scaledMagnitude) {
+    const double factor = (1./scale)/scaledMagnitude;
+    longitudinal *= factor;
+    transverse *= factor;
+  }
+  return make_pair(longitudinal,transverse);
+}
+
 IBPtr PolarizedPartonExtractor::clone() const {
   return new_ptr(*this);
 }
@@ -146,6 +185,9 @@ pair<RhoDMatrix,RhoDMatrix> PolarizedPartonExtractor::getRhoMatrices(const PBIPa
         pT *= diff/sum;
       }
     }
+    const auto physical = projectPhysicalPolarization(pL,pT);
+    pL = physical.first;
+    pT = physical.second;
     // setup the spin density matrix
     output.first(0   ,0   ) = 0.5*(1.-pL);
     output.first(imax,imax) = 0.5*(1.+pL);
@@ -171,6 +213,9 @@ pair<RhoDMatrix,RhoDMatrix> PolarizedPartonExtractor::getRhoMatrices(const PBIPa
         pT *= diff/sum;
       }
     }
+    const auto physical = projectPhysicalPolarization(pL,pT);
+    pL = physical.first;
+    pT = physical.second;
     // setup the spin density matrix
     output.second(0   ,0   ) = 0.5*(1.-pL);
     output.second(imax,imax) = 0.5*(1.+pL);

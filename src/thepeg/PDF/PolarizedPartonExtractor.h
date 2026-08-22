@@ -25,6 +25,16 @@ public:
    */
   pair<RhoDMatrix,RhoDMatrix> getRhoMatrices(const PBIPair & pbins) const;
 
+  /**
+   * Project a longitudinal/transverse polarization vector onto the unit
+   * Bloch ball. Values already inside the ball are returned unchanged.
+   *
+   * This helper consumes no random numbers. It throws a run error if any
+   * input component is nonfinite.
+   */
+  static pair<double,Complex>
+  projectPhysicalPolarization(double longitudinal, Complex transverse);
+
 public:
 
   /**
