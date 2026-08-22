@@ -823,6 +823,8 @@ class HerwigFixedOrderNLOTests(unittest.TestCase):
                     str(reference),
                     "--rivet-mkhtml",
                     "/usr/bin/rivet-mkhtml",
+                    "--mplconfigdir",
+                    str(Path(tmp) / "mplconfig"),
                     "--no-progress",
                 ]
             )
@@ -924,6 +926,8 @@ class HerwigFixedOrderNLOTests(unittest.TestCase):
                     str(reference),
                     "--rivet-mkhtml",
                     "/usr/bin/rivet-mkhtml",
+                    "--mplconfigdir",
+                    str(Path(tmp) / "mplconfig"),
                     "--no-progress",
                 ]
             )
