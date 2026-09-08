@@ -34,16 +34,27 @@ def run(command, directory, environment, logfile):
     if result.returncode:
         raise RuntimeError(f"{command[0]} failed ({result.returncode}); see {directory/logfile}")
 
+
+def requested_events(mode, allow_input_exhaustion, events):
+    # This reader checks its no-reopen flag only when more than one event is
+    # still requested at EOF. Request two beyond the fixed input count so an
+    # EOF always raises before reopening, including zero/one shower vetoes.
+    return events + 2 if mode == "lhe" and allow_input_exhaustion else events
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prefix", required=True, type=Path)
     parser.add_argument("--pheno", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--events", type=int, default=1000)
+    parser.add_argument("--max-errors", type=int, default=20,
+                        help="bounded tolerated event errors; fatal audit assertions remain fatal")
     parser.add_argument("--seed", type=int, default=9001001)
     parser.add_argument("--helicity", choices=("PP", "PM", "MP", "MM"), default="PP")
     parser.add_argument("--mode", choices=("on", "off", "default", "lhe"), default="off")
     parser.add_argument("--process", choices=("pp", "dis"), default="pp")
+    parser.add_argument("--dis-contribution", choices=("LO", "PositiveNLO", "NegativeNLO"),
+                        default="LO", help="default-on DIS POWHEG regression only")
     parser.add_argument("--lhe", type=Path)
     parser.add_argument("--lhe-weight-option", choices=("UnitWeight", "VarWeight"),
                         default="VarWeight", help="VarWeight prevents automatic hard-event skipping")
@@ -58,12 +69,14 @@ def main():
     parser.add_argument("--extra-cxxflags", default="")
     parser.add_argument("--trace-libraries", action="store_true")
     args = parser.parse_args()
-    if args.events <= 0 or (args.fixtures and (args.legacy or args.mode == "lhe")):
+    if args.events <= 0 or args.max_errors <= 0 or (args.fixtures and (args.legacy or args.mode == "lhe")):
         parser.error("fixtures require native new-runtime input and positive event count")
     if args.mode == "lhe" and not args.lhe:
         parser.error("--mode lhe requires --lhe")
     if args.process == "dis" and (args.fixtures or args.mode == "lhe"):
         parser.error("DIS is a default-on regression / off-mode rejection test only")
+    if args.process != "dis" and args.dis_contribution != "LO":
+        parser.error("--dis-contribution only applies to the DIS regression")
     args.output = args.output.resolve()
     args.output.mkdir(parents=True, exist_ok=False)
     env = os.environ.copy()
@@ -91,13 +104,24 @@ def main():
     common = common.split("read snippets/Rivet.in")[0]
     if args.process == "dis":
         common = Path(__file__).with_name("polarized-dis-regression.in").read_text()
+        if args.dis_contribution != "LO":
+            common = common.replace("/Herwig/MatrixElements/MEDISNCPol",
+                                    "/Herwig/MatrixElements/PowhegMEDISNCPol")
+            common += f"""
+set /Herwig/MatrixElements/PowhegMEDISNCPol:Contribution {args.dis_contribution}
+set /Herwig/MatrixElements/PowhegMEDISNCPol:UsePOWHEGRealSpinVertex Yes
+set /Herwig/Shower/ShowerHandler:HardEmission POWHEG
+set /Herwig/Partons/RemnantDecayer:DISOneRemnantFallback RelaxMass
+set /Herwig/Model:QCD/RunningAlphaS /Herwig/Couplings/NLOAlphaS
+set /Herwig/Model:QCD/AlphaS 0.118
+"""
     p1,p2 = {"PP":(1,1),"PM":(1,-1),"MP":(-1,1),"MM":(-1,-1)}[args.helicity]
     common += f"""
 set /Herwig/Partons/PPPolarizedExtractor:FirstLongitudinalPolarization {p1}
 set /Herwig/Partons/PPPolarizedExtractor:SecondLongitudinalPolarization {p2}
 set /Herwig/Shower/ShowerHandler:SpinCorrelations {args.spin_correlations}
 set /Herwig/Generators/EventGenerator:RandomNumberGenerator:Seed {args.seed}
-set /Herwig/Generators/EventGenerator:MaxErrors 20
+set /Herwig/Generators/EventGenerator:MaxErrors {args.max_errors}
 """
     if args.process == "dis":
         handler = "/Herwig/EventHandlers/EventHandler"
@@ -163,7 +187,8 @@ insert /Herwig/Generators/EventGenerator:AnalysisHandlers 0 /Herwig/Analysis/Har
         env["DYLD_PRINT_LIBRARIES"]="1"
     exhausted = False
     try:
-        run([str(args.prefix/"bin/Herwig"),"run","audit.run","-N",str(args.events),"-s",str(args.seed)],
+        count = requested_events(args.mode, args.allow_input_exhaustion, args.events)
+        run([str(args.prefix/"bin/Herwig"),"run","audit.run","-N",str(count),"-s",str(args.seed)],
             args.output,env,"run.log")
     except RuntimeError:
         output = (args.output/"run.log").read_text(errors="replace")

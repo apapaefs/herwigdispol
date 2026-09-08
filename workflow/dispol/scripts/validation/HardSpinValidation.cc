@@ -174,7 +174,9 @@ class HardSpinCapture: public StepHandler {
 public:
   void handle(EventHandler& eh, const tPVector&, const Hint&) {
     auto sub = eh.currentCollision()->primarySubProcess();
+#ifndef HARD_SPIN_DIS
     require(sub->outgoing().size()==2,"export requires a 2-to-2 hard event");
+#endif
     tPVector legs{sub->incoming().first,sub->incoming().second};
     legs.insert(legs.end(),sub->outgoing().begin(),sub->outgoing().end());
     std::map<tcColinePtr,int> colours;
@@ -223,7 +225,11 @@ public:
   void analyze(tEventPtr event,long,int loop,int state) {
     if (!event || loop>0 || state!=0) return;
     require(!pendingHard.empty(),"missing pre-shower capture");
+#ifdef HARD_SPIN_DIS
+    require(std::abs(std::abs(event->weight())-1.)<1.e-10,"DIS regression requires signed unit weights");
+#else
     require(std::abs(event->weight()-1.)<1.e-10,"export only supports unit positive hard weights");
+#endif
     lheEvents.push_back(pendingLHE);
     tPVector all;
     event->select(std::back_inserter(all),SelectAll());

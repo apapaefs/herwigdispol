@@ -1,6 +1,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
@@ -12,6 +13,9 @@ relocate_spec = importlib.util.spec_from_file_location(
     "relocate_validation", SOURCE.with_name("relocate_validation_run.py"))
 relocate = importlib.util.module_from_spec(relocate_spec)
 relocate_spec.loader.exec_module(relocate)
+sys.path.insert(0,str(SOURCE.parent))
+import run_sharded_hard_spin_closure as sharded
+import run_hard_spin_validation as validation_runner
 
 
 class HardSpinValidationTests(unittest.TestCase):
@@ -97,6 +101,35 @@ class HardSpinValidationTests(unittest.TestCase):
         self.assertTrue(compare.same_hard([[21,1,2,1.]], [[21,1,2,1.+1.e-12]]))
         self.assertFalse(compare.same_hard([[21,1,2,1.]], [[2,1,2,1.]]))
         self.assertFalse(compare.same_hard([[21,1,2,1.]], [[21,1,2,1.,0.]]))
+
+    def test_bounded_chunks_do_not_regenerate_finalized_inputs(self):
+        recovered = 383741
+        sizes = list(sharded.chunks(1_000_000-recovered,100_000))
+        self.assertEqual(sizes,[100_000]*6+[16259])
+        self.assertEqual(sum(sizes)+recovered,1_000_000)
+
+    def test_finite_lhe_replay_reaches_strict_no_reopen_eof_branch(self):
+        self.assertEqual(validation_runner.requested_events("lhe",True,1000),1002)
+        self.assertEqual(validation_runner.requested_events("lhe",False,1000),1000)
+        self.assertEqual(validation_runner.requested_events("off",True,1000),1000)
+
+    def test_recovery_requires_a_finalized_consistent_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            summary={"events":2,"polarized_pdf_calls":{"beam":{"hard":10,"shower":0}}}
+            (root/"audit.hard-spin-summary.json").write_text(json.dumps(summary))
+            record={"hard_process_spin":False,"hard_links":0}
+            (root/"audit.hard-spin.jsonl").write_text((json.dumps(record)+"\n")*2)
+            lhe=root/"audit.hard.lhe"
+            lhe.write_text("<LesHouchesEvents>\n<event>\n</event>\n<event>\n</event>\n")
+            with self.assertRaisesRegex(ValueError,"not finalized"):
+                sharded.audited_native(root)
+            lhe.write_text(lhe.read_text()+"</LesHouchesEvents>\n")
+            self.assertEqual(sharded.audited_native(root)[2]["events"],2)
+            summary["polarized_pdf_calls"]["beam"]["shower"]=1
+            (root/"audit.hard-spin-summary.json").write_text(json.dumps(summary))
+            with self.assertRaisesRegex(ValueError,"polarized shower calls"):
+                sharded.audited_native(root)
 
 
 if __name__ == "__main__":
