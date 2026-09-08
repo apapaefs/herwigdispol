@@ -59,7 +59,7 @@ QTildeShowerHandler::QTildeShowerHandler() :
   _trunc_Mode(true), _hardEmission(1),
   _softOpt(2), _hardPOWHEG(false),
   _powhegEmissionMode(QTildeShowerHandler::POWHEGEmissionModeShowerReconstructed),
-  muPt(ZERO)
+  muPt(ZERO), _hardProcessSpin(true)
 {}
 
 IBPtr QTildeShowerHandler::clone() const {
@@ -82,10 +82,10 @@ void QTildeShowerHandler::persistentOutput(PersistentOStream & os) const {
      << _vetoes << _fullShowerVetoes << _nReWeight << _reWeight
      << _trunc_Mode << _hardEmission << _evolutionScheme
      << ounit(muPt,GeV) << oenum(interaction_) << darkInteraction_
-     << _reconstructor << _partnerfinder;
+     << _reconstructor << _partnerfinder << _hardProcessSpin;
 }
 
-void QTildeShowerHandler::persistentInput(PersistentIStream & is, int) {
+void QTildeShowerHandler::persistentInput(PersistentIStream & is, int version) {
   is >> _splittingGenerator >> _maxtry
      >> _meCorrMode >> _hardVetoReadOption
      >> _limitEmissions >> _softOpt >> _hardPOWHEG
@@ -97,15 +97,31 @@ void QTildeShowerHandler::persistentInput(PersistentIStream & is, int) {
      >> _trunc_Mode >> _hardEmission >> _evolutionScheme
      >> iunit(muPt,GeV) >> ienum(interaction_) >> darkInteraction_
      >> _reconstructor >> _partnerfinder;
+  _hardProcessSpin = true;
+  if (version >= 1) is >> _hardProcessSpin;
 }
 
 
 // The following static variable is needed for the type
 // description system in ThePEG.
 DescribeClass<QTildeShowerHandler,ShowerHandler>
-describeHerwigQTildeShowerHandler("Herwig::QTildeShowerHandler", "HwShower.so");
+describeHerwigQTildeShowerHandler("Herwig::QTildeShowerHandler", "HwShower.so", 1);
 
 void QTildeShowerHandler::Init() {
+
+  static Switch<QTildeShowerHandler,bool> interfaceHardProcessSpin
+    ("HardProcessSpin",
+     "Use hard-process spin tensors/densities and polarized-beam backward-ISR "
+     "conditioning. No preserves polarized hard generation, but initializes "
+     "spin-averaged shower copies and unpolarized ISR PDFs. Internally generated "
+     "shower correlations are independently controlled by SpinCorrelations. "
+     "No is supported only for native LO pp QCD dijets with MPI off; it is an "
+     "LHE-like information-loss control, not a claim of LHE equivalence.",
+     &QTildeShowerHandler::_hardProcessSpin, true, false, false);
+  static SwitchOption interfaceHardProcessSpinYes
+    (interfaceHardProcessSpin, "Yes", "Retain full hard-process spin input.", true);
+  static SwitchOption interfaceHardProcessSpinNo
+    (interfaceHardProcessSpin, "No", "Discard hard spin input for the shower only.", false);
 
   static ClassDocumentation<QTildeShowerHandler> documentation
     ("TheQTildeShowerHandler class is the main class"
@@ -447,7 +463,10 @@ tPPair QTildeShowerHandler::cascade(tSubProPtr sub,
       		       tPVector(currentSubProcess()->outgoing().begin(),
       				currentSubProcess()->outgoing().end()),
       		       hard,decay);
-      ShowerTree::constructTrees(hard_,decay_,hard,decay);
+      if (!hardProcessSpin() && !decay.empty())
+        throw Exception() << "HardProcessSpin No does not support hard resonance decays."
+                          << Exception::runerror;
+      ShowerTree::constructTrees(hard_,decay_,hard,decay,hardProcessSpin());
       // if no hard process
       if(!hard_)  throw Exception() << "Shower starting with a decay"
 				    << "is not implemented"
@@ -2884,6 +2903,31 @@ Branching QTildeShowerHandler::selectSpaceLikeDecayBranching(tShowerParticlePtr 
 }
 
 void QTildeShowerHandler::checkFlags() {
+  if (!hardProcessSpin()) {
+    const tPPair beams = CurrentGenerator::current().currentEvent()->incoming();
+    bool supported = beams.first->id() == 2212 && beams.second->id() == 2212
+      && !isMPIOn() && firstInteraction() && _hardme
+      && _hardme->orderInAlphaS() == 2 && _hardme->orderInAlphaEW() == 0
+      && !_hardme->hasMECorrection() && !_hardme->hasPOWHEGCorrection()
+      && _hardEmission != 2 && !canHandleMatchboxTrunc()
+      && !currentTree()->isMCatNLOSEvent() && !currentTree()->isMCatNLOHEvent()
+      && !currentTree()->isPowhegSEvent() && !currentTree()->isPowhegHEvent()
+      && !currentTree()->truncatedShower()
+      && currentTree()->incomingLines().size() == 2
+      && currentTree()->outgoingLines().size() == 2;
+    const vector<ShowerParticlePtr> legs = currentTree()->extractProgenitorParticles();
+    for (unsigned int i = 0; i < legs.size(); ++i) {
+      const long id = abs(legs[i]->id());
+      supported = supported && (id == 21 || (id >= 1 && id <= 5));
+    }
+    if (!supported)
+      throw Exception() << "HardProcessSpin No is supported only for native LO "
+        "pp -> two QCD partons (u,d,s,c,b,g), without MPI, matching, merging, "
+        "matrix-element shower corrections or hard resonance decays. "
+        "For an ordinary LHE closure reference leave HardProcessSpin Yes: "
+        "the ordinary reader already supplies no hard QCD spin tensor."
+        << Exception::runerror;
+  }
   string error = "Inconsistent hard emission set-up in QTildeShowerHandler::showerHardProcess(). ";
   if(fixedOrderPOWHEGNoShower() && _hardEmission != 2) {
     throw Exception() << error

@@ -1,0 +1,20 @@
+# Validation-only polarized neutral-current LO DIS, e-(18) p(275) GeV.
+read snippets/EPCollider.in
+read snippets/PolarizedEP.in
+set /Herwig/Particles/e-:PDF /Herwig/Partons/NoPDF
+set /Herwig/Particles/e+:PDF /Herwig/Partons/NoPDF
+set /Herwig/Partons/EPPolarizedExtractor:FirstLongitudinalPolarization -1
+set /Herwig/Partons/EPPolarizedExtractor:SecondLongitudinalPolarization 1
+set /Herwig/Partons/EPPolarizedExtractor:SecondPDF /Herwig/Partons/HardLOPDF
+set /Herwig/Shower/ShowerHandler:PDFB /Herwig/Partons/ShowerLOPDF
+set /Herwig/Shower/ShowerHandler:MPIHandler NULL
+set /Herwig/Generators/EventGenerator:EventHandler:BeamA /Herwig/Particles/e-
+set /Herwig/Generators/EventGenerator:EventHandler:BeamB /Herwig/Particles/p+
+set /Herwig/Generators/EventGenerator:EventHandler:LuminosityFunction:BeamEMaxA 18*GeV
+set /Herwig/Generators/EventGenerator:EventHandler:LuminosityFunction:BeamEMaxB 275*GeV
+set /Herwig/Cuts/NeutralCurrentCut:MinQ2 100*GeV2
+set /Herwig/Cuts/NeutralCurrentCut:MaxQ2 2500*GeV2
+set /Herwig/Cuts/NeutralCurrentCut:Miny 0.2
+set /Herwig/Cuts/NeutralCurrentCut:Maxy 0.6
+set /Herwig/MatrixElements/MEDISNCPol:UseNativeDISWindowGeneration Yes
+insert /Herwig/MatrixElements/SubProcess:MatrixElements[0] /Herwig/MatrixElements/MEDISNCPol

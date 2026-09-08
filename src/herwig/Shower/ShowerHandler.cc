@@ -400,7 +400,7 @@ void ShowerHandler::cascade() {
   polarization_ = make_pair(ThreeVector<double>(0.,0.,0.),ThreeVector<double>(0.,0.,0.));
   longpdfs_  = make_pair(PDFPtr(),PDFPtr());
   transpdfs_ = make_pair(PDFPtr(),PDFPtr());
-  if (polExtractor) {
+  if (polExtractor && hardProcessSpin()) {
     isPolarized_ = polExtractor->isPolarized();
     polarization_ = make_pair(polExtractor->polarization(true),
                               polExtractor->polarization(false));

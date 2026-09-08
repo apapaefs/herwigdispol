@@ -47,7 +47,7 @@ public:
    * Constructor from a perturbative process
    * @param process The perturbative process
    */
-  ShowerTree(PerturbativeProcessPtr process);
+  ShowerTree(PerturbativeProcessPtr process, bool inheritHardSpin = true);
 
   /**
    * Calculate the space-time displacement
@@ -65,7 +65,7 @@ public:
   static void constructTrees(ShowerTreePtr & hardTree,
 			     ShowerDecayMap & decayTrees,
 			     PerturbativeProcessPtr hard,
-			     DecayProcessMap decay);
+			     DecayProcessMap decay, bool inheritHardSpin = true);
 
 public:
 
@@ -364,6 +364,9 @@ private:
    *  Has this tree showered
    */
   bool _hasShowered;
+
+  /** Preserve hard spin only for trees explicitly opting into it. */
+  bool _inheritHardSpin;
 
   /**
    *  The transforms which still need to be applied

@@ -77,6 +77,9 @@ public:
     return muPt;
   }
 
+  /** Use native hard spin tensors and polarized backward-ISR conditioning. */
+  virtual bool hardProcessSpin() const { return _hardProcessSpin; }
+
   /**
    * Hook to allow vetoing of event after showering hard sub-process
    * as in e.g. MLM merging.
@@ -840,6 +843,9 @@ private :
    * The relevant hard scale to be used in the profile scales
    */
   Energy muPt;
+
+  /** Default-on hard-to-shower spin policy; independent of SpinCorrelations. */
+  bool _hardProcessSpin;
 
 private:
   /**

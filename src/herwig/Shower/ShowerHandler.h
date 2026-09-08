@@ -490,6 +490,9 @@ protected:
    */
   pair<bool,bool> isPolarized() const {return isPolarized_;}
 
+  /** Hard/beam spin policy, independent of shower-generated correlations. */
+  virtual bool hardProcessSpin() const { return true; }
+
   /**
    * Beam polarizations
    */

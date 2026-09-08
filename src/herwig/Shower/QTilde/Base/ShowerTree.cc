@@ -42,8 +42,8 @@ namespace {
   }
 }
 
-ShowerTree::ShowerTree(PerturbativeProcessPtr process) 
-  : _parent(), _hasShowered(false) {
+ShowerTree::ShowerTree(PerturbativeProcessPtr process, bool inheritHardSpin)
+  : _parent(), _hasShowered(false), _inheritHardSpin(inheritHardSpin) {
   // get the incoming and outgoing particles and make copies
   vector<PPtr> original,copy;
   for(unsigned int ix=0;ix<process->incoming().size();++ix) {
@@ -53,6 +53,11 @@ ShowerTree::ShowerTree(PerturbativeProcessPtr process)
   for(unsigned int ix=0;ix<process->outgoing().size();++ix) {
     original.push_back(process->outgoing()[ix].first);
     copy    .push_back(new_ptr(Particle(*original.back())));
+  }
+  // Detach only shower-owned copies, not the polarized hard event or tensor.
+  // getMapping initializes absent SpinInfo in the physical unpolarized basis.
+  if (!_inheritHardSpin) {
+    for (unsigned int ix=0; ix<copy.size(); ++ix) copy[ix]->spinInfo(SpinPtr());
   }
   // isolate the colour
   colourIsolate(original,copy);
@@ -527,6 +532,8 @@ void ShowerTree::clear() {
   for(cit=_outgoingLines.begin();cit!=_outgoingLines.end();++cit) {
     ShowerParticlePtr orig=cit->first->progenitor();
     orig->set5Momentum(cit->first->copy()->momentum());
+    // Retry from a clean seed, never a stale rejected-shower vertex.
+    if (!_inheritHardSpin) orig->spinInfo(SpinPtr());
     ParticleVector children=orig->children();
     for(unsigned int ix=0;ix<children.size();++ix) orig->abandonChild(children[ix]);
     _outgoingLines[cit->first]=orig;
@@ -775,14 +782,14 @@ Lorentz5Distance ShowerTree::spaceTimeDistance(tPPtr particle) {
 void ShowerTree::constructTrees(ShowerTreePtr & hardTree,
 				ShowerDecayMap & decayTrees,
 				PerturbativeProcessPtr hard,
-				DecayProcessMap decay) {
+				DecayProcessMap decay, bool inheritHardSpin) {
   map<PerturbativeProcessPtr,ShowerTreePtr> treeMap;
   // convert the hard process
   if(hardTree) {
     if(hardTree->isDecay()) hardTree->update(hard);
   }
   else {
-    hardTree = new_ptr(ShowerTree(hard));
+    hardTree = new_ptr(ShowerTree(hard,inheritHardSpin));
   }
   treeMap.insert(make_pair(hard,hardTree));
   for(DecayProcessMap::const_iterator it=decay.begin();it!=decay.end();++it) {
