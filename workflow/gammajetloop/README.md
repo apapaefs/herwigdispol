@@ -152,6 +152,14 @@ hadronization and decays. `Fiducial.in` applies the photon window directly.
 
 ## Focused tests and independent comparison
 
+The [native helicity audit](native-helicity-validation.md) compares the actual
+complex amplitudes stored in Herwig's `HardVertex` with MadLoop, using each
+generator's actual polarization vectors. Its 22 October validation covers
+68 events, all 1,088 transverse amplitudes and 17,408 interference products,
+including polarized beams and bottom/top thresholds. All checks pass without
+fitting helicity phases or modifying the production ME. The older point-probe
+comparison below instead exercises the analytic helper with MadLoop vectors.
+
 The Hadron `make check` target runs `GammaJetLoopAmplitudesTest`. It can also
 be compiled without Herwig dependencies using C++11 and
 `GammaJetLoopAmplitudes.cc`. It covers published massless and high-precision

@@ -1,0 +1,6 @@
+# Read NativeCommon.in (or PolarizedCommon.in) and select AmplitudeMode first.
+set /Herwig/EventHandlers/EventHandler:CascadeHandler NULL
+set /Herwig/EventHandlers/EventHandler:HadronizationHandler NULL
+set /Herwig/EventHandlers/EventHandler:DecayHandler NULL
+create Herwig::NativeHelicityAudit /Herwig/Analysis/NativeHelicityAudit NativeHelicityAudit.so
+insert /Herwig/Generators/EventGenerator:AnalysisHandlers 0 /Herwig/Analysis/NativeHelicityAudit
