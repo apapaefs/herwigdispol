@@ -1,0 +1,6 @@
+read PolarizedCommon.in
+set /Herwig/MatrixElements/GammaJetLoopValidation:AmplitudeMode Massive
+set /Herwig/Partons/PPPolarizedExtractor:FirstLongitudinalPolarization 0
+set /Herwig/Partons/PPPolarizedExtractor:SecondLongitudinalPolarization 0
+insert /Herwig/MatrixElements/SubProcess:MatrixElements 1 /Herwig/MatrixElements/MEGammaJet
+saverun Combined /Herwig/Generators/EventGenerator

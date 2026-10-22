@@ -3,6 +3,8 @@ HwMEHadron_la_SOURCES = \
 MEqq2gZ2ff.cc MEqq2gZ2ff.h \
 MEqq2W2ff.cc MEqq2W2ff.h   \
 MEPP2GammaJet.h MEPP2GammaJet.cc\
+MEPP2GammaJetLoop.h MEPP2GammaJetLoop.cc\
+GammaJetLoopAmplitudes.h GammaJetLoopAmplitudes.cc\
 MEQCD2to2.h MEQCD2to2.cc\
 MEPP2HiggsJet.h MEPP2HiggsJet.cc\
 MEPP2GammaGamma.h MEPP2GammaGamma.cc \
@@ -25,3 +27,10 @@ pkglib_LTLIBRARIES += HwMEHadronFast.la
 HwMEHadronFast_la_SOURCES = \
 MEQCD2to2Fast.h MEQCD2to2Fast.cc
 HwMEHadronFast_la_LDFLAGS = $(AM_LDFLAGS) -module -version-info 8:0:0
+
+check_PROGRAMS = GammaJetLoopAmplitudesTest
+TESTS = $(check_PROGRAMS)
+GammaJetLoopAmplitudesTest_SOURCES = GammaJetLoopAmplitudesTest.cc \
+  GammaJetLoopAmplitudes.cc GammaJetLoopAmplitudes.h
+# Keep the standalone test's objects separate from the libtool library objects.
+GammaJetLoopAmplitudesTest_CPPFLAGS = $(AM_CPPFLAGS)

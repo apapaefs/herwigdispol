@@ -1,0 +1,9 @@
+read NativeCommon.in
+read snippets/PolarizedPP.in
+create ThePEG::LHAPDF /Herwig/Partons/PHENIXPolarizedPDF ThePEGLHAPDF.so
+set /Herwig/Partons/PHENIXPolarizedPDF:PDFName NNPDFpol20_nlo_as_01180
+set /Herwig/Partons/PHENIXPolarizedPDF:RemnantHandler /Herwig/Partons/HadronRemnants
+set /Herwig/Partons/PPPolarizedExtractor:FirstPDF /Herwig/Partons/HardLOPDF
+set /Herwig/Partons/PPPolarizedExtractor:SecondPDF /Herwig/Partons/HardLOPDF
+set /Herwig/Partons/PPPolarizedExtractor:FirstLongitudinalDifferencePDF /Herwig/Partons/PHENIXPolarizedPDF
+set /Herwig/Partons/PPPolarizedExtractor:SecondLongitudinalDifferencePDF /Herwig/Partons/PHENIXPolarizedPDF

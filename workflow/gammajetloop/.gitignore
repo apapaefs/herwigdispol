@@ -1,0 +1,11 @@
+/evidence/
+/__pycache__/
+/build/
+*.run
+*.log
+*.out
+*.yoda
+*.yoda.gz
+*.tex
+*.hepmc
+*.hepmc.gz

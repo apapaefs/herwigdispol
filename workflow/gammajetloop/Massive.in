@@ -1,0 +1,3 @@
+read NativeCommon.in
+set /Herwig/MatrixElements/GammaJetLoopValidation:AmplitudeMode Massive
+saverun Massive /Herwig/Generators/EventGenerator

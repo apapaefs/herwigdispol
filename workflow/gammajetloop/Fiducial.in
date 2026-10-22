@@ -1,0 +1,10 @@
+read NativeCommon.in
+set /Herwig/MatrixElements/GammaJetLoopValidation:AmplitudeMode Massive
+set /Herwig/EventHandlers/EventHandler:CascadeHandler NULL
+set /Herwig/EventHandlers/EventHandler:HadronizationHandler NULL
+set /Herwig/EventHandlers/EventHandler:DecayHandler NULL
+set /Herwig/Cuts/PhotonKtCut:MinKT 6*GeV
+set /Herwig/Cuts/PhotonKtCut:MaxKT 30*GeV
+set /Herwig/Cuts/PhotonKtCut:MinEta -0.25
+set /Herwig/Cuts/PhotonKtCut:MaxEta 0.25
+saverun Fiducial /Herwig/Generators/EventGenerator

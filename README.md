@@ -33,6 +33,7 @@ files from the checked-in cards before starting new validation runs.
 | `workflow/dispol/cards/` | Herwig input cards and source templates |
 | `workflow/dispol/scripts/` | Campaign, analysis, conversion, and plotting tools |
 | `workflow/dispol/docs/` | Workflow and validation notes |
+| `workflow/gammajetloop/` | Native loop-induced photon + jet conventions, focused tests and QCD-shower examples |
 | `docs/paper/` | Manuscript source, bibliography, styles, and referenced figure assets |
 
 Generated libraries, `.run`, `.log`, `.out`, `.yoda`, `.csv`, `.html`, `.top`,
@@ -58,6 +59,19 @@ The main workflows are:
 
 Older fixed-weight and dump-style diagnostic paths are not part of the public
 workflow.
+
+## Native loop-induced photon + jet
+
+The separate native `MEPP2GammaJetLoop` process adds `gg -> gamma g` with
+complex one-loop quark amplitudes and hard spin correlations. Its default
+`Massive` mode uses particle-data masses for charm, bottom and top; `Massless5`
+omits top, and `Flat` is a diagnostic. The existing `MEGammaJet` is unchanged.
+
+Build registration, normalization, numerical limits, MadLoop comparisons and
+QCD-shower examples are documented in
+[`workflow/gammajetloop/`](workflow/gammajetloop/README.md). These validation
+cards include PHENIX hard-process settings and physical beam-helicity smokes;
+the small samples do not establish a production spin asymmetry.
 
 ## Prerequisites
 

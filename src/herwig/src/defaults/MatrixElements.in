@@ -180,6 +180,9 @@ create Herwig::MEPP2GammaGamma MEGammaGamma
 # hadron-hadron to gamma+jet
 create Herwig::MEPP2GammaJet   MEGammaJet
 
+# loop-induced gg -> gamma g (additional process)
+create Herwig::MEPP2GammaJetLoop MEGammaJetLoop
+
 # QCD 2-to-2
 create Herwig::MEQCD2to2       MEQCD2to2
 

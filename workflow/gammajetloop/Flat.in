@@ -1,0 +1,17 @@
+read snippets/PPCollider.in
+create Herwig::MEPP2GammaJetLoop /Herwig/MatrixElements/GammaJetLoopValidation HwMEHadron.so
+set /Herwig/MatrixElements/GammaJetLoopValidation:AmplitudeMode Flat
+insert /Herwig/MatrixElements/SubProcess:MatrixElements 0 /Herwig/MatrixElements/GammaJetLoopValidation
+set /Herwig/EventHandlers/Luminosity:Energy 510*GeV
+set /Herwig/Partons/HardLOPDF:PDFName NNPDF40_nlo_pch_as_01180
+set /Herwig/Partons/ShowerLOPDF:PDFName NNPDF40_nlo_pch_as_01180
+set /Herwig/Shower/ShowerHandler:Interactions QCD
+set /Herwig/Shower/ShowerHandler:SpinCorrelations Yes
+set /Herwig/Shower/ShowerHandler:MPIHandler NULL
+set /Herwig/Cuts/JetKtCut:MinKT 0*GeV
+set /Herwig/Cuts/PhotonKtCut:MinKT 4*GeV
+set /Herwig/Cuts/Cuts:MHatMin 0*GeV
+set /Herwig/Samplers/Sampler:BinSampler:InitialPoints 1000
+set /Herwig/Generators/EventGenerator:PrintEvent 0
+set /Herwig/Generators/EventGenerator:MaxErrors 100
+saverun Flat /Herwig/Generators/EventGenerator

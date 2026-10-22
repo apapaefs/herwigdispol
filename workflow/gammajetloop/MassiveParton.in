@@ -1,0 +1,6 @@
+read NativeCommon.in
+set /Herwig/MatrixElements/GammaJetLoopValidation:AmplitudeMode Massive
+set /Herwig/EventHandlers/EventHandler:CascadeHandler NULL
+set /Herwig/EventHandlers/EventHandler:HadronizationHandler NULL
+set /Herwig/EventHandlers/EventHandler:DecayHandler NULL
+saverun MassivePartonClean /Herwig/Generators/EventGenerator

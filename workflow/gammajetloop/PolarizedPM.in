@@ -1,0 +1,5 @@
+read PolarizedCommon.in
+set /Herwig/MatrixElements/GammaJetLoopValidation:AmplitudeMode Massive
+set /Herwig/Partons/PPPolarizedExtractor:FirstLongitudinalPolarization 1
+set /Herwig/Partons/PPPolarizedExtractor:SecondLongitudinalPolarization -1
+saverun PolarizedPM /Herwig/Generators/EventGenerator
