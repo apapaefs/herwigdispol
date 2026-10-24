@@ -76,6 +76,23 @@ def normalized_polarized_factor(numerator, denominator):
 
 class PolarizedQTildeSudakovTests(unittest.TestCase):
 
+    def test_polarized_pdf_queries_use_ordinary_x_coordinates(self):
+        calls = re.findall(
+            r"(longPDF_|transPDF_)->(xfl|xfx)\(beam,([^)]*)\)",
+            SUDAKOV_CC.read_text(),
+        )
+        expected = sorted(
+            (pdf, "xfx", args)
+            for pdf in ("longPDF_", "transPDF_")
+            for args in ("parton1,theScale,x", "parton0,theScale,x/z",
+                         "parton,scale,x")
+        )
+        self.assertEqual(
+            sorted((pdf, method, compact(args)) for pdf, method, args in calls),
+            expected,
+            "These callers hold ordinary x; xfl would evaluate exp(-x).",
+        )
+
     def test_unpolarized_density_matrix_closes_to_unit_weight(self):
         h_matrix = ((0.5, 0.0), (0.0, 0.5))
         rho_matrix = (

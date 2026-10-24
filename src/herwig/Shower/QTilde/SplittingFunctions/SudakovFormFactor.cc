@@ -382,14 +382,14 @@ double SudakovFormFactor::PDFVetoRatio(const Energy2 t, const double x, const do
     double longOld=0., longNew=0.;
     // longitudinal polarization
     if (  polarization_.z() != 0. && longPDF_) {
-      longOld = max(-1.,min(1.,longPDF_->xfl(beam,parton1,theScale,x  )/oldpdf));
-      longNew = max(-1.,min(1.,longPDF_->xfl(beam,parton0,theScale,x/z)/newpdf));
+      longOld = max(-1.,min(1.,longPDF_->xfx(beam,parton1,theScale,x  )/oldpdf));
+      longNew = max(-1.,min(1.,longPDF_->xfx(beam,parton0,theScale,x/z)/newpdf));
     }
     double transOld(0.),transNew(0.);
     // transverse polarization
     if( (polarization_.x() !=0. || polarization_.y() !=0. ) && transPDF_) {
-      transOld = transPDF_->xfl(beam,parton1,theScale,x  )/oldpdf;
-      transNew = transPDF_->xfl(beam,parton0,theScale,x/z)/newpdf;
+      transOld = transPDF_->xfx(beam,parton1,theScale,x  )/oldpdf;
+      transNew = transPDF_->xfx(beam,parton0,theScale,x/z)/newpdf;
     }
     HOld(0      ,0      ) = 0.5*(1.-pL*longOld);
     HOld(imaxOld,imaxOld) = 0.5*(1.+pL*longOld);
@@ -502,11 +502,11 @@ RhoDMatrix SudakovFormFactor::calculateHMatrix(tcPDPtr beam,
   // longitudinal polarization
   double pL = polarization_.z();
   if (  polarization_.z() != 0. && longPDF_)
-    pL *= max(-1.,min(1.,longPDF_->xfl(beam,parton,scale,x  )/oldpdf));
+    pL *= max(-1.,min(1.,longPDF_->xfx(beam,parton,scale,x  )/oldpdf));
   // transverse polarization
   Complex pT(polarization_.x(),polarization_.y());
   if( (polarization_.x() !=0. || polarization_.y() !=0. ) && transPDF_)
-    pT *= transPDF_->xfl(beam,parton,scale,x)/oldpdf;
+    pT *= transPDF_->xfx(beam,parton,scale,x)/oldpdf;
   H(0   ,0   ) = 0.5*(1.-pL);
   H(imax,imax) = 0.5*(1.+pL);
   H(0   ,imax) = 0.5*pT;
