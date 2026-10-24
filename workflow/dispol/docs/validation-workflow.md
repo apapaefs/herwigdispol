@@ -5,6 +5,9 @@ This note records the generic validation workflow driven by
 repository root and pass `--base-dir DISPOL` unless you intentionally maintain a
 separate run area.
 
+For the polarized QTilde PDF-coordinate fix and its compiled old/corrected
+library regression, see [Polarized ISR PDF coordinates](polarized-isr-pdf-coordinates.md).
+
 ## POWHEG Emission Comparison Modes
 
 The DIS POWHEG implementation exposes the following switches for validation
