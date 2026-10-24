@@ -45,8 +45,12 @@ directory. Load the runtime's normal module first. Omitting `--library-dir`
 tests the prefix's installed shower. Omitting `--real-pdfs` runs the synthetic
 tests without requiring the two NNPDF sets. The runner supports macOS dyld and
 glibc loader traces; loader verification must succeed for a passing result.
-The macOS implementation has been exercised; the Linux branch needs validation
-on the target host.
+Both macOS and native Linux paths have been exercised. On Linux an isolated
+`--library-dir` also creates a private repository with that directory prepended.
+ThePEG restores search paths from its saved repository after processing CLI
+`-L`, so `-L` alone can silently select the installed shower. The runner checks
+actual library initialization in `LD_DEBUG=libs`, and rejects wrong or multiple
+shower libraries. The private repository changes no installed repository.
 
 The fixture calls the real `PDFVetoRatio` and `calculateHMatrix`. Its PDF
 subclass overrides only `xfx`, so an accidental `xfl` call goes through the
@@ -65,7 +69,9 @@ Require failure against an old library and success against a corrected library
 built with the same toolchain and dependencies. `result.json` records the
 fixture hash, executable hash, compile/run commands, loaded shower/ThePEG/DIS
 paths and hashes, check count, failures and loader verification. `build.log`,
-`stdout.log` and `loader.log` supply the underlying evidence. A successful
+`stdout.log` and `loader.log` supply the underlying evidence; Linux isolated
+tests also record the repository preparation command and `repository-build.log`.
+A successful
 `Herwig read` exit alone does not establish that the checks passed.
 
 ## Integration and deployment
@@ -80,10 +86,27 @@ genuine-00 and zero-polarization control files. DIS logs also show legacy
 ME-correction warnings and recoverable remnant failures; these smoke runs
 establish execution and bypass behavior, not production-level DIS validation.
 
-The change is present in the active and curated source trees. The production
-installation has not been replaced. Before a runtime rollout, map its actual
-executable, build source and loaded shower, port the fix to that maintained
-lineage, and repeat the compiled and bounded event checks. The original full
+On 24 October the Odysseus `herwig/pol` default was separately built and
+validated using its native GCC 15.2 toolchain and existing QTilde objects.
+Only the six-call translation unit differs between the paired builds. The old
+library fails 105 of 410 checks, while the corrected library passes all 410,
+with both loader selections verified. Twelve 100-event pp/DIS checks complete;
+the pp ordinary-00, pp zero-polarization and DIS ordinary-00 old/new control
+pairs are byte-identical. These DIS checks use `HardEmission None`; some logs
+contain recoverable remnant or momentum-adjustment exceptions.
+
+The corrected Odysseus library and source were then installed, with backups
+of both original files. A further 410 checks pass through the normal installed
+runtime without isolated-library arguments. The installed shower SHA-256 is
+`1712ff3717af163d6f7bf847740f145d3de34daa1b7f3f74cee8308294de86f8`.
+The executable, core Herwig, ThePEG and DIS libraries have unchanged hashes.
+No HERMES production campaign was started. Its v5 inputs match the current
+configuration, and a separate corrected-run command has been dry-run checked.
+
+The local macOS production installation and other runtime lineages have not
+been replaced. Map each intended runtime's actual executable, build source and
+loaded shower, then repeat compatible compiled and bounded event checks.
+The original full
 failure-seed replay and observable-level comparisons remain separate follow-up
 work. A corrected shower can change random decisions before the old failing
 event; the saved-state fixture is the deterministic regression.

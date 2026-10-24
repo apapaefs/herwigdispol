@@ -64,6 +64,27 @@ def main():
     library_dir = args.library_dir.resolve() if args.library_dir else prefix / "lib/Herwig"
     if args.library_dir:
         command += ["-L", str(library_dir)]
+        if sys.platform.startswith("linux"):
+            # PersistentIStream restores saved prepend paths after CLI -L.
+            # Save a private repository with the requested path last, so it
+            # wins when restored. No installed repository is modified.
+            repository = out / "coordinate-regression.rpo"
+            setup = out / "coordinate-repository.in"
+            setup.write_text("prependpath " + str(library_dir) + "\nsave "
+                             + str(repository) + "\n")
+            prepare_command = [str(prefix / "bin/Herwig"), "read", str(setup)]
+            prepare = subprocess.run(prepare_command, cwd=out, env=env,
+                                     text=True, capture_output=True)
+            (out / "repository-build.log").write_text(prepare.stdout + prepare.stderr)
+            record.update({"repository": str(repository),
+                           "repository_prepare_command": prepare_command,
+                           "repository_prepare_returncode": prepare.returncode})
+            if prepare.returncode or not repository.is_file() or not repository.stat().st_size:
+                record["passed"] = False
+                (out / "result.json").write_text(json.dumps(record, indent=2) + "\n")
+                print("Could not save the private test repository; see repository-build.log", file=sys.stderr)
+                return 2
+            command += ["--repo", str(repository)]
     command.append(str(card))
     result = subprocess.run(command, cwd=out, env=env, text=True, capture_output=True)
     (out / "stdout.log").write_text(result.stdout)
